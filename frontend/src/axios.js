@@ -3,11 +3,12 @@ import router from './router'; // Importa el router para manejar la redirección
 
 // Crea una instancia de Axios con la URL base del backend
 const apiClient = axios.create({
- baseURL: import.meta.env.VITE_API_URL,
+  baseURL: process.env.VUE_APP_API_URL, // Cambiar a VUE_APP_
   headers: {
     'Content-Type': 'application/json'
   }
 });
+
 
 // Interceptor de solicitudes: se ejecuta antes de cada petición
 apiClient.interceptors.request.use(
