@@ -3,7 +3,7 @@ import router from './router'; // Importa el router para manejar la redirección
 
 // Crea una instancia de Axios con la URL base del backend
 const apiClient = axios.create({
-  baseURL: 'http://localhost:5000',
+ baseURL: import.meta.env.VITE_API_URL,
   headers: {
     'Content-Type': 'application/json'
   }
