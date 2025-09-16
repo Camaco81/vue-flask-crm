@@ -13,7 +13,7 @@
         </div>
         <div class="header-stats">
           <div class="stat-item">
-            <span class="stat-number">{{ products.length }}</span>
+            <span class="stat-number">{{ products ? products.length : 0 }}</span>
             <span class="stat-label">Productos</span>
           </div>
         </div>
@@ -190,10 +190,18 @@
                 </p>
               </div>
               <div class="product-actions">
-                <button class="action-btn edit-btn" title="Editar">
+                <button 
+                  class="action-btn edit-btn" 
+                  title="Editar" 
+                  @click="openEditModal(product)"
+                >
                   <i class="fas fa-edit"></i>
                 </button>
-                <button class="action-btn delete-btn" title="Eliminar">
+                <button 
+                  class="action-btn delete-btn" 
+                  title="Eliminar" 
+                  @click="confirmDelete(product)"
+                >
                   <i class="fas fa-trash"></i>
                 </button>
               </div>
@@ -239,6 +247,40 @@
         </div>
       </div>
     </div>
+
+    <transition name="fade">
+      <div v-if="showEditModal" class="modal-overlay">
+        <div class="modal-container">
+          <div class="modal-header">
+            <h3>Editar Producto</h3>
+            <button class="close-btn" @click="closeEditModal">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <form @submit.prevent="updateProduct" class="modal-form">
+            <div class="form-group">
+              <label for="edit-name">Nombre del Producto</label>
+              <input type="text" id="edit-name" v-model="editingProduct.name" required class="form-input" />
+            </div>
+            <div class="form-group">
+              <label for="edit-price">Precio</label>
+              <input type="number" id="edit-price" v-model.number="editingProduct.price" required class="form-input" />
+            </div>
+            <div class="form-actions">
+              <button type="button" class="cancel-btn" @click="closeEditModal">Cancelar</button>
+              <button type="submit" class="submit-btn" :disabled="isUpdating">
+                <div v-if="isUpdating" class="button-spinner"></div>
+                <i v-else class="fas fa-save"></i>
+                <span>{{ isUpdating ? 'Actualizando...' : 'Guardar Cambios' }}</span>
+              </button>
+            </div>
+          </form>
+          <transition name="slide-down">
+            <div v-if="editError" class="alert alert-error">{{ editError }}</div>
+          </transition>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -261,7 +303,12 @@ export default {
       isSubmitting: false,
       searchTerm: '',
       currentPage: 1,
-      itemsPerPage: 6
+      itemsPerPage: 6,
+      // Nuevas propiedades para la edición
+      showEditModal: false,
+      editingProduct: null,
+      editError: null,
+      isUpdating: false
     };
   },
   computed: {
@@ -365,7 +412,68 @@ export default {
       };
       this.addError = null;
       this.addSuccess = null;
+    },
+
+    // --- Métodos de Edición ---
+    openEditModal(product) {
+      this.editingProduct = { ...product };
+      this.showEditModal = true;
+      this.editError = null;
+    },
+
+    closeEditModal() {
+      this.showEditModal = false;
+      this.editingProduct = null;
+    },
+
+    async updateProduct() {
+      this.isUpdating = true;
+      this.editError = null;
+      try {
+          // En el método updateProduct()
+// Ya no es necesario hacer la conversión, usa el ID original
+  const productId = this.editingProduct.id; // ¡Es un string UUID!
+ 
+// Envía la solicitud con el ID como string
+  const { data } = await apiClient.put(`/api/products/${productId}`, this.editingProduct);
+        
+        // Actualiza el producto en la lista local
+        const index = this.products.findIndex(p => p.id === data.id);
+        if (index !== -1) {
+          // Reemplaza el producto antiguo con el nuevo
+          this.products.splice(index, 1, data);
+        }
+        
+        this.closeEditModal();
+        // Muestra un mensaje de éxito
+        alert('Producto actualizado exitosamente.');
+      } catch (error) {
+        this.editError = 'Error al actualizar el producto. Por favor, inténtalo de nuevo.';
+        console.error("Error al actualizar producto:", error);
+      } finally {
+        this.isUpdating = false;
+      }
+    },
+
+// --- Método de Eliminación ---
+async confirmDelete(product) {
+  if (confirm(`¿Estás seguro de que quieres eliminar el producto "${product.name}"?`)) {
+    try {
+      // Usa el ID del producto tal como viene, que es un string UUID
+      const productId = product.id;
+      
+      await apiClient.delete(`/api/products/${productId}`);
+      
+      // Elimina el producto de la lista local
+      this.products = this.products.filter(p => p.id !== product.id);
+      
+      alert('Producto eliminado exitosamente.');
+    } catch (error) {
+      alert('Error al eliminar el producto.');
+      console.error("Error al eliminar producto:", error);
     }
+  }
+}
   },
   
   mounted() {
@@ -374,14 +482,7 @@ export default {
 };
 </script>
 
----
-
 <style scoped>
-/*
-  He reutilizado y adaptado los estilos de tu componente de clientes
-  para mantener la consistencia en el diseño de toda la aplicación.
-  Puedes pegar estos estilos al final de tu archivo ProductsComponent.vue.
-*/
 
 * {
   box-sizing: border-box;
@@ -971,5 +1072,103 @@ export default {
 
 .product-item-leave-active {
   position: absolute;
+}
+/* ... (tu código CSS actual) ... */
+
+/* ===== MODAL STYLES ===== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-container {
+  background: white;
+  border-radius: 24px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 500px;
+  animation: slide-up 0.4s ease-out forwards;
+}
+
+.modal-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #2d3748;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #718096;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.close-btn:hover {
+  color: #2d3748;
+}
+
+.modal-form {
+  padding: 32px;
+}
+
+.modal-form .form-group {
+  margin-bottom: 24px;
+}
+
+.modal-form .form-actions {
+  margin-top: 32px;
+  justify-content: flex-end;
+}
+
+.cancel-btn {
+  background: #f7fafc;
+  color: #4a5568;
+  border: 2px solid #e2e8f0;
+  padding: 12px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.cancel-btn:hover {
+  background: #edf2f7;
+}
+
+/* Animations */
+@keyframes slide-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.5s;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
 }
 </style>

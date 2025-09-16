@@ -1,20 +1,20 @@
 <template>
-  <div class="products-container">
+  <div class="customers-container">
     <div class="page-header">
       <div class="header-content">
         <div class="header-info">
           <div class="header-icon">
-            <i class="fas fa-boxes"></i>
+            <i class="fas fa-users"></i>
           </div>
           <div class="header-text">
-            <h1 class="page-title">Gestión de Productos</h1>
-            <p class="page-subtitle">Administra tu inventario de productos</p>
+            <h1 class="page-title">Gestión de Clientes</h1>
+            <p class="page-subtitle">Administra tu base de datos de clientes</p>
           </div>
         </div>
         <div class="header-stats">
           <div class="stat-item">
-            <span class="stat-number">{{ products.length }}</span>
-            <span class="stat-label">Productos</span>
+            <span class="stat-number">{{ customers.length }}</span>
+            <span class="stat-label">Clientes</span>
           </div>
         </div>
       </div>
@@ -24,56 +24,83 @@
       <div class="form-card">
         <div class="card-header">
           <div class="card-icon">
-            <i class="fas fa-box-open"></i>
+            <i :class="isEditing ? 'fas fa-user-edit' : 'fas fa-user-plus'"></i>
           </div>
           <div class="card-title">
-            <h3>Registrar Nuevo Producto</h3>
-            <p>Agrega un nuevo producto a tu inventario</p>
+            <h3>{{ isEditing ? 'Editar Cliente' : 'Registrar Nuevo Cliente' }}</h3>
+            <p>{{ isEditing ? 'Modifica los datos del cliente seleccionado' : 'Agrega un nuevo cliente a tu base de datos' }}</p>
           </div>
         </div>
         
-        <form @submit.prevent="addProduct" class="product-form">
+        <form @submit.prevent="isEditing ? updateCustomer() : addCustomer()" class="customer-form">
           <div class="form-grid">
-            <div class="form-group">
-              <label for="product-name">
-                <i class="fas fa-tag"></i>
-                <span>Nombre del Producto *</span>
+            <div class="form-group full-width">
+              <label for="customer-name">
+                <i class="fas fa-user"></i>
+                <span>Nombre del Cliente *</span>
               </label>
               <input 
-                id="product-name"
+                id="customer-name"
                 type="text" 
-                v-model="newProduct.name" 
-                placeholder="Ingresa el nombre del producto"
+                v-model="newCustomer.name" 
+                placeholder="Ingresa el nombre completo del cliente"
                 required 
                 class="form-input"
               />
             </div>
 
             <div class="form-group">
-              <label for="product-price">
-                <i class="fas fa-dollar-sign"></i>
-                <span>Precio *</span>
+              <label for="customer-email">
+                <i class="fas fa-envelope"></i>
+                <span>Email *</span>
               </label>
               <input 
-                id="product-price"
-                type="number" 
-                v-model.number="newProduct.price" 
-                placeholder="0.00"
+                id="customer-email"
+                type="email" 
+                v-model="newCustomer.email" 
+                placeholder="cliente@ejemplo.com"
                 required 
                 class="form-input"
               />
             </div>
+
+            <div class="form-group">
+              <label for="customer-phone">
+                <i class="fas fa-phone-alt"></i>
+                <span>Teléfono</span>
+              </label>
+              <input 
+                id="customer-phone"
+                type="tel" 
+                v-model="newCustomer.phone" 
+                placeholder="Ingresa el número de teléfono"
+                class="form-input"
+              />
+            </div>
+          </div>
+          
+          <div class="form-group full-width">
+            <label for="customer-address">
+              <i class="fas fa-map-marker-alt"></i>
+              <span>Dirección</span>
+            </label>
+            <textarea 
+              id="customer-address"
+              v-model="newCustomer.address" 
+              placeholder="Ingresa la dirección del cliente"
+              class="form-textarea"
+            ></textarea>
           </div>
 
           <div class="form-actions">
             <button type="button" @click="resetForm" class="reset-btn">
               <i class="fas fa-undo"></i>
-              <span>Limpiar</span>
+              <span>{{ isEditing ? 'Cancelar' : 'Limpiar' }}</span>
             </button>
             <button type="submit" class="submit-btn" :disabled="isSubmitting">
               <div v-if="isSubmitting" class="button-spinner"></div>
-              <i v-else class="fas fa-plus"></i>
-              <span>{{ isSubmitting ? 'Agregando...' : 'Agregar Producto' }}</span>
+              <i v-else :class="isEditing ? 'fas fa-save' : 'fas fa-plus'"></i>
+              <span>{{ isSubmitting ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Agregar Cliente') }}</span>
             </button>
           </div>
         </form>
@@ -110,14 +137,14 @@
       <div class="list-card">
         <div class="card-header">
           <div class="card-icon">
-            <i class="fas fa-cubes"></i>
+            <i class="fas fa-address-book"></i>
           </div>
           <div class="card-title">
-            <h3>Lista de Productos</h3>
-            <p>Visualiza y gestiona tu inventario de productos</p>
+            <h3>Lista de Clientes</h3>
+            <p>Visualiza y gestiona tu base de clientes</p>
           </div>
           <div class="card-actions">
-            <button @click="fetchProducts" class="refresh-btn" :disabled="loading">
+            <button @click="fetchCustomers" class="refresh-btn" :disabled="loading">
               <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
               <span>{{ loading ? 'Cargando...' : 'Actualizar' }}</span>
             </button>
@@ -132,7 +159,7 @@
             <input 
               type="text" 
               v-model="searchTerm" 
-              placeholder="Buscar productos por nombre..."
+              placeholder="Buscar clientes por nombre o email..."
               class="search-input"
             />
             <button v-if="searchTerm" @click="searchTerm = ''" class="clear-search">
@@ -141,11 +168,11 @@
           </div>
         </div>
 
-        <div v-if="loading && products.length === 0" class="loading-state">
+        <div v-if="loading && customers.length === 0" class="loading-state">
           <div class="loading-spinner">
             <div class="spinner"></div>
           </div>
-          <p class="loading-text">Cargando productos...</p>
+          <p class="loading-text">Cargando clientes...</p>
         </div>
 
         <div v-if="error && !loading" class="error-state">
@@ -153,47 +180,51 @@
             <i class="fas fa-exclamation-triangle"></i>
           </div>
           <div class="error-content">
-            <h3>Error al cargar productos</h3>
+            <h3>Error al cargar clientes</h3>
             <p>{{ error }}</p>
-            <button @click="fetchProducts" class="retry-btn">
+            <button @click="fetchCustomers" class="retry-btn">
               <i class="fas fa-redo-alt"></i>
               Reintentar
             </button>
           </div>
         </div>
 
-        <div v-if="!loading && !error && products.length === 0" class="empty-state">
+        <div v-if="!loading && !error && customers.length === 0" class="empty-state">
           <div class="empty-icon">
-            <i class="fas fa-boxes"></i>
+            <i class="fas fa-users-slash"></i>
           </div>
           <div class="empty-content">
-            <h3>No hay productos registrados</h3>
-            <p>Comienza agregando tu primer producto usando el formulario de arriba</p>
+            <h3>No hay clientes registrados</h3>
+            <p>Comienza agregando tu primer cliente usando el formulario de arriba</p>
           </div>
         </div>
 
-        <div v-if="!loading && !error && filteredProducts.length > 0" class="products-grid">
-          <transition-group name="product-item" tag="div" class="grid-container">
+        <div v-if="!loading && !error && filteredCustomers.length > 0" class="customers-grid">
+          <transition-group name="customer-item" tag="div" class="grid-container">
             <div 
-              v-for="product in paginatedProducts" 
-              :key="product.id" 
-              class="product-card"
+              v-for="customer in paginatedCustomers" 
+              :key="customer._id" 
+              class="customer-card"
             >
-              <div class="product-avatar">
-                <i class="fas fa-box"></i>
+              <div class="customer-avatar">
+                <i class="fas fa-user-circle"></i>
               </div>
-              <div class="product-info">
-                <h4 class="product-name">{{ product.name }}</h4>
-                <p class="product-price">
-                  <i class="fas fa-dollar-sign"></i>
-                  {{ product.price }}
+              <div class="customer-info">
+                <h4 class="customer-name">{{ customer.name }}</h4>
+                <p class="customer-email">
+                  <i class="fas fa-envelope"></i>
+                  {{ customer.email }}
+                </p>
+                <p v-if="customer.phone" class="customer-phone">
+                  <i class="fas fa-phone-alt"></i>
+                  {{ customer.phone }}
                 </p>
               </div>
-              <div class="product-actions">
-                <button class="action-btn edit-btn" title="Editar">
+              <div class="customer-actions">
+                <button @click="editCustomer(customer)" class="action-btn edit-btn" title="Editar">
                   <i class="fas fa-edit"></i>
                 </button>
-                <button class="action-btn delete-btn" title="Eliminar">
+                <button @click="showDeleteConfirmation(customer)" class="action-btn delete-btn" title="Eliminar">
                   <i class="fas fa-trash"></i>
                 </button>
               </div>
@@ -230,171 +261,278 @@
           </button>
         </div>
 
-        <div v-if="filteredProducts.length > 0" class="results-info">
+        <div v-if="filteredCustomers.length > 0" class="results-info">
           <span>
             Mostrando {{ ((currentPage - 1) * itemsPerPage) + 1 }} - 
-            {{ Math.min(currentPage * itemsPerPage, filteredProducts.length) }} 
-            de {{ filteredProducts.length }} productos
+            {{ Math.min(currentPage * itemsPerPage, filteredCustomers.length) }} 
+            de {{ filteredCustomers.length }} clientes
           </span>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showDeleteModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Confirmar Eliminación</h3>
+          <button @click="cancelDelete" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>¿Estás seguro de que deseas eliminar a **{{ customerToDelete.name }}**?</p>
+          <p>Esta acción no se puede deshacer.</p>
+        </div>
+        <div class="modal-footer">
+          <button @click="cancelDelete" class="btn-cancel">Cancelar</button>
+          <button @click="deleteCustomer" class="btn-delete">Eliminar</button>
         </div>
       </div>
     </div>
   </div>
 </template>
-
 <script>
 import apiClient from '../axios';
 
 export default {
-  name: 'ProductsManagement',
-  data() {
-    return {
-      products: [],
-      newProduct: {
-        name: '',
-        price: 0
-      },
-      loading: false,
-      error: null,
-      addError: null,
-      addSuccess: null,
-      isSubmitting: false,
-      searchTerm: '',
-      currentPage: 1,
-      itemsPerPage: 6
-    };
-  },
-  computed: {
-    filteredProducts() {
-      if (!this.searchTerm) return this.products;
-      
-      const term = this.searchTerm.toLowerCase();
-      return this.products.filter(product => 
-        product.name.toLowerCase().includes(term)
-      );
-    },
-    
-    totalPages() {
-      return Math.ceil(this.filteredProducts.length / this.itemsPerPage);
-    },
-    
-    paginatedProducts() {
-      const start = (this.currentPage - 1) * this.itemsPerPage;
-      const end = start + this.itemsPerPage;
-      return this.filteredProducts.slice(start, end);
-    },
-    
-    visiblePages() {
-      const pages = [];
-      const maxVisible = 5;
-      let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
-      let end = Math.min(this.totalPages, start + maxVisible - 1);
-      
-      if (end - start < maxVisible - 1) {
-        start = Math.max(1, end - maxVisible + 1);
-      }
-      
-      for (let i = start; i <= end; i++) {
-        pages.push(i);
-      }
-      
-      return pages;
-    }
-  },
-  watch: {
-    searchTerm() {
-      this.currentPage = 1;
-    }
-  },
-  methods: {
-    async addProduct() {
-      this.addError = null;
-      this.addSuccess = null;
-      this.isSubmitting = true;
+name: 'CustomersManagement',
+data() {
+return {
+customers: [],
+newCustomer: {
+name: '',
+email: '',
+phone: '',
+address: ''
+},
+loading: false,
+error: null,
+addError: null,
+addSuccess: null,
+isSubmitting: false,
+searchTerm: '',
+currentPage: 1,
+itemsPerPage: 6,
+editingCustomer: null,
+customerToDelete: null,
+showDeleteModal: false
+};
+},
+computed: {
+filteredCustomers() {
+if (!this.searchTerm) return this.customers;
 
-      if (!this.newProduct.name.trim() || !this.newProduct.price) {
-        this.addError = "El nombre y el precio del producto son campos obligatorios.";
-        this.isSubmitting = false;
-        return;
-      }
+const term = this.searchTerm.toLowerCase();
+return this.customers.filter(customer => 
+customer.name.toLowerCase().includes(term) ||
+customer.email.toLowerCase().includes(term)
+);
+},
 
-      try {
-        const { data } = await apiClient.post('/api/products', {
-          ...this.newProduct,
-          name: this.newProduct.name.trim()
-        });
-        
-        this.addSuccess = 'Producto registrado exitosamente.';
-        this.products.unshift(data);
-        this.resetForm();
+totalPages() {
+return Math.ceil(this.filteredCustomers.length / this.itemsPerPage);
+},
 
-        setTimeout(() => {
-          this.addSuccess = null;
-        }, 5000);
-      } catch (error) {
-        if (error.response?.data?.msg) {
-          this.addError = error.response.data.msg;
-        } else {
-          this.addError = 'Error al registrar el producto. Por favor, inténtalo de nuevo.';
-        }
-        console.error("Error al agregar producto:", error);
-      } finally {
-        this.isSubmitting = false;
-      }
-    },
-    
-    async fetchProducts() {
-      this.loading = true;
-      this.error = null;
-      
-      try {
-        const { data } = await apiClient.get('/api/products');
-        this.products = data;
-      } catch (error) {
-        this.error = 'Error al cargar los productos. Por favor, inténtalo de nuevo.';
-        console.error("Error al cargar productos:", error);
-      } finally {
-        this.loading = false;
-      }
-    },
-    
-    resetForm() {
-      this.newProduct = {
-        name: '',
-        price: 0
-      };
-      this.addError = null;
-      this.addSuccess = null;
-    }
-  },
-  
-  mounted() {
-    this.fetchProducts();
-  }
+paginatedCustomers() {
+const start = (this.currentPage - 1) * this.itemsPerPage;
+const end = start + this.itemsPerPage;
+return this.filteredCustomers.slice(start, end);
+},
+
+visiblePages() {
+const pages = [];
+const maxVisible = 5;
+let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+let end = Math.min(this.totalPages, start + maxVisible - 1);
+
+if (end - start < maxVisible - 1) {
+start = Math.max(1, end - maxVisible + 1);
+}
+
+for (let i = start; i <= end; i++) {
+pages.push(i);
+}
+
+return pages;
+},
+
+isEditing() {
+return this.editingCustomer !== null;
+}
+},
+watch: {
+searchTerm() {
+this.currentPage = 1;
+}
+},
+methods: {
+async addCustomer() {
+this.addError = null;
+this.addSuccess = null;
+this.isSubmitting = true;
+
+if (!this.newCustomer.name.trim() || !this.newCustomer.email.trim()) {
+this.addError = "El nombre y el email del cliente son campos obligatorios.";
+this.isSubmitting = false;
+return;
+}
+
+try {
+const { data } = await apiClient.post('/api/customers', {
+...this.newCustomer,
+name: this.newCustomer.name.trim(),
+email: this.newCustomer.email.trim()
+});
+
+this.addSuccess = 'Cliente registrado exitosamente.';
+this.customers.unshift(data);
+this.resetForm();
+
+setTimeout(() => {
+this.addSuccess = null;
+}, 5000);
+} catch (error) {
+if (error.response?.data?.msg) {
+this.addError = error.response.data.msg;
+} else {
+this.addError = 'Error al registrar el cliente. Por favor, inténtalo de nuevo.';
+}
+console.error("Error al agregar cliente:", error);
+} finally {
+this.isSubmitting = false;
+}
+},
+
+editCustomer(customer) {
+// Usa el ID para actualizar el cliente
+this.editingCustomer = { ...customer };
+this.newCustomer = { ...customer };
+this.addError = null;
+this.addSuccess = null;
+window.scrollTo({ top: 0, behavior: 'smooth' });
+},
+
+async updateCustomer() {
+this.addError = null;
+this.addSuccess = null;
+this.isSubmitting = true;
+
+try {
+// **Cambiado de _id a id**
+if (!this.editingCustomer || !this.editingCustomer.id) {
+this.addError = "Error: El ID del cliente no está definido para la actualización.";
+this.isSubmitting = false;
+return;
+}
+
+const { data } = await apiClient.put(`/api/customers/${this.editingCustomer.id}`, {
+name: this.newCustomer.name.trim(),
+email: this.newCustomer.email.trim(),
+phone: this.newCustomer.phone,
+address: this.newCustomer.address
+});
+
+this.addSuccess = 'Cliente actualizado exitosamente.';
+// **Cambiado de _id a id**
+const index = this.customers.findIndex(c => c.id === this.editingCustomer.id);
+if (index !== -1) {
+this.customers.splice(index, 1, data);
+}
+this.resetForm();
+
+setTimeout(() => {
+this.addSuccess = null;
+}, 5000);
+} catch (error) {
+if (error.response?.data?.msg) {
+this.addError = error.response.data.msg;
+} else {
+this.addError = 'Error al actualizar el cliente. Por favor, inténtalo de nuevo.';
+}
+console.error("Error al actualizar cliente:", error);
+} finally {
+this.isSubmitting = false;
+}
+},
+
+showDeleteConfirmation(customer) {
+// Copia el objeto completo del cliente
+this.customerToDelete = { ...customer };
+this.showDeleteModal = true;
+},
+
+cancelDelete() {
+this.customerToDelete = null;
+this.showDeleteModal = false;
+},
+
+async deleteCustomer() {
+try {
+// **Cambiado de _id a id**
+await apiClient.delete(`/api/customers/${this.customerToDelete.id}`);
+// **Cambiado de _id a id**
+this.customers = this.customers.filter(c => c.id !== this.customerToDelete.id);
+this.cancelDelete();
+this.addSuccess = 'Cliente eliminado exitosamente.';
+setTimeout(() => {
+this.addSuccess = null;
+}, 5000);
+} catch (error) {
+this.addError = 'Error al eliminar el cliente. Por favor, inténtalo de nuevo.';
+console.error("Error al eliminar cliente:", error);
+this.cancelDelete();
+}
+},
+
+async fetchCustomers() {
+this.loading = true;
+this.error = null;
+
+try {
+const { data } = await apiClient.get('/api/customers');
+this.customers = data;
+} catch (error) {
+this.error = 'Error al cargar los clientes. Por favor, inténtalo de nuevo.';
+console.error("Error al cargar clientes:", error);
+} finally {
+this.loading = false;
+}
+},
+
+resetForm() {
+this.newCustomer = {
+name: '',
+email: '',
+phone: '',
+address: ''
+};
+this.editingCustomer = null;
+this.addError = null;
+this.addSuccess = null;
+}
+},
+
+mounted() {
+this.fetchCustomers();
+}
 };
 </script>
 
----
+
 
 <style scoped>
-/*
-  He reutilizado y adaptado los estilos de tu componente de clientes
-  para mantener la consistencia en el diseño de toda la aplicación.
-  Puedes pegar estos estilos al final de tu archivo ProductsComponent.vue.
-*/
+/* Estilos existentes de tu código original, adaptados para las nuevas funciones */
 
 * {
   box-sizing: border-box;
 }
 
-.products-container {
+.customers-container {
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   padding: 40px;
 }
 
-/* ===== PAGE HEADER ===== */
+/* Page Header */
 .page-header {
   background: white;
   border-radius: 24px;
@@ -475,7 +613,7 @@ export default {
   letter-spacing: 0.5px;
 }
 
-/* ===== CONTENT WRAPPER ===== */
+/* Content Wrapper */
 .content-wrapper {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -483,7 +621,7 @@ export default {
   align-items: start;
 }
 
-/* ===== FORM CARD ===== */
+/* Form Card and List Card */
 .form-card, .list-card {
   background: white;
   border-radius: 24px;
@@ -513,6 +651,10 @@ export default {
   margin-right: 16px;
 }
 
+.card-title {
+  flex-grow: 1;
+}
+
 .card-title h3 {
   font-size: 20px;
   font-weight: 700;
@@ -531,8 +673,8 @@ export default {
   gap: 12px;
 }
 
-/* ===== FORM STYLES ===== */
-.product-form {
+/* Form Styles */
+.customer-form {
   padding: 40px;
 }
 
@@ -643,7 +785,7 @@ export default {
   animation: spin 1s linear infinite;
 }
 
-/* ===== ALERTS ===== */
+/* Alerts */
 .alert {
   display: flex;
   align-items: center;
@@ -688,7 +830,7 @@ export default {
   background: rgba(0, 0, 0, 0.1);
 }
 
-/* ===== SEARCH BAR ===== */
+/* Search Bar */
 .search-section {
   padding: 24px 40px;
   border-bottom: 2px solid #f7fafc;
@@ -741,7 +883,7 @@ export default {
   color: #4a5568;
 }
 
-/* ===== REFRESH BUTTON ===== */
+/* Refresh Button */
 .refresh-btn {
   padding: 12px 20px;
   background: linear-gradient(135deg, #667eea, #764ba2);
@@ -766,7 +908,7 @@ export default {
   cursor: not-allowed;
 }
 
-/* ===== LOADING, ERROR, EMPTY STATES ===== */
+/* Loading, Error, Empty States */
 .loading-state, .error-state, .empty-state {
   padding: 60px 40px;
   text-align: center;
@@ -850,8 +992,8 @@ export default {
   box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
 }
 
-/* ===== PRODUCTS GRID ===== */
-.products-grid {
+/* Customers Grid */
+.customers-grid {
   padding: 24px 40px;
 }
 
@@ -861,7 +1003,7 @@ export default {
   gap: 24px;
 }
 
-.product-card {
+.customer-card {
   background: #f8fafc;
   border: 2px solid #e2e8f0;
   border-radius: 16px;
@@ -870,13 +1012,13 @@ export default {
   position: relative;
 }
 
-.product-card:hover {
+.customer-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 32px rgba(102, 126, 234, 0.15);
   border-color: #667eea;
 }
 
-.product-avatar {
+.customer-avatar {
   width: 56px;
   height: 56px;
   background: linear-gradient(135deg, #667eea, #764ba2);
@@ -889,18 +1031,18 @@ export default {
   margin-bottom: 16px;
 }
 
-.product-info {
+.customer-info {
   margin-bottom: 16px;
 }
 
-.product-name {
+.customer-name {
   font-size: 18px;
   font-weight: 700;
   color: #2d3748;
   margin: 0 0 12px 0;
 }
 
-.product-price {
+.customer-email, .customer-phone {
   display: flex;
   align-items: center;
   font-size: 16px;
@@ -909,12 +1051,12 @@ export default {
   margin: 8px 0;
 }
 
-.product-price i {
+.customer-email i, .customer-phone i {
   margin-right: 8px;
   color: #718096;
 }
 
-.product-actions {
+.customer-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
@@ -960,16 +1102,182 @@ export default {
   opacity: 0;
 }
 
-.product-item-enter-active, .product-item-leave-active {
+.customer-item-enter-active, .customer-item-leave-active {
   transition: all 0.5s ease;
 }
 
-.product-item-enter-from, .product-item-leave-to {
+.customer-item-enter-from, .customer-item-leave-to {
   opacity: 0;
   transform: scale(0.9);
 }
 
-.product-item-leave-active {
+.customer-item-leave-active {
   position: absolute;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  padding: 30px;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 450px;
+  position: relative;
+  animation: modal-fade-in 0.3s ease-out;
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-header h3 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #e53e3e;
+  margin: 0;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  font-size: 30px;
+  cursor: pointer;
+  color: #718096;
+}
+
+.modal-body {
+  margin-bottom: 20px;
+}
+
+.modal-body p {
+  color: #4a5568;
+  line-height: 1.5;
+  margin: 0 0 10px 0;
+}
+
+.modal-body strong {
+  color: #2d3748;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-cancel, .btn-delete {
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.btn-cancel {
+  background: #e2e8f0;
+  color: #4a5568;
+}
+
+.btn-cancel:hover {
+  background: #cbd5e0;
+}
+
+.btn-delete {
+  background: #e53e3e;
+  color: white;
+}
+
+.btn-delete:hover {
+  background: #c53030;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(229, 62, 62, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 992px) {
+  .content-wrapper {
+    grid-template-columns: 1fr;
+  }
+  
+  .page-header, .form-card, .list-card {
+    padding: 30px;
+  }
+  
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .customers-container {
+    padding: 20px;
+  }
+  
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+  }
+  
+  .header-stats {
+    width: 100%;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  
+  .form-card, .list-card {
+    padding: 20px;
+  }
+  
+  .customer-form {
+    padding: 20px;
+  }
+  
+  .search-section {
+    padding: 20px;
+  }
+  
+  .customers-grid {
+    padding: 20px;
+  }
+  
+  .grid-container {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -5,31 +5,30 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Get your database connection string from the environment variables
-# It's a good practice to not hardcode sensitive information
 DB_CONNECTION_STRING = os.environ.get("DATABASE_URL")
 
 def create_additional_tables():
-    """Crea las tablas 'customers' y 'products' en la base de datos de Neon."""
+    """Crea las tablas 'orders' y 'order_items' en la base de datos de Neon."""
     
-    # SQL para crear la tabla de clientes (NUEVA)
-    create_customers_table_query = """
-    CREATE TABLE IF NOT EXISTS customers (
+    # SQL para crear la tabla de pedidos (NUEVA)
+    create_orders_table_query = """
+    CREATE TABLE IF NOT EXISTS orders (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        phone VARCHAR(50),
-        address TEXT,
-        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+        order_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(50) NOT NULL DEFAULT 'Pendiente',
+        total_amount NUMERIC(10, 2) NOT NULL
     );
     """
 
-    # SQL para crear la tabla de productos (NUEVA)
-    create_products_table_query = """
-    CREATE TABLE IF NOT EXISTS products (
+    # SQL para crear la tabla de elementos de pedido (NUEVA)
+    create_order_items_table_query = """
+    CREATE TABLE IF NOT EXISTS order_items (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        name VARCHAR(255) NOT NULL,
-        price NUMERIC(10, 2) NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
+        product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+        quantity INTEGER NOT NULL,
+        price NUMERIC(10, 2) NOT NULL
     );
     """
 
@@ -41,14 +40,14 @@ def create_additional_tables():
         cur = conn.cursor()
         
         # Execute the queries to create the new tables
-        print("Creando la tabla 'customers'...")
-        cur.execute(create_customers_table_query)
-        print("Creando la tabla 'products'...")
-        cur.execute(create_products_table_query)
+        print("Creando la tabla 'orders'...")
+        cur.execute(create_orders_table_query)
+        print("Creando la tabla 'order_items'...")
+        cur.execute(create_order_items_table_query)
         
         # Commit the changes
         conn.commit()
-        print("Tablas 'customers' y 'products' creadas con éxito.")
+        print("Tablas 'orders' y 'order_items' creadas con éxito.")
 
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Error al conectar o crear las tablas: {error}")

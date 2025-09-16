@@ -8,15 +8,22 @@ import RegisterForm from '../components/RegisterForm.vue';
 import Customers from '../components/CustomersComponent.vue';
 import UserProfile from '../components/UserProfile.vue'; // Nuevo
 import Products from '../components/ProductsComponent.vue'; // Nuevo
+import OrdersComponent from '@/components/OrdersComponent.vue';
+import AnalyticsComponent from '@/components/AnalyticsComponent.vue';
+
 
 const routes = [
   { path: '/', name: 'Home', component: HomeView },
   { path: '/login', name: 'Login', component: LoginForm },
   { path: '/register', name: 'Register', component: RegisterForm },
-  { path: '/HomeDashboard', name: 'HomeDashboard', component: HomeDashboard, meta: { requiresAuth: true } },
+  { path: '/dashboard', name: 'HomeDashboard', component: HomeDashboard, meta: { requiresAuth: true } },
   { path: '/customers', name: 'Customers', component: Customers, meta: { requiresAuth: true } },
   { path: '/profile', name: 'UserProfile', component: UserProfile, meta: { requiresAuth: true } }, // Ruta protegida
-  { path: '/products', name: 'Products', component: Products, meta: { requiresAuth: true } } // Ruta protegida
+  { path: '/products', name: 'Products', component: Products, meta: { requiresAuth: true } }, // Ruta protegida
+  { path: '/orders', name: 'Orders', component: OrdersComponent, meta: { requiresAuth: true } }, // Ruta protegida
+  { path: '/analytics', name: 'Analytics', component: AnalyticsComponent, meta: { requiresAuth: true } } // Ruta protegida
+
+
 ];
 
 const router = createRouter({

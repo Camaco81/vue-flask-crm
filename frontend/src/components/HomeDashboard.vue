@@ -98,7 +98,10 @@
               <i class="fas fa-users"></i>
             </div>
             <div class="stat-content">
-              <h3 class="stat-number">1,234</h3>
+              <h3 class="stat-number">
+                <span v-if="loading.customers" class="spinner-small"></span>
+                <span v-else>{{ metrics.customers }}</span>
+              </h3>
               <p class="stat-label">Clientes Totales</p>
             </div>
           </div>
@@ -108,7 +111,10 @@
               <i class="fas fa-box-open"></i>
             </div>
             <div class="stat-content">
-              <h3 class="stat-number">567</h3>
+              <h3 class="stat-number">
+                <span v-if="loading.products" class="spinner-small"></span>
+                <span v-else>{{ metrics.products }}</span>
+              </h3>
               <p class="stat-label">Productos</p>
             </div>
           </div>
@@ -118,7 +124,10 @@
               <i class="fas fa-shopping-cart"></i>
             </div>
             <div class="stat-content">
-              <h3 class="stat-number">89</h3>
+              <h3 class="stat-number">
+                <span v-if="loading.orders" class="spinner-small"></span>
+                <span v-else>{{ metrics.orders }}</span>
+              </h3>
               <p class="stat-label">Pedidos Hoy</p>
             </div>
           </div>
@@ -128,8 +137,11 @@
               <i class="fas fa-dollar-sign"></i>
             </div>
             <div class="stat-content">
-              <h3 class="stat-number">$12,345</h3>
-              <p class="stat-label">Ingresos</p>
+              <h3 class="stat-number">
+                <span v-if="loading.revenue" class="spinner-small"></span>
+                <span v-else>${{ metrics.revenue }}</span>
+              </h3>
+              <p class="stat-label">Ingresos Totales</p>
             </div>
           </div>
         </div>
@@ -161,19 +173,108 @@
 </template>
 
 <script>
+import apiClient from '../axios';
+
 export default {
-  name: 'HomeDasboard',
+  name: 'HomeDashboard',
+  data() {
+    return {
+      metrics: {
+        customers: 0,
+        products: 0,
+        orders: 0,
+        revenue: 0,
+      },
+      loading: {
+        customers: true,
+        products: true,
+        orders: true,
+        revenue: true,
+      },
+      errors: {
+        customers: null,
+        products: null,
+        orders: null,
+        revenue: null,
+      }
+    };
+  },
   methods: {
     logout() {
-      // Usar sessionStorage en lugar de localStorage como alternativa más segura
       sessionStorage.removeItem('access_token');
       this.$router.push('/login');
+    },
+    
+    async fetchCustomers() {
+      try {
+        const response = await apiClient.get('/api/customers');
+        this.metrics.customers = response.data.length;
+      } catch (error) {
+        console.error("Error fetching customers:", error);
+        this.errors.customers = "Error al cargar clientes";
+      } finally {
+        this.loading.customers = false;
+      }
+    },
+    
+    async fetchProducts() {
+      try {
+        const response = await apiClient.get('/api/products');
+        this.metrics.products = response.data.length;
+      } catch (error) {
+        console.error("Error fetching products:", error);
+        this.errors.products = "Error al cargar productos";
+      } finally {
+        this.loading.products = false;
+      }
+    },
+    
+    async fetchOrdersToday() {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const response = await apiClient.get(`/api/orders?date=${today}`);
+        this.metrics.orders = response.data.length;
+      } catch (error) {
+        console.error("Error fetching today's orders:", error);
+        this.errors.orders = "Error al cargar pedidos";
+      } finally {
+        this.loading.orders = false;
+      }
+    },
+    
+    async fetchTotalRevenue() {
+      try {
+        const response = await apiClient.get('/api/revenue');
+        this.metrics.revenue = response.data.totalRevenue.toFixed(2);
+      } catch (error) {
+        console.error("Error fetching total revenue:", error);
+        this.errors.revenue = "Error al cargar ingresos";
+      } finally {
+        this.loading.revenue = false;
+      }
+    },
+    
+    fetchDashboardData() {
+      this.fetchCustomers();
+      this.fetchProducts();
+      this.fetchOrdersToday();
+      this.fetchTotalRevenue();
     }
+  },
+  mounted() {
+    this.fetchDashboardData();
   }
 };
 </script>
 
+---
+
 <style scoped>
+/*
+  Los estilos CSS se mantienen igual que en tu código original,
+  simplemente se ha añadido un estilo para el spinner de carga.
+*/
+
 * {
   box-sizing: border-box;
 }
@@ -479,6 +580,22 @@ export default {
   color: #718096;
   margin: 0;
   font-weight: 500;
+}
+
+/* ===== SPINNER ESTILOS ===== */
+.spinner-small {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #f3f4f6;
+  border-top: 3px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .quick-actions {
