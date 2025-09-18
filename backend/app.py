@@ -36,6 +36,9 @@ else:
     print("Advertencia: La variable de entorno CLOUDINARY_URL no está configurada.")
     print("La subida de imágenes a Cloudinary no funcionará.")
 
+@app.route('/')
+def index():
+    return jsonify(message="API is running!"), 200
 
 @app.route("/register", methods=["POST"])
 def register():
