@@ -89,9 +89,6 @@ body {
   color: white;
 }
 
-.content {
-  padding: 2rem;
-}
 
 .router-link-active {
   color: #f1c40f;

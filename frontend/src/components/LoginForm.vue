@@ -1,5 +1,5 @@
 <template>
-  <div class="login-container">
+  <div class="login-container ">
     <div class="background-decoration">
       <div class="circle circle-1"></div>
       <div class="circle circle-2"></div>
@@ -100,7 +100,10 @@ export default {
 /* Estilos extraídos del diseño original que te gustó */
 * {
   box-sizing: border-box;
+
 }
+
+
 
 .login-container {
   display: flex;
@@ -334,9 +337,10 @@ h2 {
 
 /* Responsive design */
 @media (max-width: 480px) {
+  
   .login-card {
     padding: 35px 25px;
-    margin: 10px;
+    margin: 5px;
   }
   
   h2 {
