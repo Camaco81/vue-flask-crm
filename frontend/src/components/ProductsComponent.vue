@@ -8,9 +8,9 @@
           </div>
           <div class="header-text">
             <h1 class="page-title">Gestión de Productos</h1>
-                   <BackButton />
+
             <p class="page-subtitle">Administra tu inventario de productos</p>
-            
+            <BackButton />
           </div>
         </div>
         <div class="header-stats">
@@ -33,52 +33,53 @@
             <p>Agrega un nuevo producto a tu inventario</p>
           </div>
         </div>
-        
-        <form @submit.prevent="addProduct" class="product-form">
-          <div class="form-grid">
-            <div class="form-group">
-              <label for="product-name">
-                <i class="fas fa-tag"></i>
-                <span>Nombre del Producto *</span>
-              </label>
-              <input 
-                id="product-name"
-                type="text" 
-                v-model="newProduct.name" 
-                placeholder="Ingresa el nombre del producto"
-                required 
-                class="form-input"
-              />
+        <div class="card-content">
+          <form @submit.prevent="addProduct" class="product-form">
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="product-name">
+                  <i class="fas fa-tag"></i>
+                  <span>Nombre del Producto *</span>
+                </label>
+                <input
+                  id="product-name"
+                  type="text"
+                  v-model="newProduct.name"
+                  placeholder="Ingresa el nombre del producto"
+                  required
+                  class="form-input"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="product-price">
+                  <i class="fas fa-dollar-sign"></i>
+                  <span>Precio *</span>
+                </label>
+                <input
+                  id="product-price"
+                  type="number"
+                  v-model.number="newProduct.price"
+                  placeholder="0.00"
+                  required
+                  class="form-input"
+                />
+              </div>
             </div>
 
-            <div class="form-group">
-              <label for="product-price">
-                <i class="fas fa-dollar-sign"></i>
-                <span>Precio *</span>
-              </label>
-              <input 
-                id="product-price"
-                type="number" 
-                v-model.number="newProduct.price" 
-                placeholder="0.00"
-                required 
-                class="form-input"
-              />
+            <div class="form-actions">
+              <button type="button" @click="resetForm" class="reset-btn">
+                <i class="fas fa-undo"></i>
+                <span>Limpiar</span>
+              </button>
+              <button type="submit" class="submit-btn" :disabled="isSubmitting">
+                <div v-if="isSubmitting" class="button-spinner"></div>
+                <i v-else class="fas fa-plus"></i>
+                <span>{{ isSubmitting ? 'Agregando...' : 'Agregar Producto' }}</span>
+              </button>
             </div>
-          </div>
-
-          <div class="form-actions">
-            <button type="button" @click="resetForm" class="reset-btn">
-              <i class="fas fa-undo"></i>
-              <span>Limpiar</span>
-            </button>
-            <button type="submit" class="submit-btn" :disabled="isSubmitting">
-              <div v-if="isSubmitting" class="button-spinner"></div>
-              <i v-else class="fas fa-plus"></i>
-              <span>{{ isSubmitting ? 'Agregando...' : 'Agregar Producto' }}</span>
-            </button>
-          </div>
-        </form>
+          </form>
+        </div>
 
         <transition name="slide-down">
           <div v-if="addError" class="alert alert-error">
@@ -131,9 +132,9 @@
             <div class="search-icon">
               <i class="fas fa-search"></i>
             </div>
-            <input 
-              type="text" 
-              v-model="searchTerm" 
+            <input
+              type="text"
+              v-model="searchTerm"
               placeholder="Buscar productos por nombre..."
               class="search-input"
             />
@@ -176,9 +177,9 @@
 
         <div v-if="!loading && !error && filteredProducts.length > 0" class="products-grid">
           <transition-group name="product-item" tag="div" class="grid-container">
-            <div 
-              v-for="product in paginatedProducts" 
-              :key="product.id" 
+            <div
+              v-for="product in paginatedProducts"
+              :key="product.id"
               class="product-card"
             >
               <div class="product-avatar">
@@ -192,16 +193,16 @@
                 </p>
               </div>
               <div class="product-actions">
-                <button 
-                  class="action-btn edit-btn" 
-                  title="Editar" 
+                <button
+                  class="action-btn edit-btn"
+                  title="Editar"
                   @click="openEditModal(product)"
                 >
                   <i class="fas fa-edit"></i>
                 </button>
-                <button 
-                  class="action-btn delete-btn" 
-                  title="Eliminar" 
+                <button
+                  class="action-btn delete-btn"
+                  title="Eliminar"
                   @click="confirmDelete(product)"
                 >
                   <i class="fas fa-trash"></i>
@@ -212,17 +213,17 @@
         </div>
 
         <div v-if="totalPages > 1" class="pagination">
-          <button 
-            @click="currentPage--" 
+          <button
+            @click="currentPage--"
             :disabled="currentPage === 1"
             class="page-btn"
           >
             <i class="fas fa-chevron-left"></i>
           </button>
-          
+
           <div class="page-numbers">
-            <button 
-              v-for="page in visiblePages" 
+            <button
+              v-for="page in visiblePages"
               :key="page"
               @click="currentPage = page"
               :class="['page-number', { active: currentPage === page }]"
@@ -231,8 +232,8 @@
             </button>
           </div>
 
-          <button 
-            @click="currentPage++" 
+          <button
+            @click="currentPage++"
             :disabled="currentPage === totalPages"
             class="page-btn"
           >
@@ -242,8 +243,8 @@
 
         <div v-if="filteredProducts.length > 0" class="results-info">
           <span>
-            Mostrando {{ ((currentPage - 1) * itemsPerPage) + 1 }} - 
-            {{ Math.min(currentPage * itemsPerPage, filteredProducts.length) }} 
+            Mostrando {{ ((currentPage - 1) * itemsPerPage) + 1 }} -
+            {{ Math.min(currentPage * itemsPerPage, filteredProducts.length) }}
             de {{ filteredProducts.length }} productos
           </span>
         </div>
@@ -292,11 +293,11 @@ import BackButton from './BackButton.vue';
 
 export default {
   name: 'ProductsManagement',
-  data() {  
+  components: {
+    BackButton
+  },
+  data() {
     return {
-       components: {
-     BackButton
-   },
       products: [],
       newProduct: {
         name: '',
@@ -310,48 +311,46 @@ export default {
       searchTerm: '',
       currentPage: 1,
       itemsPerPage: 6,
-      // Nuevas propiedades para la edición
       showEditModal: false,
       editingProduct: null,
       editError: null,
       isUpdating: false
     };
-    
   },
   computed: {
     filteredProducts() {
       if (!this.searchTerm) return this.products;
-      
+
       const term = this.searchTerm.toLowerCase();
-      return this.products.filter(product => 
+      return this.products.filter(product =>
         product.name.toLowerCase().includes(term)
       );
     },
-    
+
     totalPages() {
       return Math.ceil(this.filteredProducts.length / this.itemsPerPage);
     },
-    
+
     paginatedProducts() {
       const start = (this.currentPage - 1) * this.itemsPerPage;
       const end = start + this.itemsPerPage;
       return this.filteredProducts.slice(start, end);
     },
-    
+
     visiblePages() {
       const pages = [];
       const maxVisible = 5;
       let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
       let end = Math.min(this.totalPages, start + maxVisible - 1);
-      
+
       if (end - start < maxVisible - 1) {
         start = Math.max(1, end - maxVisible + 1);
       }
-      
+
       for (let i = start; i <= end; i++) {
         pages.push(i);
       }
-      
+
       return pages;
     }
   },
@@ -377,7 +376,7 @@ export default {
           ...this.newProduct,
           name: this.newProduct.name.trim()
         });
-        
+
         this.addSuccess = 'Producto registrado exitosamente.';
         this.products.unshift(data);
         this.resetForm();
@@ -396,11 +395,11 @@ export default {
         this.isSubmitting = false;
       }
     },
-    
+
     async fetchProducts() {
       this.loading = true;
       this.error = null;
-      
+
       try {
         const { data } = await apiClient.get('/api/products');
         this.products = data;
@@ -411,7 +410,7 @@ export default {
         this.loading = false;
       }
     },
-    
+
     resetForm() {
       this.newProduct = {
         name: '',
@@ -437,22 +436,16 @@ export default {
       this.isUpdating = true;
       this.editError = null;
       try {
-          // En el método updateProduct()
-// Ya no es necesario hacer la conversión, usa el ID original
-  const productId = this.editingProduct.id; // ¡Es un string UUID!
- 
-// Envía la solicitud con el ID como string
-  const { data } = await apiClient.put(`/api/products/${productId}`, this.editingProduct);
-        
-        // Actualiza el producto en la lista local
+        const productId = this.editingProduct.id;
+
+        const { data } = await apiClient.put(`/api/products/${productId}`, this.editingProduct);
+
         const index = this.products.findIndex(p => p.id === data.id);
         if (index !== -1) {
-          // Reemplaza el producto antiguo con el nuevo
           this.products.splice(index, 1, data);
         }
-        
+
         this.closeEditModal();
-        // Muestra un mensaje de éxito
         alert('Producto actualizado exitosamente.');
       } catch (error) {
         this.editError = 'Error al actualizar el producto. Por favor, inténtalo de nuevo.';
@@ -462,27 +455,25 @@ export default {
       }
     },
 
-// --- Método de Eliminación ---
-async confirmDelete(product) {
-  if (confirm(`¿Estás seguro de que quieres eliminar el producto "${product.name}"?`)) {
-    try {
-      // Usa el ID del producto tal como viene, que es un string UUID
-      const productId = product.id;
-      
-      await apiClient.delete(`/api/products/${productId}`);
-      
-      // Elimina el producto de la lista local
-      this.products = this.products.filter(p => p.id !== product.id);
-      
-      alert('Producto eliminado exitosamente.');
-    } catch (error) {
-      alert('Error al eliminar el producto.');
-      console.error("Error al eliminar producto:", error);
+    // --- Método de Eliminación ---
+    async confirmDelete(product) {
+      if (confirm(`¿Estás seguro de que quieres eliminar el producto "${product.name}"?`)) {
+        try {
+          const productId = product.id;
+
+          await apiClient.delete(`/api/products/${productId}`);
+
+          this.products = this.products.filter(p => p.id !== product.id);
+
+          alert('Producto eliminado exitosamente.');
+        } catch (error) {
+          alert('Error al eliminar el producto.');
+          console.error("Error al eliminar producto:", error);
+        }
+      }
     }
-  }
-}
   },
-  
+
   mounted() {
     this.fetchProducts();
   }

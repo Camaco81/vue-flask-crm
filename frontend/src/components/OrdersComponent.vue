@@ -1,8 +1,7 @@
 <template>
   <div class="orders-container">
     <h1 class="page-title">Gestión de Pedidos</h1>
-        <BackButton />
-    <div class="card create-order-card">
+    <BackButton /> <div class="card create-order-card">
       <h2>Crear Nuevo Pedido</h2>
       
       <form @submit.prevent="createOrder">
@@ -86,16 +85,15 @@ export default {
       },
       loading: false,
       creating: false,
-          components: {
-    BackButton
-  }
     };
+  },
+  components: {
+    BackButton
   },
   async mounted() {
     await this.fetchData();
   },
   methods: {
-
     async fetchData() {
       this.loading = true;
       try {

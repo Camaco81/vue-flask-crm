@@ -1,8 +1,7 @@
 <template>
   <div class="analytics-container">
     <h1 class="page-title">Dashboard</h1>
-     <BackButton />
-    <p class="subtitle">Aquí tienes un resumen de tu panel de control</p>
+    <BackButton /> <p class="subtitle">Aquí tienes un resumen de tu panel de control</p>
     
     <div v-if="loading" class="loading-state">
       Cargando analíticas...
@@ -49,10 +48,10 @@ export default {
       },
       loading: false,
       error: null,
-        components: {
-     BackButton
-   },
     };
+  },
+  components: {
+    BackButton
   },
   async mounted() {
     await this.fetchAnalytics();

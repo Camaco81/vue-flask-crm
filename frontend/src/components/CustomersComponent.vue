@@ -6,10 +6,14 @@
           <div class="header-icon">
             <i class="fas fa-users"></i>
           </div>
-          <div class="header-text">
-            <h1 class="page-title">Gestión de Clientes</h1>
-            <p class="page-subtitle">Administra tu base de datos de clientes</p>
-                <BackButton />
+          <div class="header-text-container">
+            <div class="header-text">
+              <h1 class="page-title">Gestión de Clientes</h1>
+              <p class="page-subtitle">Administra tu base de datos de clientes</p>
+            </div>
+            <div class="header-actions">
+              <BackButton />
+            </div>
           </div>
         </div>
         <div class="header-stats">
@@ -295,229 +299,229 @@ import apiClient from '../axios';
 import BackButton from '@/components/BackButton.vue';
 
 export default {
-components: {
+  components: {
     BackButton
   },
-name: 'CustomersManagement',
-data() {
-return {
-customers: [],
-newCustomer: {
-name: '',
-email: '',
-phone: '',
-address: ''
-},
-loading: false,
-error: null,
-addError: null,
-addSuccess: null,
-isSubmitting: false,
-searchTerm: '',
-currentPage: 1,
-itemsPerPage: 6,
-editingCustomer: null,
-customerToDelete: null,
-showDeleteModal: false
-};
-},
-computed: {
-filteredCustomers() {
-if (!this.searchTerm) return this.customers;
+  name: 'CustomersManagement',
+  data() {
+    return {
+      customers: [],
+      newCustomer: {
+        name: '',
+        email: '',
+        phone: '',
+        address: ''
+      },
+      loading: false,
+      error: null,
+      addError: null,
+      addSuccess: null,
+      isSubmitting: false,
+      searchTerm: '',
+      currentPage: 1,
+      itemsPerPage: 6,
+      editingCustomer: null,
+      customerToDelete: null,
+      showDeleteModal: false
+    };
+  },
+  computed: {
+    filteredCustomers() {
+      if (!this.searchTerm) return this.customers;
 
-const term = this.searchTerm.toLowerCase();
-return this.customers.filter(customer => 
-customer.name.toLowerCase().includes(term) ||
-customer.email.toLowerCase().includes(term)
-);
-},
+      const term = this.searchTerm.toLowerCase();
+      return this.customers.filter(customer => 
+        customer.name.toLowerCase().includes(term) ||
+        customer.email.toLowerCase().includes(term)
+      );
+    },
 
-totalPages() {
-return Math.ceil(this.filteredCustomers.length / this.itemsPerPage);
-},
+    totalPages() {
+      return Math.ceil(this.filteredCustomers.length / this.itemsPerPage);
+    },
 
-paginatedCustomers() {
-const start = (this.currentPage - 1) * this.itemsPerPage;
-const end = start + this.itemsPerPage;
-return this.filteredCustomers.slice(start, end);
-},
+    paginatedCustomers() {
+      const start = (this.currentPage - 1) * this.itemsPerPage;
+      const end = start + this.itemsPerPage;
+      return this.filteredCustomers.slice(start, end);
+    },
 
-visiblePages() {
-const pages = [];
-const maxVisible = 5;
-let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
-let end = Math.min(this.totalPages, start + maxVisible - 1);
+    visiblePages() {
+      const pages = [];
+      const maxVisible = 5;
+      let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+      let end = Math.min(this.totalPages, start + maxVisible - 1);
 
-if (end - start < maxVisible - 1) {
-start = Math.max(1, end - maxVisible + 1);
-}
+      if (end - start < maxVisible - 1) {
+        start = Math.max(1, end - maxVisible + 1);
+      }
 
-for (let i = start; i <= end; i++) {
-pages.push(i);
-}
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
 
-return pages;
-},
+      return pages;
+    },
 
-isEditing() {
-return this.editingCustomer !== null;
-}
-},
-watch: {
-searchTerm() {
-this.currentPage = 1;
-}
-},
-methods: {
-async addCustomer() {
-this.addError = null;
-this.addSuccess = null;
-this.isSubmitting = true;
+    isEditing() {
+      return this.editingCustomer !== null;
+    }
+  },
+  watch: {
+    searchTerm() {
+      this.currentPage = 1;
+    }
+  },
+  methods: {
+    async addCustomer() {
+      this.addError = null;
+      this.addSuccess = null;
+      this.isSubmitting = true;
 
-if (!this.newCustomer.name.trim() || !this.newCustomer.email.trim()) {
-this.addError = "El nombre y el email del cliente son campos obligatorios.";
-this.isSubmitting = false;
-return;
-}
+      if (!this.newCustomer.name.trim() || !this.newCustomer.email.trim()) {
+        this.addError = "El nombre y el email del cliente son campos obligatorios.";
+        this.isSubmitting = false;
+        return;
+      }
 
-try {
-const { data } = await apiClient.post('/api/customers', {
-...this.newCustomer,
-name: this.newCustomer.name.trim(),
-email: this.newCustomer.email.trim()
-});
+      try {
+        const { data } = await apiClient.post('/api/customers', {
+          ...this.newCustomer,
+          name: this.newCustomer.name.trim(),
+          email: this.newCustomer.email.trim()
+        });
 
-this.addSuccess = 'Cliente registrado exitosamente.';
-this.customers.unshift(data);
-this.resetForm();
+        this.addSuccess = 'Cliente registrado exitosamente.';
+        this.customers.unshift(data);
+        this.resetForm();
 
-setTimeout(() => {
-this.addSuccess = null;
-}, 5000);
-} catch (error) {
-if (error.response?.data?.msg) {
-this.addError = error.response.data.msg;
-} else {
-this.addError = 'Error al registrar el cliente. Por favor, inténtalo de nuevo.';
-}
-console.error("Error al agregar cliente:", error);
-} finally {
-this.isSubmitting = false;
-}
-},
+        setTimeout(() => {
+          this.addSuccess = null;
+        }, 5000);
+      } catch (error) {
+        if (error.response?.data?.msg) {
+          this.addError = error.response.data.msg;
+        } else {
+          this.addError = 'Error al registrar el cliente. Por favor, inténtalo de nuevo.';
+        }
+        console.error("Error al agregar cliente:", error);
+      } finally {
+        this.isSubmitting = false;
+      }
+    },
 
-editCustomer(customer) {
-// Usa el ID para actualizar el cliente
-this.editingCustomer = { ...customer };
-this.newCustomer = { ...customer };
-this.addError = null;
-this.addSuccess = null;
-window.scrollTo({ top: 0, behavior: 'smooth' });
-},
+    editCustomer(customer) {
+      // Usa el ID para actualizar el cliente
+      this.editingCustomer = { ...customer };
+      this.newCustomer = { ...customer };
+      this.addError = null;
+      this.addSuccess = null;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
 
-async updateCustomer() {
-this.addError = null;
-this.addSuccess = null;
-this.isSubmitting = true;
+    async updateCustomer() {
+      this.addError = null;
+      this.addSuccess = null;
+      this.isSubmitting = true;
 
-try {
-// **Cambiado de _id a id**
-if (!this.editingCustomer || !this.editingCustomer.id) {
-this.addError = "Error: El ID del cliente no está definido para la actualización.";
-this.isSubmitting = false;
-return;
-}
+      try {
+        // **Cambiado de _id a id**
+        if (!this.editingCustomer || !this.editingCustomer.id) {
+          this.addError = "Error: El ID del cliente no está definido para la actualización.";
+          this.isSubmitting = false;
+          return;
+        }
 
-const { data } = await apiClient.put(`/api/customers/${this.editingCustomer.id}`, {
-name: this.newCustomer.name.trim(),
-email: this.newCustomer.email.trim(),
-phone: this.newCustomer.phone,
-address: this.newCustomer.address
-});
+        const { data } = await apiClient.put(`/api/customers/${this.editingCustomer.id}`, {
+          name: this.newCustomer.name.trim(),
+          email: this.newCustomer.email.trim(),
+          phone: this.newCustomer.phone,
+          address: this.newCustomer.address
+        });
 
-this.addSuccess = 'Cliente actualizado exitosamente.';
-// **Cambiado de _id a id**
-const index = this.customers.findIndex(c => c.id === this.editingCustomer.id);
-if (index !== -1) {
-this.customers.splice(index, 1, data);
-}
-this.resetForm();
+        this.addSuccess = 'Cliente actualizado exitosamente.';
+        // **Cambiado de _id a id**
+        const index = this.customers.findIndex(c => c.id === this.editingCustomer.id);
+        if (index !== -1) {
+          this.customers.splice(index, 1, data);
+        }
+        this.resetForm();
 
-setTimeout(() => {
-this.addSuccess = null;
-}, 5000);
-} catch (error) {
-if (error.response?.data?.msg) {
-this.addError = error.response.data.msg;
-} else {
-this.addError = 'Error al actualizar el cliente. Por favor, inténtalo de nuevo.';
-}
-console.error("Error al actualizar cliente:", error);
-} finally {
-this.isSubmitting = false;
-}
-},
+        setTimeout(() => {
+          this.addSuccess = null;
+        }, 5000);
+      } catch (error) {
+        if (error.response?.data?.msg) {
+          this.addError = error.response.data.msg;
+        } else {
+          this.addError = 'Error al actualizar el cliente. Por favor, inténtalo de nuevo.';
+        }
+        console.error("Error al actualizar cliente:", error);
+      } finally {
+        this.isSubmitting = false;
+      }
+    },
 
-showDeleteConfirmation(customer) {
-// Copia el objeto completo del cliente
-this.customerToDelete = { ...customer };
-this.showDeleteModal = true;
-},
+    showDeleteConfirmation(customer) {
+      // Copia el objeto completo del cliente
+      this.customerToDelete = { ...customer };
+      this.showDeleteModal = true;
+    },
 
-cancelDelete() {
-this.customerToDelete = null;
-this.showDeleteModal = false;
-},
+    cancelDelete() {
+      this.customerToDelete = null;
+      this.showDeleteModal = false;
+    },
 
-async deleteCustomer() {
-try {
-// **Cambiado de _id a id**
-await apiClient.delete(`/api/customers/${this.customerToDelete.id}`);
-// **Cambiado de _id a id**
-this.customers = this.customers.filter(c => c.id !== this.customerToDelete.id);
-this.cancelDelete();
-this.addSuccess = 'Cliente eliminado exitosamente.';
-setTimeout(() => {
-this.addSuccess = null;
-}, 5000);
-} catch (error) {
-this.addError = 'Error al eliminar el cliente. Por favor, inténtalo de nuevo.';
-console.error("Error al eliminar cliente:", error);
-this.cancelDelete();
-}
-},
+    async deleteCustomer() {
+      try {
+        // **Cambiado de _id a id**
+        await apiClient.delete(`/api/customers/${this.customerToDelete.id}`);
+        // **Cambiado de _id a id**
+        this.customers = this.customers.filter(c => c.id !== this.customerToDelete.id);
+        this.cancelDelete();
+        this.addSuccess = 'Cliente eliminado exitosamente.';
+        setTimeout(() => {
+          this.addSuccess = null;
+        }, 5000);
+      } catch (error) {
+        this.addError = 'Error al eliminar el cliente. Por favor, inténtalo de nuevo.';
+        console.error("Error al eliminar cliente:", error);
+        this.cancelDelete();
+      }
+    },
 
-async fetchCustomers() {
-this.loading = true;
-this.error = null;
+    async fetchCustomers() {
+      this.loading = true;
+      this.error = null;
 
-try {
-const { data } = await apiClient.get('/api/customers');
-this.customers = data;
-} catch (error) {
-this.error = 'Error al cargar los clientes. Por favor, inténtalo de nuevo.';
-console.error("Error al cargar clientes:", error);
-} finally {
-this.loading = false;
-}
-},
+      try {
+        const { data } = await apiClient.get('/api/customers');
+        this.customers = data;
+      } catch (error) {
+        this.error = 'Error al cargar los clientes. Por favor, inténtalo de nuevo.';
+        console.error("Error al cargar clientes:", error);
+      } finally {
+        this.loading = false;
+      }
+    },
 
-resetForm() {
-this.newCustomer = {
-name: '',
-email: '',
-phone: '',
-address: ''
-};
-this.editingCustomer = null;
-this.addError = null;
-this.addSuccess = null;
-}
-},
+    resetForm() {
+      this.newCustomer = {
+        name: '',
+        email: '',
+        phone: '',
+        address: ''
+      };
+      this.editingCustomer = null;
+      this.addError = null;
+      this.addSuccess = null;
+    }
+  },
 
-mounted() {
-this.fetchCustomers();
-}
+  mounted() {
+    this.fetchCustomers();
+  }
 };
 </script>
 
@@ -554,6 +558,20 @@ this.fetchCustomers();
 }
 
 .header-info {
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+}
+
+.header-text-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-grow: 1;
+  gap: 20px; /* Espacio entre el texto y las acciones */
+}
+
+.header-actions {
   display: flex;
   align-items: center;
 }

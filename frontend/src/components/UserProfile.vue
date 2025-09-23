@@ -174,11 +174,12 @@ import BackButton from './BackButton.vue';
 
 export default {
   name: 'UserProfile',
-  data() {
-    return {
-       components: {
+    components: {
      BackButton
    },
+  data() {
+    return {
+     
       user: null,
       loading: false,
       error: null,
