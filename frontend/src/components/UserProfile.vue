@@ -18,6 +18,7 @@
         <div class="user-title">
           <h1 class="profile-title">Perfil de Usuario</h1>
           <p class="profile-subtitle">Gestiona tu información personal</p>
+                 <BackButton />
         </div>
       </div>
     </div>
@@ -169,17 +170,22 @@
 <script>
 // La corrección aquí: importa la instancia `apiClient` desde tu archivo de configuración
 import apiClient from '../axios'; 
+import BackButton from './BackButton.vue';
 
 export default {
   name: 'UserProfile',
   data() {
     return {
+       components: {
+     BackButton
+   },
       user: null,
       loading: false,
       error: null,
       selectedFile: null,
       profileImageUrl: null,
       uploading: false,
+
     };
   },
   async mounted() {

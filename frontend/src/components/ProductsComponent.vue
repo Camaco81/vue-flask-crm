@@ -8,7 +8,9 @@
           </div>
           <div class="header-text">
             <h1 class="page-title">Gestión de Productos</h1>
+                   <BackButton />
             <p class="page-subtitle">Administra tu inventario de productos</p>
+            
           </div>
         </div>
         <div class="header-stats">
@@ -286,11 +288,15 @@
 
 <script>
 import apiClient from '../axios';
+import BackButton from './BackButton.vue';
 
 export default {
   name: 'ProductsManagement',
-  data() {
+  data() {  
     return {
+       components: {
+     BackButton
+   },
       products: [],
       newProduct: {
         name: '',
@@ -310,6 +316,7 @@ export default {
       editError: null,
       isUpdating: false
     };
+    
   },
   computed: {
     filteredProducts() {

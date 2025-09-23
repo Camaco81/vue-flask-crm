@@ -1,8 +1,10 @@
 <template>
   <div class="orders-container">
     <h1 class="page-title">Gestión de Pedidos</h1>
+        <BackButton />
     <div class="card create-order-card">
       <h2>Crear Nuevo Pedido</h2>
+      
       <form @submit.prevent="createOrder">
         <div class="form-group">
           <label for="customer">Seleccionar Cliente:</label>
@@ -69,6 +71,7 @@
 
 <script>
 import apiClient from '../axios';
+import BackButton from './BackButton.vue';
 
 export default {
   name: 'OrdersComponent',
@@ -83,12 +86,16 @@ export default {
       },
       loading: false,
       creating: false,
+          components: {
+    BackButton
+  }
     };
   },
   async mounted() {
     await this.fetchData();
   },
   methods: {
+
     async fetchData() {
       this.loading = true;
       try {

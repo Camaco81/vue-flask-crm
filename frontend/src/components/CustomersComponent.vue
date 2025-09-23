@@ -9,6 +9,7 @@
           <div class="header-text">
             <h1 class="page-title">Gestión de Clientes</h1>
             <p class="page-subtitle">Administra tu base de datos de clientes</p>
+                <BackButton />
           </div>
         </div>
         <div class="header-stats">
@@ -291,8 +292,12 @@
 </template>
 <script>
 import apiClient from '../axios';
+import BackButton from '@/components/BackButton.vue';
 
 export default {
+components: {
+    BackButton
+  },
 name: 'CustomersManagement',
 data() {
 return {
