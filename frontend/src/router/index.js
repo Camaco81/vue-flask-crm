@@ -1,6 +1,7 @@
 // frontend/src/router/index.js
 
 import { createRouter, createWebHistory } from 'vue-router';
+import LandingPage from '@/components/LandingPage.vue';
 import HomeView from '../views/HomeView.vue';
 import HomeDashboard from '../components/HomeDashboard.vue';
 import LoginForm from '../components/LoginForm.vue';
@@ -13,7 +14,8 @@ import AnalyticsComponent from '@/components/AnalyticsComponent.vue';
 
 
 const routes = [
-  { path: '/', name: 'Home', component: HomeView },
+  { path: '/', name: 'LandingPage', component: LandingPage },
+  { path: '/home', name: 'Home', component: HomeView },
   { path: '/login', name: 'Login', component: LoginForm },
   { path: '/register', name: 'Register', component: RegisterForm },
   { path: '/dashboard', name: 'HomeDashboard', component: HomeDashboard, meta: { requiresAuth: true } },
