@@ -62,7 +62,7 @@
 </template>
 
 <script>
-import axios from 'axios';
+import axios from '../axios.js';
 
 export default {
   data() {
@@ -76,13 +76,18 @@ export default {
     async login() {
       this.error = '';
       try {
-        const response = await axios.post('/api/login', {
+        const response = await axios.post('login', { // Ruta corregida, sin /api/
           email: this.email,
           password: this.password
         });
         
         localStorage.setItem('access_token', response.data.access_token);
-        this.$router.push('/dashboard');
+        localStorage.setItem('user_role_id', response.data.role_id);       // <--- ¡GUARDAR ID DEL ROL!
+        localStorage.setItem('user_role_name', response.data.role_name);   // <--- ¡GUARDAR NOMBRE DEL ROL!
+        localStorage.setItem('profile_image_url', response.data.profile_image_url); // <--- ¡GUARDAR URL DE IMAGEN!
+
+        // Redirigir según el ID del rol
+        this.redirectToRoleDashboard(response.data.role_id);
         
       } catch (error) {
         if (error.response && error.response.data && error.response.data.msg) {
@@ -90,6 +95,16 @@ export default {
         } else {
           this.error = 'Error al iniciar sesión. Intenta de nuevo.';
         }
+      }
+    },
+    redirectToRoleDashboard(roleId) {
+      if (roleId === 1) { // Rol 1: Administrador
+        this.$router.push('/admin/dashboard');
+      } else if (roleId === 2) { // Rol 2: Vendedor
+        this.$router.push('/dashboard');
+      } else {
+        // En caso de rol desconocido o por defecto
+        this.$router.push('/dashboard'); 
       }
     }
   }

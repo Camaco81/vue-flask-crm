@@ -97,22 +97,38 @@ def login():
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT u.id, u.password, r.name, u.profile_image_url FROM users u JOIN roles r ON u.role_id = r.id WHERE u.email = %s;",
+            # Asegúrate de que los índices coincidan: user[0]=id, user[1]=password, user[2]=role_name, user[3]=profile_image_url, user[4]=role_id
+            "SELECT u.id, u.password, r.name AS role_name, u.profile_image_url, r.id AS role_id FROM users u JOIN roles r ON u.role_id = r.id WHERE u.email = %s;",
             (email,)
         )
         user = cur.fetchone()
 
         if user and pbkdf2_sha256.verify(password, user[1]):
-            profile_image_url = user[3] if user[3] else None
-            
-            user_data = {
-                "id": str(user[0]),
-                "email": email,
-                "role": user[2],
-                "profile_image_url": profile_image_url
-            }
-            access_token = create_access_token(identity=json.dumps(user_data))
-            return jsonify(access_token=access_token, msg="Inicio de sesión exitoso"), 200
+            user_id = user[0]
+            user_role_name = user[2] # 'admin' o 'vendedor'
+            user_profile_image_url = user[3] if user[3] else None
+            user_role_id = user[4] # El ID numérico del rol (ej. 1, 2)
+
+            # Opcional: Puedes incrustar más datos directamente en el token si lo deseas
+            # Aunque para el rol, es más fácil devolverlo por separado y guardarlo en localStorage
+            # identity_data = {
+            #     "id": str(user_id),
+            #     "email": email,
+            #     "role_id": user_role_id,
+            #     "role_name": user_role_name
+            # }
+            # access_token = create_access_token(identity=json.dumps(identity_data))
+
+            # Si el token solo necesita el ID del usuario:
+            access_token = create_access_token(identity=str(user_id)) # Solo el ID como identidad del token
+
+            return jsonify(
+                access_token=access_token,
+                msg="Inicio de sesión exitoso",
+                role_id=user_role_id,          # <--- ¡AÑADIDO! ID numérico del rol
+                role_name=user_role_name,      # <--- ¡AÑADIDO! Nombre del rol ('admin', 'vendedor')
+                profile_image_url=user_profile_image_url # <--- ¡AÑADIDO!
+            ), 200
         else:
             return jsonify({"msg": "Credenciales incorrectas"}), 401
 
@@ -123,19 +139,7 @@ def login():
         if conn:
             cur.close()
             conn.close()
-
-
-@app.route("/protected", methods=["GET"])
-@jwt_required()
-def protected():
-    try:
-        current_user_data = json.loads(get_jwt_identity())
-        return jsonify(logged_in_as=current_user_data), 200
-    except Exception as e:
-        print(f"Error al obtener datos del usuario: {e}")
-        return jsonify({"msg": "No se pudo cargar la información del usuario"}), 500
-
-
+            
 # Endpoint para actualizar datos del usuario (password, email)
 @app.route("/api/users/<int:user_id>", methods=["PUT"])
 @jwt_required()

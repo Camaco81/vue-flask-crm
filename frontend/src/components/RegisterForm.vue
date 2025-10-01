@@ -158,7 +158,7 @@
 </template>
 
 <script>
-import axios from 'axios';
+import axios from '../axios.js';
 
 export default {
   data() {
@@ -281,7 +281,7 @@ export default {
       }
       
       try {
-        await axios.post('/api/register', {
+        await axios.post('register', {
           name: this.name,
           email: this.email,
           password: this.password
