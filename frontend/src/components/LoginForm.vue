@@ -99,7 +99,7 @@ export default {
     },
     redirectToRoleDashboard(roleId) {
       if (roleId === 1) { // Rol 1: Administrador
-        this.$router.push('/admin/dashboard');
+        this.$router.push('/dashboard-admin');
       } else if (roleId === 2) { // Rol 2: Vendedor
         this.$router.push('/dashboard');
       } else {
