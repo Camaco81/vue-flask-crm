@@ -53,7 +53,7 @@ router.beforeEach((to, from, next) => {
     
     // Redirige a una página de "Acceso Denegado" o a su propio dashboard
     if (userRoleId === 1) { // Si es admin, redirige al dashboard de admin
-        next('dashboard-admins'); 
+        next('dashboard-admin'); 
     } else if (userRoleId === 2) { // Si es vendedor, redirige al dashboard de vendedor
         next('dashboard'); 
     } else {
