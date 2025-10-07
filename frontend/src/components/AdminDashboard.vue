@@ -6,7 +6,7 @@
     <nav class="dashboard-nav">
       <ul class="dashboard-nav-list">
         <li class="dashboard-nav-item">
-          <router-link to="/admin/users" class="dashboard-nav-link">
+          <router-link to="/users" class="dashboard-nav-link">
             <i class="fas fa-users"></i> Gestión de Usuarios
           </router-link>
         </li>

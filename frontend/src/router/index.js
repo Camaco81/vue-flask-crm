@@ -12,6 +12,7 @@ import UserProfile from '../components/UserProfile.vue'; // Nuevo
 import Products from '../components/ProductsComponent.vue'; // Nuevo
 import OrdersComponent from '@/components/OrdersComponent.vue';
 import AnalyticsComponent from '@/components/AnalyticsComponent.vue';
+import UserManagement from '@/components/UserManagement.vue';
 
 
 const routes = [
@@ -22,6 +23,7 @@ const routes = [
   { path: '/dashboard', name: 'HomeDashboard', component: HomeDashboard, meta: { requiresAuth: true } },
   { path: '/dashboard-admin', name: 'AdminDashboard', component: AdminDashboard, meta: { requiresAuth: true } },
   { path: '/customers', name: 'Customers', component: Customers, meta: { requiresAuth: true } },
+  { path: '/users', name: 'UsersManagement', component: UserManagement, meta: { requiresAuth: true } },
   { path: '/profile', name: 'UserProfile', component: UserProfile, meta: { requiresAuth: true } }, // Ruta protegida
   { path: '/products', name: 'Products', component: Products, meta: { requiresAuth: true } }, // Ruta protegida
   { path: '/orders', name: 'Orders', component: OrdersComponent, meta: { requiresAuth: true } }, // Ruta protegida
