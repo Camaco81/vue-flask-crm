@@ -62,7 +62,7 @@
 </template>
 
 <script>
-import axios from '../axios.js';
+import axios from '../axios.js'; // Asegúrate de que esta ruta sea correcta para tu instancia de Axios
 
 export default {
   data() {
@@ -74,20 +74,23 @@ export default {
   },
   methods: {
     async login() {
-      this.error = '';
+      this.error = ''; // Limpiar errores anteriores
       try {
         const response = await axios.post('login', { // Ruta corregida, sin /api/
           email: this.email,
           password: this.password
         });
         
-        localStorage.setItem('access_token', response.data.access_token);
-        localStorage.setItem('user_role_id', response.data.role_id);       // <--- ¡GUARDAR ID DEL ROL!
-        localStorage.setItem('user_role_name', response.data.role_name);   // <--- ¡GUARDAR NOMBRE DEL ROL!
-        localStorage.setItem('profile_image_url', response.data.profile_image_url); // <--- ¡GUARDAR URL DE IMAGEN!
+        const { access_token, user } = response.data; // <--- ¡CORRECCIÓN CLAVE AQUÍ!
+                                                    // La API devuelve un objeto 'user'
+                                                    // con la info del rol y la imagen.
 
-        // Redirigir según el ID del rol
-        this.redirectToRoleDashboard(response.data.role_id);
+        localStorage.setItem('access_token', access_token);
+        // Guardamos todo el objeto user en localStorage como un string JSON
+        localStorage.setItem('user_info', JSON.stringify(user)); 
+        
+        // Ahora, la lógica de redirección usa la información del objeto 'user'
+        this.redirectToRoleDashboard(user.role_id);
         
       } catch (error) {
         if (error.response && error.response.data && error.response.data.msg) {
@@ -95,15 +98,16 @@ export default {
         } else {
           this.error = 'Error al iniciar sesión. Intenta de nuevo.';
         }
+        console.error('Error durante el login:', error); // Log para depuración
       }
     },
     redirectToRoleDashboard(roleId) {
       if (roleId === 1) { // Rol 1: Administrador
         this.$router.push('/dashboard-admin');
       } else if (roleId === 2) { // Rol 2: Vendedor
-        this.$router.push('/dashboard');
+        this.$router.push('/dashboard'); // O la ruta específica de vendedor
       } else {
-        // En caso de rol desconocido o por defecto
+        // En caso de rol desconocido o por defecto (ej. consultor)
         this.$router.push('/dashboard'); 
       }
     }
