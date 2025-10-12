@@ -865,9 +865,9 @@ def orders_single(order_id):
         if cur: cur.close()
         if conn: conn.close()
 
-@app.route("/api/seller/orders", methods=["GET"])
+@app.route("/api/sales", methods=["GET", "POST"])
 @jwt_required()
-def seller_orders_collection():
+def sales_collection():
     conn = None
     cur = None
     try:
@@ -875,38 +875,181 @@ def seller_orders_collection():
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         current_user_id = int(get_jwt_identity())
 
-        # Asegurarse de que el usuario logueado tenga el rol de vendedor (role_id = 2)
+        # Obtener el rol del usuario actual
         cur.execute("SELECT role_id FROM users WHERE id = %s", (current_user_id,))
         user_role = cur.fetchone()['role_id']
 
-        if user_role != 2:
-            return jsonify({"msg": "Acceso denegado. Solo vendedores pueden acceder a esta ruta."}), 403
+        if request.method == "POST":
+            # Lógica para crear una nueva venta
+            data = request.get_json()
+            customer_id = data.get("customer_id")
+            items = data.get("items")
+            
+            # Asignar automáticamente el user_id del vendedor logueado a la venta
+            seller_user_id = current_user_id 
+            
+            if not customer_id or not items:
+                return jsonify({"msg": "Faltan customer_id o items de venta"}), 400
+            
+            # Opcional: Si el admin puede registrar ventas para otros, se podría permitir un 'user_id' en el payload
+            # if user_role == 1 and data.get('user_id'):
+            #    seller_user_id = data.get('user_id')
 
-        query = """
-            SELECT o.id, o.customer_id, c.name as customer_name, c.email as customer_email, 
-                   c.address as customer_address, o.order_date, o.status, o.total_amount, u.email as seller_email,
-                    json_agg(json_build_object(
-                        'product_name', p.name,
-                        'quantity', oi.quantity,
-                        'price', oi.price
-                    )) AS items
-            FROM orders o
-            JOIN customers c ON o.customer_id = c.id
-            LEFT JOIN users u ON o.user_id = u.id -- Asegura que 'users' esté unido
-            JOIN order_items oi ON o.id = oi.order_id
-            JOIN products p ON oi.product_id = p.id
-            WHERE o.user_id = %s -- ¡Filtrado por el user_id del vendedor logueado!
-            GROUP BY o.id, o.customer_id, c.name, c.email, c.address, o.order_date, o.status, o.total_amount, u.email
-            ORDER BY o.order_date DESC;
-        """
-        cur.execute(query, (current_user_id,))
-        orders = cur.fetchall()
-        orders_list = [dict(order) for order in orders]
-        return jsonify(orders_list), 200
+            total_amount = 0
+            product_details = {} # Para almacenar precio y nombre del producto
+            for item in items:
+                cur.execute("SELECT name, price FROM products WHERE id = %s", (item['product_id'],))
+                product_row = cur.fetchone()
+                if product_row:
+                    product_details[item['product_id']] = {'name': product_row['name'], 'price': float(product_row['price'])}
+                    total_amount += float(product_row['price']) * item['quantity']
+                else:
+                    return jsonify({"msg": f"Producto con ID {item['product_id']} no encontrado"}), 404
+
+            # Insertar la venta en la tabla 'sales'
+            cur.execute(
+                "INSERT INTO sales (customer_id, user_id, total_amount) VALUES (%s, %s, %s) RETURNING id;",
+                (customer_id, seller_user_id, total_amount)
+            )
+            new_sale_id = cur.fetchone()[0] # El ID de la venta es un UUID
+
+            # Insertar los ítems de la venta
+            for item in items:
+                cur.execute(
+                    "INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
+                    (new_sale_id, item['product_id'], item['quantity'], product_details[item['product_id']]['price'])
+                )
+            
+            conn.commit()
+            return jsonify({"msg": "Venta registrada exitosamente", "sale_id": str(new_sale_id)}), 201
+        
+        elif request.method == "GET":
+            # Administradores ven TODAS las ventas. Vendedores ven SÓLO sus ventas.
+            if user_role == 1: # Admin
+                query = """
+                    SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
+                           s.sale_date, s.status, s.total_amount, u.email as seller_email, u.id as seller_user_id,
+                            json_agg(json_build_object(
+                                'product_name', p.name,
+                                'quantity', si.quantity,
+                                'price', si.price
+                            )) AS items
+                    FROM sales s
+                    JOIN customers c ON s.customer_id = c.id
+                    JOIN users u ON s.user_id = u.id -- Unir con la tabla users
+                    JOIN sale_items si ON s.id = si.sale_id
+                    JOIN products p ON si.product_id = p.id
+                    GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.total_amount, u.email, u.id
+                    ORDER BY s.sale_date DESC;
+                """
+                cur.execute(query)
+            else: # Otros roles (vendedor) ven solo sus propias ventas
+                query = """
+                    SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
+                           s.sale_date, s.status, s.total_amount, u.email as seller_email, u.id as seller_user_id,
+                            json_agg(json_build_object(
+                                'product_name', p.name,
+                                'quantity', si.quantity,
+                                'price', si.price
+                            )) AS items
+                    FROM sales s
+                    JOIN customers c ON s.customer_id = c.id
+                    JOIN users u ON s.user_id = u.id
+                    JOIN sale_items si ON s.id = si.sale_id
+                    JOIN products p ON si.product_id = p.id
+                    WHERE s.user_id = %s -- Filtrar por el ID del usuario logueado
+                    GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.total_amount, u.email, u.id
+                    ORDER BY s.sale_date DESC;
+                """
+                cur.execute(query, (current_user_id,))
+            
+            sales_records = cur.fetchall()
+            sales_list = [dict(record) for record in sales_records]
+            return jsonify(sales_list), 200
 
     except Exception as e:
-        app.logger.error(f"Error fetching seller orders for user {current_user_id}: {str(e)}")
-        return jsonify({"msg": "Error al obtener las ventas del vendedor", "error": str(e)}), 500
+        if conn: conn.rollback()
+        app.logger.error(f"Error en la gestión de ventas (collection): {str(e)}", exc_info=True)
+        return jsonify({"msg": "Error en la gestión de ventas", "error": str(e)}), 500
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+# ====================================================================
+# === VENTAS (SALES) - SINGLE ITEM (GET, DELETE) ===
+# ====================================================================
+@app.route("/api/sales/<uuid:sale_id>", methods=["GET", "DELETE"]) # Usar <uuid:sale_id>
+@jwt_required()
+def sales_single(sale_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        current_user_id = int(get_jwt_identity())
+
+        cur.execute("SELECT role_id FROM users WHERE id = %s", (current_user_id,))
+        user_role = cur.fetchone()['role_id']
+
+        if request.method == "GET":
+            base_query = """
+                SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
+                       s.sale_date, s.status, s.total_amount, u.email as seller_email, u.id as seller_user_id,
+                        json_agg(json_build_object(
+                            'product_name', p.name,
+                            'quantity', si.quantity,
+                            'price', si.price
+                        )) AS items
+                FROM sales s
+                JOIN customers c ON s.customer_id = c.id
+                JOIN users u ON s.user_id = u.id
+                JOIN sale_items si ON s.id = si.sale_id
+                JOIN products p ON si.product_id = p.id
+                WHERE s.id = %s
+            """
+            params = [str(sale_id)] # Convertir UUID a string para el query
+            if user_role != 1: # Si no es admin, añade filtro por user_id
+                base_query += " AND s.user_id = %s"
+                params.append(current_user_id)
+            
+            base_query += " GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.total_amount, u.email, u.id;"
+
+            cur.execute(base_query, tuple(params))
+            sale_record = cur.fetchone()
+
+            if sale_record:
+                return jsonify(dict(sale_record)), 200
+            else:
+                return jsonify({"msg": "Venta no encontrada o no tienes permisos para verla"}), 404
+
+        elif request.method == "DELETE":
+            cur.execute("SELECT user_id FROM sales WHERE id = %s", (str(sale_id),))
+            sale_user_id_row = cur.fetchone()
+
+            if not sale_user_id_row:
+                return jsonify({"msg": "Venta no encontrada"}), 404
+            
+            sale_user_id = sale_user_id_row['user_id']
+
+            if user_role != 1 and sale_user_id != current_user_id:
+                return jsonify({"msg": "No autorizado para eliminar esta venta"}), 403
+
+            # Si el usuario es admin o es el propio vendedor de la venta, procede a borrar
+            cur.execute("DELETE FROM sale_items WHERE sale_id = %s;", (str(sale_id),))
+            cur.execute("DELETE FROM sales WHERE id = %s;", (str(sale_id),))
+            deleted_rows = cur.rowcount
+            conn.commit()
+
+            if deleted_rows > 0:
+                return jsonify({"msg": "Venta y sus items eliminados exitosamente"}), 200
+            else:
+                return jsonify({"msg": "Error al eliminar la venta"}), 500
+
+    except Exception as e:
+        if conn: conn.rollback()
+        app.logger.error(f"Error en la gestión de venta (single): {str(e)}", exc_info=True)
+        return jsonify({"msg": "Error en la gestión de venta", "error": str(e)}), 500
     finally:
         if cur: cur.close()
         if conn: conn.close()
