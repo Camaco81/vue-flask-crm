@@ -8,6 +8,17 @@ from auth import auth_bp
 from routes.customer_routes import customer_bp
 from routes.product_routes import product_bp
 from routes.sale_routes import sale_bp
+# from auth import auth_bp  <-- Antiguo
+from backend.auth import auth_bp # <-- Nuevo
+
+# from routes import all_blueprints <-- Antiguo
+from backend.routes import all_blueprints # <-- Nuevo
+
+from backend.config import Config # <-- Nuevo
+from backend.db import get_db_connection # Si necesitas usarlo directamente en app.py
+
+# Si estás cargando .env, asegúrate de que esté en la raíz del proyecto o accesible
+# from dotenv import load_dotenv; load_dotenv()
 
 
 # Configuración de logging

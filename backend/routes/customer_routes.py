@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-from db import get_db_cursor
-from utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
-
+# from db import get_db_cursor <-- Antiguo
+from backend.db import get_db_cursor # <-- Nuevo
+# from utils.helpers import ... <-- Antiguo
+from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
 customer_bp = Blueprint('customer', __name__, url_prefix='/api/customers')
 
 @customer_bp.route('', methods=['GET', 'POST'])

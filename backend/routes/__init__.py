@@ -1,6 +1,6 @@
 # routes/__init__.py
 
-from .customer_routes import customer_bp
+from .customer_routes import customer_bp # OK: .customer_routes es hermano de __init__.py
 from .product_routes import product_bp
 from .sale_routes import sale_bp
 # Si tuvieras más archivos de rutas, los importarías aquí:

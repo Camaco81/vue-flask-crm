@@ -1,6 +1,9 @@
 from flask import jsonify
 from flask_jwt_extended import get_jwt_identity
-from db import get_db_cursor
+# from db import get_db_cursor <-- Antiguo
+from backend.db import get_db_cursor # <-- Nuevo
+# Si usas constantes de config, también:
+# from backend.config import Config
 
 ADMIN_ROLE_ID = 1
 SELLER_ROLE_ID = 2

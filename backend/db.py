@@ -1,7 +1,7 @@
 import psycopg2
 import psycopg2.extras
 from contextlib import contextmanager
-from config import Config
+from backend.config import Config # <-- Nuevo
 
 @contextmanager
 def get_db_connection():
