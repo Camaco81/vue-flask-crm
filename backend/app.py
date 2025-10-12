@@ -32,7 +32,19 @@ app.config.from_object(Config)
 jwt = JWTManager(app)
 
 # Configurar CORS para permitir peticiones desde tu frontend
-CORS(app, resources={r"/api/*": {"origins": "*"}}) # Ajusta esto a la URL de tu frontend en producción
+# app.py (fragmento)
+
+from flask_cors import CORS
+
+app = Flask(__name__)
+
+# Configura CORS para permitir tu frontend local y el de producción
+CORS(
+    app, 
+    # Añade los orígenes permitidos aquí
+    origins=["http://localhost:8080", "https://vue-flask-crm.onrender.com"],
+    supports_credentials=True # Necesario si usas cookies o encabezados de autorización
+)
 
 # Registrar Blueprints
 app.register_blueprint(auth_bp)
