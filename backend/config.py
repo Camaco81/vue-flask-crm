@@ -10,10 +10,7 @@ class Config:
     # Nota: No hay valor por defecto porque NECESITAS la URL de Neon.
     DATABASE_URL = os.environ.get('DATABASE_URL') 
     SECURITY_PASSWORD_HASH = os.environ.get('SECURITY_PASSWORD_HASH', 'pbkdf2:sha256') 
-    
-    # 2. El salt: Requerido por algunos métodos. Es una cadena secreta.
-    # Usa una cadena larga y secreta en producción.
-    SECURITY_PASSWORD_SALT = os.environ.get('SECURITY_PASSWORD_SALT', 'una_cadena_larga_y_secreta')
+    SECURITY_PASSWORD_SALT = os.environ.get('SECURITY_PASSWORD_SALT', 'fallback_salt_de_emergencia_largo') 
     # Mantenemos las variables antiguas, pero solo si no se usa DATABASE_URL
     # (Esto es opcional, pero puede ser útil si tu código necesita estos atributos por separado)
     DB_HOST = os.environ.get('DB_HOST') or 'localhost' 
