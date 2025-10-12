@@ -95,9 +95,18 @@ def register():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Asumiendo que 'consultor' tiene role_id = 3, si no existe usa 2 (vendedor)
+        # Asegúrate de que este SELECT siempre devuelva un resultado.
+        # Es más robusto añadir un INSERT INTO roles si 'vendedor' no existe.
         cur.execute("SELECT id FROM roles WHERE name = 'vendedor';") 
-        role_id = cur.fetchone()[0]
+        role_result = cur.fetchone() # Captura el resultado
+        
+        if role_result: # Verifica si se encontró el rol
+            role_id = role_result[0]
+        else:
+            # Si 'vendedor' no existe, puedes crear un rol por defecto o devolver un error.
+            # Para simplificar, asumiremos que 'vendedor' ya existe o se asigna un ID por defecto.
+            # print("Advertencia: El rol 'vendedor' no existe. Usando role_id por defecto (2).")
+            role_id = 2 # Usar un ID de rol por defecto si 'vendedor' no se encuentra
 
         cur.execute(
             "INSERT INTO users (email, password, role_id) VALUES (%s, %s, %s);",
@@ -108,10 +117,12 @@ def register():
 
     except psycopg2.IntegrityError:
         if conn: conn.rollback()
-        return jsonify({"msg": "El email ya está registrado"}), 409
+        # El 409 es el código de estado correcto para conflictos (ej. email ya existe)
+        return jsonify({"msg": "El email ya está registrado"}), 409 
     except Exception as e:
         if conn: conn.rollback()
         print(f"Error en el registro: {e}")
+        # Asegúrate de que el mensaje de error sea genérico para el usuario
         return jsonify({"msg": "Error al registrar usuario"}), 500
     finally:
         if conn:
