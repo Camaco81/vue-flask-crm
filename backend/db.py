@@ -1,37 +1,32 @@
 import psycopg2
 import psycopg2.extras
 from contextlib import contextmanager
-from backend.config import Config # <-- Nuevo
+from backend.config import Config
 
 @contextmanager
 def get_db_connection():
     conn = None
+    
+    # 💡 Lógica para usar DATABASE_URL si existe
+    if Config.DATABASE_URL:
+        # Usa la URL completa si está configurada (esto incluye host, user, password, etc.)
+        conn_params = {'dsn': Config.DATABASE_URL}
+    else:
+        # Si DATABASE_URL NO está configurada, usa las variables separadas (para desarrollo local)
+        conn_params = {
+            'host': Config.DB_HOST,
+            'database': Config.DB_NAME,
+            'user': Config.DB_USER,
+            'password': Config.DB_PASSWORD
+        }
+
     try:
-        conn = psycopg2.connect(
-            host=Config.DB_HOST,
-            database=Config.DB_NAME,
-            user=Config.DB_USER,
-            password=Config.DB_PASSWORD
-        )
+        conn = psycopg2.connect(**conn_params) # Pasa los parámetros al conector
         yield conn
     except psycopg2.Error as e:
         print(f"Database connection error: {e}")
-        raise # Re-raise the exception to be caught by the caller
+        # El error "Connection refused" que tenías antes ocurriría aquí si el host es incorrecto
+        raise 
     finally:
         if conn:
             conn.close()
-
-@contextmanager
-def get_db_cursor(commit=False):
-    with get_db_connection() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        try:
-            yield cur
-            if commit:
-                conn.commit()
-        except Exception as e:
-            conn.rollback()
-            print(f"Database operation error: {e}")
-            raise
-        finally:
-            cur.close()
