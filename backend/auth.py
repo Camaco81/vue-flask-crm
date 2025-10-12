@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
-from .db import get_db_cursor
+from backend.db import get_db_cursor
 from backend.config import Config # <-- Nuevo
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
