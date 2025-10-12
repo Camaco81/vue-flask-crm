@@ -865,6 +865,52 @@ def orders_single(order_id):
         if cur: cur.close()
         if conn: conn.close()
 
+@app.route("/api/seller/orders", methods=["GET"])
+@jwt_required()
+def seller_orders_collection():
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        current_user_id = int(get_jwt_identity())
+
+        # Asegurarse de que el usuario logueado tenga el rol de vendedor (role_id = 2)
+        cur.execute("SELECT role_id FROM users WHERE id = %s", (current_user_id,))
+        user_role = cur.fetchone()['role_id']
+
+        if user_role != 2:
+            return jsonify({"msg": "Acceso denegado. Solo vendedores pueden acceder a esta ruta."}), 403
+
+        query = """
+            SELECT o.id, o.customer_id, c.name as customer_name, c.email as customer_email, 
+                   c.address as customer_address, o.order_date, o.status, o.total_amount, u.email as seller_email,
+                    json_agg(json_build_object(
+                        'product_name', p.name,
+                        'quantity', oi.quantity,
+                        'price', oi.price
+                    )) AS items
+            FROM orders o
+            JOIN customers c ON o.customer_id = c.id
+            LEFT JOIN users u ON o.user_id = u.id -- Asegura que 'users' esté unido
+            JOIN order_items oi ON o.id = oi.order_id
+            JOIN products p ON oi.product_id = p.id
+            WHERE o.user_id = %s -- ¡Filtrado por el user_id del vendedor logueado!
+            GROUP BY o.id, o.customer_id, c.name, c.email, c.address, o.order_date, o.status, o.total_amount, u.email
+            ORDER BY o.order_date DESC;
+        """
+        cur.execute(query, (current_user_id,))
+        orders = cur.fetchall()
+        orders_list = [dict(order) for order in orders]
+        return jsonify(orders_list), 200
+
+    except Exception as e:
+        app.logger.error(f"Error fetching seller orders for user {current_user_id}: {str(e)}")
+        return jsonify({"msg": "Error al obtener las ventas del vendedor", "error": str(e)}), 500
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
 
 @app.route("/api/analytics", methods=["GET"])
 @jwt_required()
