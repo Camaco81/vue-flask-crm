@@ -2,34 +2,102 @@
 
 import { createRouter, createWebHistory } from 'vue-router';
 import LandingPage from '@/components/LandingPage.vue';
-import HomeView from '../views/HomeView.vue';
-import HomeDashboard from '../components/HomeDashboard.vue';
-import AdminDashboard from '@/components/AdminDashboard.vue';
+import HomeView from '../views/HomeView.vue'; // Asumo que HomeView es una página genérica o de landing
 import LoginForm from '../components/LoginForm.vue';
 import RegisterForm from '../components/RegisterForm.vue';
-import Customers from '../components/CustomersComponent.vue';
-import UserProfile from '../components/UserProfile.vue'; // Nuevo
-import Products from '../components/ProductsComponent.vue'; // Nuevo
-import OrdersComponent from '@/components/OrdersComponent.vue';
-import AnalyticsComponent from '@/components/AnalyticsComponent.vue';
-import UserManagement from '@/components/UserManagement.vue';
+// import BackButton from '@/components/BackButton.vue'; // No se usa directamente en rutas
 
+// --- Importaciones para el Rol de Administrador ---
+import AdminDashboard from '@/components/admin/AdminDashboard.vue';
+import UserManagement from '@/components/admin/UserManagement.vue';
+import AdminGeneralReports from '@/components/admin/GeneralReports.vue'; // Importa el reporte general para admin
+
+// --- Importaciones para el Rol de Vendedor ---
+import VendedorDashboard from '@/components/vendedor/VendedorDashboard.vue';
+import VendedorCustomersComponent from '@/components/vendedor/CustomersComponent.vue'; // Componente de clientes para vendedor
+import VendedorProductsComponent from '@/components/vendedor/ProductsComponent.vue'; // Componente de productos para vendedor
+import VendedorOrdersComponent from '@/components/vendedor/SalesComponent.vue'; // Componente de órdenes/ventas para vendedor
+import VendedorAnalyticsComponent from '@/components/vendedor/AnalyticsComponent.vue'; // Componente de analíticas para vendedor
+import VendedorUserProfile from '@/components/vendedor/UserProfile.vue'; // Componente de perfil para vendedor
 
 const routes = [
   { path: '/', name: 'LandingPage', component: LandingPage },
-  { path: '/home', name: 'Home', component: HomeView },
+  { path: '/home', name: 'Home', component: HomeView }, // Considera si esta ruta es realmente necesaria o si la landing es suficiente
   { path: '/login', name: 'Login', component: LoginForm },
   { path: '/register', name: 'Register', component: RegisterForm },
-  { path: '/dashboard', name: 'HomeDashboard', component: HomeDashboard, meta: { requiresAuth: true } },
-  { path: '/dashboard-admin', name: 'AdminDashboard', component: AdminDashboard, meta: { requiresAuth: true } },
-  { path: '/customers', name: 'Customers', component: Customers, meta: { requiresAuth: true } },
-  { path: '/users', name: 'UsersManagement', component: UserManagement, meta: { requiresAuth: true } },
-  { path: '/profile', name: 'UserProfile', component: UserProfile, meta: { requiresAuth: true } }, // Ruta protegida
-  { path: '/products', name: 'Products', component: Products, meta: { requiresAuth: true } }, // Ruta protegida
-  { path: '/orders', name: 'Orders', component: OrdersComponent, meta: { requiresAuth: true } }, // Ruta protegida
-  { path: '/analytics', name: 'Analytics', component: AnalyticsComponent, meta: { requiresAuth: true } } // Ruta protegida
 
+  // --- RUTAS DEL ADMINISTRADOR (role_id = 1) ---
+  { 
+    path: '/dashboard', 
+    name: 'AdminDashboard', 
+    component: AdminDashboard, 
+    meta: { requiresAuth: true, requiredRole: 1 } // Solo Administradores
+  },
+  { 
+    path: '/admin/users', 
+    name: 'UserManagement', 
+    component: UserManagement, 
+    meta: { requiresAuth: true, requiredRole: 1 } // Solo Administradores
+  },
+  { 
+    path: '/admin/general-reports', // Renombrado para ser específico de Admin
+    name: 'AdminGeneralReports', 
+    component: AdminGeneralReports, 
+    meta: { requiresAuth: true, requiredRole: 1 } // Solo Administradores
+  },
 
+  // --- RUTAS DEL VENDEDOR (role_id = 2) ---
+  { 
+    path: '/vendedor/vendedor-dasboard', // Ruta principal para el vendedor
+    name: 'VendedorDashboard', 
+    component: VendedorDashboard, 
+    meta: { requiresAuth: true, requiredRole: 2 } // Solo Vendedores
+  },
+  { 
+    path: '/vendedor/customers', // Rutas específicas para el vendedor
+    name: 'VendedorCustomers', 
+    component: VendedorCustomersComponent, 
+    meta: { requiresAuth: true, requiredRole: 2 } // Solo Vendedores
+  },
+  { 
+    path: '/vendedor/products', 
+    name: 'VendedorProducts', 
+    component: VendedorProductsComponent, 
+    meta: { requiresAuth: true, requiredRole: 2 } // Solo Vendedores
+  },
+  { 
+    path: '/vendedor/sales', // Cambiado a 'orders' para ser coherente con el componente OrdersComponent.vue
+    name: 'VendedorSales', 
+    component: VendedorOrdersComponent, 
+    meta: { requiresAuth: true, requiredRole: 2 } // Solo Vendedores
+  },
+  { 
+    path: '/vendedor/analytics', 
+    name: 'VendedorAnalytics', 
+    component: VendedorAnalyticsComponent, 
+    meta: { requiresAuth: true, requiredRole: 2 } // Solo Vendedores
+  },
+  { 
+    path: '/vendedor/profile', // Perfil específico del vendedor
+    name: 'VendedorProfile', 
+    component: VendedorUserProfile, 
+    meta: { requiresAuth: true, requiredRole: 2 } // Solo Vendedores
+  },
+  // La ruta '/profile' sin prefijo de rol se puede dejar si es un perfil genérico
+  // o se reemplaza completamente por '/vendedor/profile' y '/admin/profile'
+
+  // --- RUTA DE PERFIL GENÉRICO (si lo mantienes, para ambos roles o para el que no tenga uno específico) ---
+  // Si tanto admin como vendedor tienen su propio 'UserProfile.vue' en sus carpetas,
+  // entonces esta ruta genérica no sería necesaria.
+  // Si el componente 'UserProfile.vue' de la carpeta 'vendedor' se usa para AMBOS roles,
+  // entonces la ruta y el meta.requiredRole deberían ser más flexibles o duplicarse.
+  // Por ahora, asumimos que 'vendedor/UserProfile.vue' es el que se usa para el vendedor.
+
+  // --- RUTA POR DEFECTO PARA NO AUTORIZADO (opcional) ---
+  // { path: '/unauthorized', name: 'Unauthorized', component: UnauthorizedPage }
+
+  // --- CATCH-ALL (404) ---
+  // { path: '/:catchAll(.*)', redirect: '/' } // Redirige cualquier ruta no encontrada a la landing
 ];
 
 const router = createRouter({
@@ -37,31 +105,49 @@ const router = createRouter({
   routes
 });
 
-// --- Guard de navegación para proteger las rutas ---
 router.beforeEach((to, from, next) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
-  const requiredRole = to.matched.some(record => record.meta.requiresRole) ? to.matched.find(record => record.meta.requiresRole).meta.requiresRole : null;
-
+  const requiredRole = to.meta.requiredRole;
   const isAuthenticated = localStorage.getItem('access_token');
-  const userRoleId = parseInt(localStorage.getItem('user_role_id')); // <--- Usamos el ID del rol
+
+  // 🌟 LÓGICA DE OBTENCIÓN Y MANEJO DE ERRORES DEL ROL 🌟
+  const userInfoString = localStorage.getItem('user_info');
+  let userRoleId = null;
+
+  // 1. Verifica que la cadena no sea nula, vacía o la cadena literal "undefined"
+  if (userInfoString && userInfoString !== 'undefined') {
+    try {
+      const user = JSON.parse(userInfoString);
+      userRoleId = user.role_id;
+    } catch (e) {
+      // 2. Si el JSON es inválido (como "undefined"), limpiamos y registramos el error
+      console.error("Error al parsear user_info:", e);
+      localStorage.removeItem('user_info');
+      localStorage.removeItem('access_token');
+      // Forzar la no autenticación si la data es corrupta
+      return next('/login');
+    }
+  }
 
   if (requiresAuth && !isAuthenticated) {
-    next('/login'); // No autenticado, redirigir al login
-  } else if (requiresAuth && isAuthenticated && requiredRole !== null && userRoleId !== requiredRole) {
-    // Autenticado, pero el rol no coincide con el requerido para la ruta
-    console.warn(`Intento de acceso denegado a ruta protegida por rol. Rol requerido: ${requiredRole}, Rol del usuario: ${userRoleId}`);
-    
-    // Redirige a una página de "Acceso Denegado" o a su propio dashboard
-    if (userRoleId === 1) { // Si es admin, redirige al dashboard de admin
-        next('dashboard-admin'); 
-    } else if (userRoleId === 2) { // Si es vendedor, redirige al dashboard de vendedor
-        next('dashboard'); 
+    // Caso 1: Requiere auth y no autenticado
+    next('/login');
+  } else if (requiresAuth && isAuthenticated && requiredRole && userRoleId !== requiredRole) {
+    // Caso 2: Ruta protegida, autenticado, pero el rol no coincide
+    console.warn(`Acceso denegado. Ruta: ${to.path}, Rol requerido: ${requiredRole}, Rol del usuario: ${userRoleId}`);
+
+    // 🌟 Lógica de Redirección basada en el Rol Actual 🌟
+    if (userRoleId === 1) { // Admin
+      next('/dashboard');
+    } else if (userRoleId === 2) { // Vendedor
+      next('/vendedor/vendedor-dasboard');
     } else {
-        next('/'); // O a la página de inicio por defecto
+      // Rol desconocido o nulo: Cerrar sesión forzosamente
+      next('/login');
     }
-    
   } else {
-    next(); // Acceso permitido
+    // Caso 3: Todo bien, o ruta pública
+    next();
   }
 });
 

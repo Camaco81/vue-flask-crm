@@ -33,7 +33,7 @@
 </template>
 
 <script>
-import apiClient from '../axios';
+import apiClient from '../../axios';
 import BackButton from './BackButton.vue';
 
 export default {

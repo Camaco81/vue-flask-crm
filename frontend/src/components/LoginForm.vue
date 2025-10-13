@@ -76,7 +76,7 @@ export default {
     async login() {
       this.error = ''; // Limpiar errores anteriores
       try {
-        const response = await axios.post('login', { // Ruta corregida, sin /api/
+        const response = await axios.post('/api/auth/login', { // Ruta corregida, sin /api/
           email: this.email,
           password: this.password
         });
@@ -87,7 +87,7 @@ export default {
 
         localStorage.setItem('access_token', access_token);
         // Guardamos todo el objeto user en localStorage como un string JSON
-        localStorage.setItem('user_info', JSON.stringify(user)); 
+        localStorage.setItem('user_info', JSON.stringify(user));  
         
         // Ahora, la lógica de redirección usa la información del objeto 'user'
         this.redirectToRoleDashboard(user.role_id);
@@ -103,12 +103,12 @@ export default {
     },
     redirectToRoleDashboard(roleId) {
       if (roleId === 1) { // Rol 1: Administrador
-        this.$router.push('/dashboard-admin');
+        this.$router.push('/dashboard');
       } else if (roleId === 2) { // Rol 2: Vendedor
-        this.$router.push('/dashboard'); // O la ruta específica de vendedor
+        this.$router.push('/vendedor/vendedor-dasboard'); // O la ruta específica de vendedor
       } else {
         // En caso de rol desconocido o por defecto (ej. consultor)
-        this.$router.push('/dashboard'); 
+        this.$router.push('/'); 
       }
     }
   }

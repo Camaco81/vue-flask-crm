@@ -11,7 +11,7 @@
       <nav class="navigation">
         <ul class="nav-list">
           <li class="nav-item">
-            <router-link to="/customers" class="nav-link">
+            <router-link to="/vendedor/customers" class="nav-link">
               <div class="nav-icon">
                 <i class="fas fa-users"></i>
               </div>
@@ -20,7 +20,7 @@
             </router-link>
           </li>
           <li class="nav-item">
-            <router-link to="/products" class="nav-link">
+            <router-link to="/vendedor/products" class="nav-link">
               <div class="nav-icon">
                 <i class="fas fa-box-open"></i>
               </div>
@@ -29,16 +29,16 @@
             </router-link>
           </li>
           <li class="nav-item">
-            <router-link to="/orders" class="nav-link">
+            <router-link to="/vendedor/sales" class="nav-link">
               <div class="nav-icon">
                 <i class="fas fa-shopping-cart"></i>
               </div>
-              <span class="nav-text">Pedidos</span>
+              <span class="nav-text">Ventas</span>
               <div class="nav-indicator"></div>
             </router-link>
           </li>
           <li class="nav-item">
-            <router-link to="/analytics" class="nav-link">
+            <router-link to="/vendedor/analytics" class="nav-link">
               <div class="nav-icon">
                 <i class="fas fa-chart-bar"></i>
               </div>
@@ -47,7 +47,7 @@
             </router-link>
           </li>
           <li class="nav-item">
-            <router-link to="/profile" class="nav-link">
+            <router-link to="/vendedor/profile" class="nav-link">
               <div class="nav-icon">
                 <i class="fas fa-user"></i>
               </div>
@@ -65,7 +65,7 @@
           </div>
           <div class="user-details">
             <span class="user-name">Usuario</span>
-            <span class="user-role">Administrador</span>
+            <span class="user-role">Vendedor</span>
           </div>
         </div>
         <button @click="logout" class="logout-btn" title="Cerrar Sesión">
@@ -149,19 +149,19 @@
         <div class="quick-actions">
           <h2 class="section-title">Acciones Rápidas</h2>
           <div class="actions-grid">
-            <router-link to="/customers" class="quick-action-card">
+            <router-link to="/vendedor/customers" class="quick-action-card">
               <i class="fas fa-user-plus"></i>
               <span>Agregar Cliente</span>
             </router-link>
-            <router-link to="/products" class="quick-action-card">
+            <router-link to="/vendedor/products" class="quick-action-card">
               <i class="fas fa-plus"></i>
               <span>Nuevo Producto</span>
             </router-link>
-            <router-link to="/orders" class="quick-action-card">
+            <router-link to="/vendedor/orders" class="quick-action-card">
               <i class="fas fa-list"></i>
-              <span>Ver Pedidos</span>
+              <span>Ver Ventas</span>
             </router-link>
-            <router-link to="/analytics" class="quick-action-card">
+            <router-link to="/vendedor/analytics" class="quick-action-card">
               <i class="fas fa-chart-line"></i>
               <span>Reportes</span>
             </router-link>
@@ -173,7 +173,7 @@
 </template>
 
 <script>
-import apiClient from '../axios';
+import apiClient from '../../axios';
 
 export default {
   name: 'HomeDashboard',

@@ -16,19 +16,7 @@
       </div>
       
       <form @submit.prevent="register" class="register-form">
-        <div class="form-group">
-          <div class="input-wrapper">
-            <span class="input-icon">👤</span>
-            <input 
-              type="text"
-              v-model="name"
-              placeholder="Nombre completo"
-              required
-              class="form-control"
-            />
-          </div>
-        </div>
-        
+     
         <div class="form-group">
           <div class="input-wrapper">
             <span class="input-icon">📧</span>
@@ -163,7 +151,6 @@ import axios from '../axios.js';
 export default {
   data() {
     return {
-      name: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -180,8 +167,7 @@ export default {
   },
   computed: {
     isFormValid() {
-      return this.name && 
-             this.email && 
+      return this.email && 
              this.password && 
              this.confirmPassword &&
              this.acceptTerms &&
@@ -281,8 +267,7 @@ export default {
       }
       
       try {
-        await axios.post('register', {
-          name: this.name,
+        await axios.post('/api/auth/register', {
           email: this.email,
           password: this.password
         });

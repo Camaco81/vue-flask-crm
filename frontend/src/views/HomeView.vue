@@ -17,7 +17,7 @@
 </template>
 
 <script>
-import HomeDashboard from '../components/HomeDashboard.vue';
+import HomeDashboard from '../components/vendedor/VendedorDashboard.vue';
 import { ref, onMounted, onUnmounted } from 'vue';
 
 export default {

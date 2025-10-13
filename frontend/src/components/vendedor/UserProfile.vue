@@ -169,7 +169,7 @@
 
 <script>
 // La corrección aquí: importa la instancia `apiClient` desde tu archivo de configuración
-import apiClient from '../axios'; 
+import apiClient from '../../axios'; 
 import BackButton from './BackButton.vue';
 
 export default {

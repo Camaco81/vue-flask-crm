@@ -295,8 +295,8 @@
   </div>
 </template>
 <script>
-import apiClient from '../axios';
-import BackButton from '@/components/BackButton.vue';
+import axios from '../../axios';
+import BackButton from '@/components/vendedor/BackButton.vue';
 
 export default {
   components: {
@@ -385,7 +385,7 @@ export default {
       }
 
       try {
-        const { data } = await apiClient.post('/api/customers', {
+        const { data } = await axios.post('/api/customers', {
           ...this.newCustomer,
           name: this.newCustomer.name.trim(),
           email: this.newCustomer.email.trim()
@@ -432,7 +432,7 @@ export default {
           return;
         }
 
-        const { data } = await apiClient.put(`/api/customers/${this.editingCustomer.id}`, {
+        const { data } = await axios.put(`/api/customers/${this.editingCustomer.id}`, {
           name: this.newCustomer.name.trim(),
           email: this.newCustomer.email.trim(),
           phone: this.newCustomer.phone,
@@ -476,7 +476,7 @@ export default {
     async deleteCustomer() {
       try {
         // **Cambiado de _id a id**
-        await apiClient.delete(`/api/customers/${this.customerToDelete.id}`);
+        await axios.delete(`/api/customers/${this.customerToDelete.id}`);
         // **Cambiado de _id a id**
         this.customers = this.customers.filter(c => c.id !== this.customerToDelete.id);
         this.cancelDelete();
@@ -496,7 +496,7 @@ export default {
       this.error = null;
 
       try {
-        const { data } = await apiClient.get('/api/customers');
+        const { data } = await axios.get('/api/customers');
         this.customers = data;
       } catch (error) {
         this.error = 'Error al cargar los clientes. Por favor, inténtalo de nuevo.';

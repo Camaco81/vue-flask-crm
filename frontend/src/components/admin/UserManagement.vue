@@ -84,7 +84,7 @@
 </template>
 
 <script>
-import apiClient from '@/axios'; 
+import axios from '@/axios'; 
 
 export default {
   name: 'UserManagement',
@@ -113,7 +113,7 @@ export default {
       this.loading = true;
       this.error = null;
       try {
-        const response = await apiClient.get('/admin/users'); 
+        const response = await axios.get('/admin/users'); 
         this.users = response.data.users; 
       } catch (err) {
         this.error = 'No se pudo cargar la lista de usuarios. Verifica el endpoint de tu API.';
@@ -129,10 +129,10 @@ export default {
         const dataToSend = { ...this.currentUser };
 
         if (this.modalMode === 'create') {
-          await apiClient.post('/admin/users', dataToSend);
+          await axios.post('/admin/users', dataToSend);
         } else {
           delete dataToSend.password; 
-          await apiClient.put(`/admin/users/${this.currentUser.id}`, dataToSend);
+          await axios.put(`/admin/users/${this.currentUser.id}`, dataToSend);
         }
         
         this.fetchUsers();
@@ -148,7 +148,7 @@ export default {
     async deleteUser(userId) {
       this.error = null;
       try {
-        await apiClient.delete(`/admin/users/${userId}`); 
+        await axios.delete(`/admin/users/${userId}`); 
         this.fetchUsers(); 
       } catch (err) {
         this.error = 'Error al eliminar el usuario.';
