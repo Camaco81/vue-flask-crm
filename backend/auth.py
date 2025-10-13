@@ -36,9 +36,9 @@ def register():
             return jsonify({"msg": "Email already registered"}), 409
         return jsonify({"msg": "Error registering user", "error": str(e)}), 500
 
-@auth_bp.route('/login', methods=['POST', 'OPTIONS']) # <-- AÑADIDO 'OPTIONS' AQUÍ
+@auth_bp.route('/login', methods=['POST', 'OPTIONS'])
 def login():
-    if request.method == 'OPTIONS': # Manejar la petición preflight explícitamente
+    if request.method == 'OPTIONS':
         return '', 200
 
     data = request.get_json()
@@ -50,16 +50,28 @@ def login():
 
     try:
         with get_db_cursor() as cur:
-            cur.execute("SELECT id, password, role_id FROM users WHERE email = %s", (email,)) # Añadido role_id para posible uso futuro
+            # Asegúrate de seleccionar todos los campos que el frontend pueda necesitar
+            cur.execute("SELECT id, email, password, role_id, image_url FROM users WHERE email = %s", (email,)) 
             user = cur.fetchone()
 
         if user and check_password_hash(user['password'], password):
-            # También podrías querer incluir el rol del usuario en el token o en la respuesta
             access_token = create_access_token(identity=str(user['id']))
-            return jsonify(access_token=access_token), 200
+            
+            # 🌟 CORRECCIÓN CRÍTICA: ESTRUCTURA LA RESPUESTA PARA EL FRONTEND 🌟
+            # El frontend espera { access_token, user: { role_id, email, ... } }
+            user_data = {
+                'id': user['id'],
+                'email': user['email'],
+                'role_id': user['role_id'],
+                'image_url': user['image_url'] if 'image_url' in user else None # Asume que tienes este campo
+            }
+            
+            return jsonify(
+                access_token=access_token,
+                user=user_data # <-- AHORA ENVÍA EL OBJETO 'user' ESPERADO
+            ), 200
         else:
             return jsonify({"msg": "Bad username or password"}), 401
     except Exception as e:
-        # Es buena práctica loggear el error real en el servidor para depuración
         print(f"Error during login: {e}") 
         return jsonify({"msg": "Error during login", "error": str(e)}), 500
