@@ -51,7 +51,7 @@ def login():
     try:
         with get_db_cursor() as cur:
             # Asegúrate de seleccionar todos los campos que el frontend pueda necesitar
-            cur.execute("SELECT id, email, password, role_id, image_url FROM users WHERE email = %s", (email,)) 
+            cur.execute("SELECT id, email, password, role_id FROM users WHERE email = %s", (email,)) 
             user = cur.fetchone()
 
         if user and check_password_hash(user['password'], password):
@@ -63,7 +63,7 @@ def login():
                 'id': user['id'],
                 'email': user['email'],
                 'role_id': user['role_id'],
-                'image_url': user['image_url'] if 'image_url' in user else None # Asume que tienes este campo
+                # 'image_url': user['image_url'] if 'image_url' in user else None # Asume que tienes este campo
             }
             
             return jsonify(
