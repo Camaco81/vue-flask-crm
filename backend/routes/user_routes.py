@@ -52,7 +52,7 @@ def get_user_profile():
 # 2. POST: Subir Foto de Perfil
 # =========================================================
 
-@user_bp.route('/upload-image', methods=['POST'])
+@user_bp.route('/profile/upload-image', methods=['POST'])
 @jwt_required()
 def upload_profile_image_endpoint():
     current_user_id, _ = get_user_and_role()

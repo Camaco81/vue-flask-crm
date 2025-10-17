@@ -29,7 +29,7 @@ jwt = JWTManager(app)
 # Configurar CORS
 CORS(
     app, 
-    origins=["http://localhost:8080", "https://vue-flask-crm.onrender.com"],
+    origins="*",
     supports_credentials=True
 )
 
