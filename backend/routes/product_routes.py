@@ -24,8 +24,8 @@ def products_collection():
         try:
             with get_db_cursor(commit=True) as cur:
                 cur.execute(
-                    "INSERT INTO products (name, description, price, stock) VALUES (%s, %s, %s, %s) RETURNING id;",
-                    (data['name'], data.get('description'), float(data['price']), int(data['stock']))
+                    "INSERT INTO products (name, price, stock) VALUES (%s, %s, %s) RETURNING id;",
+                    (data['name'], float(data['price']), int(data['stock']))
                 )
                 new_product_id = cur.fetchone()[0]
             return jsonify({"msg": "Product created successfully", "product_id": new_product_id}), 201
@@ -36,7 +36,7 @@ def products_collection():
         # Todos los usuarios autenticados pueden ver la lista de productos
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, description, price, stock FROM products ORDER BY name;")
+                cur.execute("SELECT id, name,  price, stock FROM products ORDER BY name;")
                 products = cur.fetchall()
                 products_list = [dict(p) for p in products]
             return jsonify(products_list), 200
@@ -57,7 +57,7 @@ def product_single(product_id):
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, description, price, stock FROM products WHERE id = %s;", (product_id,))
+                cur.execute("SELECT id, name, price, stock FROM products WHERE id = %s;", (product_id,))
                 product = cur.fetchone()
             if product:
                 return jsonify(dict(product)), 200
@@ -73,7 +73,7 @@ def product_single(product_id):
         set_clauses = []
         params = []
         for key, value in data.items():
-            if key in ['name', 'description', 'price', 'stock']:
+            if key in ['name', 'price', 'stock']:
                 set_clauses.append(f"{key} = %s")
                 if key == 'price': params.append(float(value))
                 elif key == 'stock': params.append(int(value))
