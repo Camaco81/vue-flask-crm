@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required
 # from db import get_db_cursor <-- Antiguo
 from backend.db import get_db_cursor # <-- Nuevo
 # from utils.helpers import ... <-- Antiguo
-from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
+from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission # <-- CORREGIDO (añadido check_seller_permission)
 
 sale_bp = Blueprint('sale', __name__, url_prefix='/api/sales')
 
@@ -69,7 +69,7 @@ def sales_collection():
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
-                            'price', si.price
+                            'price', p.price  -- <-- CORREGIDO 1: Era si.price
                         )) AS items
                 FROM sales s
                 JOIN customers c ON s.customer_id = c.id
@@ -107,7 +107,7 @@ def sales_single(sale_id):
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
-                            'price', si.price
+                            'price', p.price  -- <-- CORREGIDO 2: Era si.price
                         )) AS items
                 FROM sales s
                 JOIN customers c ON s.customer_id = c.id
