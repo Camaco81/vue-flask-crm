@@ -13,6 +13,7 @@ from backend.auth import auth_bp
 from backend.routes.customer_routes import customer_bp
 from backend.routes.product_routes import product_bp
 from backend.routes.sale_routes import sale_bp
+from backend.routes.user_routes import user_bp
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -37,6 +38,8 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(customer_bp)
 app.register_blueprint(product_bp)
 app.register_blueprint(sale_bp)
+app.register_blueprint(user_bp)
+
 
 # Ruta de prueba simple
 @app.route('/')
