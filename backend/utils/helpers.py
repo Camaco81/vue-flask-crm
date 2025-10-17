@@ -14,7 +14,7 @@ def get_user_and_role():
     Obtiene el ID del usuario actual y su role_id desde la base de datos.
     Retorna (user_id, role_id) o (None, None) si no se encuentra.
     """
-    current_user_id = int(get_jwt_identity())
+    current_user_id = get_jwt_identity()
     with get_db_cursor() as cur:
         cur.execute("SELECT role_id FROM users WHERE id = %s", (current_user_id,))
         user_record = cur.fetchone()
