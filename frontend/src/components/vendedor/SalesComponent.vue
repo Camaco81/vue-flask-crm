@@ -75,7 +75,7 @@
 </template>
 
 <script>
-import apiClient from '../../axios';
+import axios from '../../axios';
 import BackButton from './BackButton.vue'; 
 import { jsPDF } from 'jspdf';
 
@@ -106,9 +106,9 @@ export default {
       try {
         // *** CAMBIO CRUCIAL AQUÍ: USAR EL ENDPOINT /api/sales ***
         const [salesResponse, customersResponse, productsResponse] = await Promise.all([
-          apiClient.get('/api/sales'), // <-- Ahora usa el nuevo endpoint de ventas
-          apiClient.get('/api/customers'),
-          apiClient.get('/api/products')
+          axios.get('/api/sales'), // <-- Ahora usa el nuevo endpoint de ventas
+          axios.get('/api/customers'),
+          axios.get('/api/products')
         ]);
 
         const customersMap = new Map(customersResponse.data.map(c => [c.id, c])); 
@@ -159,7 +159,7 @@ export default {
       this.creating = true;
       try {
         // *** CAMBIO CRUCIAL AQUÍ: USAR EL ENDPOINT /api/sales ***
-        await apiClient.post('/api/sales', this.newSale); 
+        await axios.post('/api/sales', this.newSale); 
         alert('Venta registrada exitosamente!');
         
         this.newSale = { customer_id: '', items: [{ product_id: '', quantity: 1 }] };

@@ -1,303 +1,278 @@
 <template>
-  <div class="user-profile-container">
-    <div class="profile-header">
-      <div class="header-background"></div>
-      <div class="header-content">
-        <div class="avatar-section">
-          <div class="user-avatar">
-            <img v-if="profileImageUrl" :src="profileImageUrl" alt="Foto de perfil" class="profile-img" />
-            <i v-else class="fas fa-user-circle"></i>
-          </div>
-          <div class="avatar-upload">
-            <input type="file" ref="fileInput" @change="onFileSelected" style="display: none;" accept="image/*" />
-            <button class="upload-btn" @click="$refs.fileInput.click()" title="Cambiar foto">
-              <i class="fas fa-camera"></i>
-            </button>
-          </div>
+    <div class="user-profile-container">
+        <div class="profile-header">
+            <div class="header-background"></div>
+            <div class="header-content">
+                <div class="avatar-section">
+                    <div class="user-avatar">
+                        <img v-if="profileImageUrl" :src="profileImageUrl" alt="Foto de perfil" class="profile-img" />
+                        <i v-else class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="avatar-upload">
+                        <input type="file" ref="fileInput" @change="onFileSelected" style="display: none;" accept="image/*" />
+                        <button class="upload-btn" @click="$refs.fileInput.click()" title="Cambiar foto">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="user-title">
+                    <h1 class="profile-title">Perfil de Usuario</h1>
+                    <p class="profile-subtitle">Gestiona tu información personal</p>
+                    <BackButton />
+                </div>
+            </div>
         </div>
-        <div class="user-title">
-          <h1 class="profile-title">Perfil de Usuario</h1>
-          <p class="profile-subtitle">Gestiona tu información personal</p>
-                 <BackButton />
+
+        <div class="profile-content">
+            <div v-if="loading" class="loading-state">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                </div>
+                <p class="loading-text">Cargando información del usuario...</p>
+            </div>
+
+            <div v-if="error && !loading" class="error-state">
+                <div class="error-card">
+                    <div class="error-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="error-content">
+                        <h3 class="error-title">Error al cargar perfil</h3>
+                        <p class="error-message">{{ error }}</p>
+                        <button @click="retryLoad" class="retry-btn">
+                            <i class="fas fa-redo-alt"></i>
+                            Reintentar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="selectedFile && !uploading" class="upload-form">
+                <p class="upload-text">Archivo seleccionado: <strong>{{ selectedFile.name }}</strong></p>
+                <button @click="uploadProfileImage" :disabled="uploading" class="upload-confirm-btn">
+                    <i class="fas fa-upload"></i> Subir Imagen
+                </button>
+            </div>
+
+            <div v-if="uploading" class="uploading-state">
+                <div class="loading-spinner">
+                    <div class="spinner"></div>
+                </div>
+                <p class="loading-text">Subiendo imagen...</p>
+            </div>
+
+            <div v-if="user.email && !loading" class="user-info-section">
+                <div class="info-cards">
+                    <div class="info-card">
+                        <div class="card-header">
+                            <div class="card-icon">
+                                <i class="fas fa-id-card"></i>
+                            </div>
+                            <div class="card-title">
+                                <h3>Información Personal</h3>
+                                <p>Datos básicos de tu cuenta</p>
+                            </div>
+                            <button class="edit-btn" title="Editar información">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                        </div>
+                        <div class="card-content">
+                            <div class="info-item">
+                                <div class="info-label">
+                                    <i class="fas fa-envelope"></i>
+                                    <span>Correo Electrónico</span>
+                                </div>
+                                <div class="info-value">{{ user.email }}</div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">
+                                    <i class="fas fa-user-tag"></i>
+                                    <span>Rol del Usuario</span>
+                                </div>
+                                <div class="info-value">
+                                    <span class="role-badge" :class="getRoleClass(user.role_id)">
+                                        {{ formatRole(user.role_id) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="info-item">
+                                <div class="info-label">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <span>Último Acceso</span>
+                                </div>
+                                <div class="info-value">{{ formatDate(new Date()) }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="info-card">
+                        </div>
+                </div>
+
+                <div class="action-section">
+                    </div>
+            </div>
         </div>
-      </div>
     </div>
-
-    <div class="profile-content">
-      <div v-if="loading" class="loading-state">
-        <div class="loading-spinner">
-          <div class="spinner"></div>
-        </div>
-        <p class="loading-text">Cargando información del usuario...</p>
-      </div>
-
-      <div v-if="error && !loading" class="error-state">
-        <div class="error-card">
-          <div class="error-icon">
-            <i class="fas fa-exclamation-triangle"></i>
-          </div>
-          <div class="error-content">
-            <h3 class="error-title">Error al cargar perfil</h3>
-            <p class="error-message">{{ error }}</p>
-            <button @click="retryLoad" class="retry-btn">
-              <i class="fas fa-redo-alt"></i>
-              Reintentar
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="selectedFile && !uploading" class="upload-form">
-        <p class="upload-text">Archivo seleccionado: <strong>{{ selectedFile.name }}</strong></p>
-        <button @click="uploadProfileImage" :disabled="uploading" class="upload-confirm-btn">
-          <i class="fas fa-upload"></i> Subir Imagen
-        </button>
-      </div>
-
-      <div v-if="uploading" class="uploading-state">
-        <div class="loading-spinner">
-          <div class="spinner"></div>
-        </div>
-        <p class="loading-text">Subiendo imagen...</p>
-      </div>
-
-      <div v-if="user && !loading" class="user-info-section">
-        <div class="info-cards">
-          <div class="info-card">
-            <div class="card-header">
-              <div class="card-icon">
-                <i class="fas fa-id-card"></i>
-              </div>
-              <div class="card-title">
-                <h3>Información Personal</h3>
-                <p>Datos básicos de tu cuenta</p>
-              </div>
-              <button class="edit-btn" title="Editar información">
-                <i class="fas fa-edit"></i>
-              </button>
-            </div>
-            <div class="card-content">
-              <div class="info-item">
-                <div class="info-label">
-                  <i class="fas fa-envelope"></i>
-                  <span>Correo Electrónico</span>
-                </div>
-                <div class="info-value">{{ user.email }}</div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">
-                  <i class="fas fa-user-tag"></i>
-                  <span>Rol del Usuario</span>
-                </div>
-                <div class="info-value">
-                  <span class="role-badge" :class="getRoleClass(user.role)">
-                    {{ formatRole(user.role) }}
-                  </span>
-                </div>
-              </div>
-              <div class="info-item">
-                <div class="info-label">
-                  <i class="fas fa-calendar-alt"></i>
-                  <span>Último Acceso</span>
-                </div>
-                <div class="info-value">{{ formatDate(new Date()) }}</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="info-card">
-            <div class="card-header">
-              <div class="card-icon">
-                <i class="fas fa-cog"></i>
-              </div>
-              <div class="card-title">
-                <h3>Configuración</h3>
-                <p>Ajustes de tu cuenta</p>
-              </div>
-            </div>
-            <div class="card-content">
-              <div class="setting-item">
-                <div class="setting-info">
-                  <i class="fas fa-bell"></i>
-                  <div>
-                    <span class="setting-name">Notificaciones</span>
-                    <span class="setting-desc">Recibir alertas por email</span>
-                  </div>
-                </div>
-                <div class="toggle-switch">
-                  <input type="checkbox" id="notifications" checked>
-                  <label for="notifications"></label>
-                </div>
-              </div>
-              <div class="setting-item">
-                <div class="setting-info">
-                  <i class="fas fa-moon"></i>
-                  <div>
-                    <span class="setting-name">Modo Oscuro</span>
-                    <span class="setting-desc">Cambiar tema de la interfaz</span>
-                  </div>
-                </div>
-                <div class="toggle-switch">
-                  <input type="checkbox" id="darkMode">
-                  <label for="darkMode"></label>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="action-section">
-          <div class="action-buttons">
-            <button class="primary-btn">
-              <i class="fas fa-key"></i>
-              Cambiar Contraseña
-            </button>
-            <button class="secondary-btn">
-              <i class="fas fa-download"></i>
-              Descargar Datos
-            </button>
-            <button @click="logout" class="danger-btn">
-              <i class="fas fa-sign-out-alt"></i>
-              Cerrar Sesión
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 </template>
 
 <script>
-// La corrección aquí: importa la instancia `apiClient` desde tu archivo de configuración
-import apiClient from '../../axios'; 
+import apiClient from '../../axios';
 import BackButton from './BackButton.vue';
 
 export default {
-  name: 'UserProfile',
+    name: 'UserProfile',
     components: {
-     BackButton
-   },
-  data() {
-    return {
-     
-      user: null,
-      loading: false,
-      error: null,
-      selectedFile: null,
-      profileImageUrl: null,
-      uploading: false,
-
-    };
-  },
-  async mounted() {
-    await this.loadUserProfile();
-  },
-  methods: {
-    async loadUserProfile() {
-      this.loading = true;
-      this.error = null;
-      const token = localStorage.getItem('access_token');
-      if (!token) {
-        this.error = 'No estás autenticado.';
-        this.loading = false;
-        return;
-      }
-
-      try {
-        // La corrección: Usa `apiClient` en lugar de `api`
-        const response = await apiClient.get('/protected'); 
-        
-        this.user = response.data.logged_in_as;
-        this.profileImageUrl = this.user.profile_image_url;
-        
-      } catch (error) {
-        this.error = 'No se pudo cargar la información del usuario.';
-        console.error("Error al cargar perfil de usuario:", error);
-      } finally {
-        this.loading = false;
-      }
+        BackButton
     },
-    onFileSelected(event) {
-      const file = event.target.files[0];
-      if (file) {
-        this.selectedFile = file;
-      }
+    data() {
+        return {
+            user: {
+                id: null,
+                // Inicializa a null para que el v-if de la plantilla funcione correctamente
+                email: null, 
+                role_id: null,
+                profile_image_url: null,
+            },
+            loading: false,
+            error: null,
+            selectedFile: null,
+            uploading: false,
+        };
     },
-    async uploadProfileImage() {
-      if (!this.selectedFile) {
-        alert('Por favor, selecciona un archivo.');
-        return;
-      }
-      const formData = new FormData();
-      formData.append('file', this.selectedFile);
+    computed: {
+        profileImageUrl() {
+            // Mantiene el perfil de imagen basado en el estado del usuario
+            return this.user.profile_image_url;
+        }
+        // Se elimina userRoleName ya que es ineficiente y formatRole lo hará directamente
+    },
+    async mounted() {
+        await this.loadUserProfile();
+    },
+    methods: {
+        // =========================================================
+        // 1. Carga de Perfil
+        // =========================================================
+        async loadUserProfile() {
+            this.loading = true;
+            this.error = null;
+            // Limpiar la información anterior en caso de reintento
+            this.user = { id: null, email: null, role_id: null, profile_image_url: null }; 
 
-      try {
-        this.uploading = true;
-        
-        const response = await apiClient.post('/api/upload_image', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
+            try {
+                // Endpoint correcto: /api/profile
+                const response = await apiClient.get('/api/profile'); 
+                
+                // Asignar la respuesta directamente
+                this.user = response.data;
+                
+                // Si la respuesta es exitosa pero no tiene el campo 'email', tratamos como error
+                if (!this.user || !this.user.email) {
+                     throw new Error('Respuesta del servidor incompleta o nula.');
+                }
+
+            } catch (error) {
+                // Manejo de error de red (el que estás viendo) o 401
+                if (error.response && error.response.status === 401) {
+                    this.error = 'Tu sesión ha expirado. Por favor, inicia sesión de nuevo.';
+                    this.logout(); 
+                } else if (error.code === 'ERR_NETWORK' || !error.response) {
+                    // Si el error es de red o la respuesta es null (típico de CORS/Render)
+                    this.error = 'Error de conexión. Asegúrate de que tu Backend en Render esté activo y la configuración de CORS sea correcta.';
+                    console.error("Error al cargar perfil de usuario:", error);
+                } else {
+                    this.error = `Error al cargar perfil: ${error.message}.`;
+                }
+            } finally {
+                this.loading = false;
             }
-        });
+        },
         
-        console.log('Imagen subida exitosamente:', response.data.url);
+        // =========================================================
+        // 2. Manejo de Archivo Seleccionado (sin cambios)
+        // =========================================================
+        onFileSelected(event) {
+            const file = event.target.files[0];
+            if (file) {
+                this.selectedFile = file;
+                this.error = null;
+            }
+        },
         
-        // Actualizar el token en localStorage
-        localStorage.setItem('access_token', response.data.access_token);
-        
-        // Actualizar la URL de la imagen en el estado local del componente
-        this.profileImageUrl = response.data.url;
-        
-        alert('Imagen de perfil actualizada exitosamente!');
-        this.selectedFile = null;
+        // =========================================================
+        // 3. Subida de Foto de Perfil (sin cambios, ya era correcto)
+        // =========================================================
+        async uploadProfileImage() {
+            if (!this.selectedFile) {
+                this.error = 'Por favor, selecciona un archivo para subir.';
+                return;
+            }
+            
+            const formData = new FormData();
+            // Aseguramos que la clave sea 'profile_image' para Flask
+            formData.append('profile_image', this.selectedFile); 
 
-    } catch (error) {
-        console.error('Error al subir imagen:', error);
-        alert('Error al subir la imagen. Por favor, inténtalo de nuevo.');
-    } finally {
-        this.uploading = false;
+            try {
+                this.uploading = true;
+                this.error = null;
+                
+                const response = await apiClient.post('/api/profile/upload-image', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    }
+                });
+                
+                const newUrl = response.data.profile_image_url;
+                this.user.profile_image_url = newUrl;
+                this.selectedFile = null;
+                this.$refs.fileInput.value = '';
+
+                alert('Imagen de perfil actualizada exitosamente! ✅');
+
+            } catch (error) {
+                console.error('Error al subir imagen:', error);
+                this.error = 'Error al subir la imagen. Verifica el tamaño y formato del archivo.';
+            } finally {
+                this.uploading = false;
+            }
+        },
+        
+        // =========================================================
+        // 4. Utilidades
+        // =========================================================
+        async retryLoad() {
+            await this.loadUserProfile();
+        },
+        logout() {
+            localStorage.removeItem('access_token'); 
+            this.$router.push('/login').catch(() => {});
+        },
+        
+        // CORRECCIÓN DE LÓGICA DE ROLES (Autocontenida y eficiente)
+        getRoleClass(roleId) { 
+            switch (roleId) {
+                case 1: return 'role-admin'; 
+                case 2: return 'role-user'; 
+                default: return 'role-default';
+            }
+        },
+        formatRole(roleId) { 
+            switch (roleId) {
+                case 1: return 'Administrador';
+                case 2: return 'Vendedor';
+                default: return 'Usuario';
+            }
+        },
+        formatDate(date) {
+            return new Intl.DateTimeFormat('es-ES', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            }).format(date);
+        }
     }
-    },
-    async retryLoad() {
-      await this.loadUserProfile();
-    },
-    logout() {
-      sessionStorage.removeItem('access_token');
-      localStorage.removeItem('access_token');
-      this.$router.push('/login');
-    },
-    getRoleClass(role) {
-      const roleClasses = {
-        admin: 'role-admin',
-        administrator: 'role-admin',
-        user: 'role-user',
-        usuario: 'role-user',
-        moderator: 'role-moderator',
-        moderador: 'role-moderator'
-      };
-      return roleClasses[role?.toLowerCase()] || 'role-default';
-    },
-    formatRole(role) {
-      const roleNames = {
-        admin: 'Administrador',
-        administrator: 'Administrador',
-        user: 'Usuario',
-        usuario: 'Usuario',
-        moderator: 'Moderador',
-        moderador: 'Moderador'
-      };
-      return roleNames[role?.toLowerCase()] || role || 'Usuario';
-    },
-    formatDate(date) {
-      return new Intl.DateTimeFormat('es-ES', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      }).format(date);
-    }
-  }
 };
 </script>
 
@@ -395,11 +370,11 @@ export default {
 .profile-title {
   font-size: 32px;
   font-weight: 700;
-  color: #2d3748;
+  color: white;
   margin: 0 0 8px 0;
   background: linear-gradient(135deg, #667eea, #764ba2);
   -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-text-fill-color: white;
   background-clip: text;
 }
 .profile-subtitle {

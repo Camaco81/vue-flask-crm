@@ -1,7 +1,7 @@
 <template>
   <div class="analytics-container">
-    <h1 class="page-title">Dashboard</h1>
-    <BackButton /> <p class="subtitle">Aquí tienes un resumen de tu panel de control</p>
+    <h1 class="page-title">Analíticas de Vendedor</h1> <BackButton /> 
+    <p class="subtitle">Aquí tienes un resumen del rendimiento de tus ventas.</p>
     
     <div v-if="loading" class="loading-state">
       Cargando analíticas...
@@ -21,8 +21,8 @@
         <p class="metric-label">Productos</p>
       </div>
       <div class="metric-card gradient-3">
-        <h2 class="metric-value">{{ formatNumber(analytics.total_today_orders) }}</h2>
-        <p class="metric-label">Pedidos Hoy</p>
+        <h2 class="metric-value">{{ formatNumber(analytics.total_today_sales) }}</h2>
+        <p class="metric-label">Ventas Hoy</p>
       </div>
       <div class="metric-card gradient-4">
         <h2 class="metric-value">${{ formatNumber(analytics.total_revenue) }}</h2>
@@ -37,44 +37,76 @@ import apiClient from '../../axios';
 import BackButton from './BackButton.vue';
 
 export default {
-  name: 'AnalyticsComponent',
-  data() {
-    return {
-      analytics: {
-        total_customers: 0,
-        total_products: 0,
-        total_today_orders: 0,
-        total_revenue: 0,
-      },
-      loading: false,
-      error: null,
-    };
-  },
-  components: {
-    BackButton
-  },
-  async mounted() {
-    await this.fetchAnalytics();
-  },
-  methods: {
-    async fetchAnalytics() {
-      this.loading = true;
-      this.error = null;
-      try {
-        const response = await apiClient.get('/api/analytics');
-        this.analytics = response.data;
-      } catch (error) {
-        console.error("Error al obtener analíticas:", error);
-        this.error = "No se pudo cargar las analíticas. Asegúrate de que el backend está corriendo.";
-      } finally {
-        this.loading = false;
-      }
+    name: 'AnalyticsComponent',
+    data() {
+        return {
+            analytics: {
+                total_customers: 0,
+                total_products: 0,
+                total_today_sales: 0, // <-- Renombrado para consistencia
+                total_revenue: 0,
+            },
+            loading: false,
+            error: null,
+        };
     },
-    formatNumber(value) {
-      // Formatea un número para que sea legible (ej: 1,234.56)
-      return new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(value);
-    }
-  },
+    components: {
+        BackButton
+    },
+    async mounted() {
+        await this.fetchAnalyticsData(); // <-- Renombrado para ser más explícito
+    },
+    methods: {
+        async fetchAnalyticsData() { // <-- Renombrada la función
+            this.loading = true;
+            this.error = null;
+            
+            try {
+                // Ejecutar todas las peticiones en paralelo para optimizar la carga
+                const [customersRes, productsRes, salesRes] = await Promise.all([
+                    apiClient.get('/api/customers'),
+                    apiClient.get('/api/products'),
+                    apiClient.get('/api/sales') // Endpoint consolidado de ventas
+                ]);
+
+                const sales = salesRes.data;
+
+                // --- 1. Clientes y Productos ---
+                this.analytics.total_customers = customersRes.data.length;
+                this.analytics.total_products = productsRes.data.length;
+
+                // --- 2. Ventas e Ingresos (Calculados a partir de /api/sales) ---
+                
+                // Cálculo de Ventas Hoy
+                const today = new Date().toISOString().split('T')[0];
+                const salesToday = sales.filter(sale => 
+                    sale.sale_date && String(sale.sale_date).startsWith(today)
+                );
+                this.analytics.total_today_sales = salesToday.length;
+
+                // Cálculo de Ingresos Totales
+                const totalRevenue = sales.reduce((sum, sale) => {
+                    const amount = parseFloat(sale.total_amount) || 0;
+                    return sum + amount;
+                }, 0);
+
+                this.analytics.total_revenue = totalRevenue; 
+
+            } catch (error) {
+                console.error("Error al obtener analíticas:", error);
+                // Mensaje de error más útil
+                this.error = "No se pudieron cargar las analíticas. Verifica tu conexión y el servidor backend."; 
+            } finally {
+                this.loading = false;
+            }
+        },
+        formatNumber(value) {
+            // Formatea un número para que sea legible (ej: 1,234.56)
+            // Asegura que los números de moneda tengan 2 decimales.
+            const options = value % 1 !== 0 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 };
+            return new Intl.NumberFormat('es-ES', options).format(value);
+        }
+    },
 };
 </script>
 
