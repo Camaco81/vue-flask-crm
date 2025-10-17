@@ -5,13 +5,13 @@ from backend.utils.helpers import get_user_and_role
 # Asegúrate de que este archivo exista y contenga las funciones de simulación/integración
 from backend.utils.cloudinary_handler import upload_profile_image, delete_profile_image 
 
-user_bp = Blueprint('user', __name__, url_prefix='/api/profile')
+user_bp = Blueprint('user', __name__, url_prefix='/api')
 
 # =========================================================
 # 1. GET: Obtener Información del Perfil (Solo campos específicos)
 # =========================================================
 
-@user_bp.route('/', methods=['GET'])
+@user_bp.route('profile', methods=['GET'])
 @jwt_required()
 def get_user_profile():
     current_user_id, user_role = get_user_and_role()
