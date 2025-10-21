@@ -70,7 +70,7 @@ def products_collection():
         except Exception as e:
             return jsonify({"msg": "Error fetching products", "error": str(e)}), 500
 
-@product_bp.route('/<int:product_id>', methods=['GET', 'PUT', 'DELETE'])
+@product_bp.route('/<string:product_id>', methods=['GET', 'PUT', 'DELETE'])
 @jwt_required()
 def product_single(product_id):
     current_user_id, user_role = get_user_and_role()
