@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
-# Deberás verificar o modificar tu función check_admin_permission
+# Asegúrate de que tu helpers.py tenga estas funciones
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
 
 product_bp = Blueprint('product', __name__, url_prefix='/api/products')
@@ -16,10 +16,12 @@ def _fetch_product_details(cur, product_row):
         return dict(zip(columns, product_row))
     return None
 
-# --- Helper: Permisos de Gestión de Productos (incluye Vendedor y Admin) ---
+# --- Helper: Permisos de Gestión de Productos (incluye Consultor y Admin) ---
+# **ESTO ES EL AJUSTE CLAVE**
 def check_product_manager_permission(user_role):
-    return user_role in ['admin','consultor']
-
+    """Verifica si el rol tiene permisos para crear/modificar/eliminar productos."""
+    # Los roles permitidos son 'admin' y 'consultor'
+    return user_role in ['admin', 'consultor']
 
 # --------------------------------------------------------------------------
 
@@ -31,13 +33,12 @@ def products_collection():
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
 
     if request.method == 'POST':
-        # MODIFICADO: Usar el nuevo helper para incluir vendedores
+        # VERIFICACIÓN DE PERMISO: Ahora acepta 'admin' y 'consultor'
         if not check_product_manager_permission(user_role):
             return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden crear productos"}), 403
         
         data = request.get_json()
         
-        # Validación de campos requeridos (incluyendo 'stock')
         if not validate_required_fields(data, ['name', 'price', 'stock']):
             return jsonify({"msg": "Missing required fields: name, price, stock"}), 400
 
@@ -60,7 +61,6 @@ def products_collection():
             return jsonify({"msg": "Error creating product", "error": str(e)}), 500
 
     elif request.method == 'GET':
-        # Todos los usuarios autenticados pueden ver la lista de productos
         try:
             with get_db_cursor() as cur:
                 cur.execute("SELECT id, name, price, stock FROM products ORDER BY name;")
@@ -79,9 +79,9 @@ def product_single(product_id):
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
 
-    # MODIFICADO: Aplicar el mismo permiso para PUT y DELETE
+    # VERIFICACIÓN DE PERMISO: Ahora acepta 'admin' y 'consultor' para modificar/eliminar
     if request.method in ['PUT', 'DELETE'] and not check_product_manager_permission(user_role):
-        return jsonify({"msg": "Acceso denegado: solo administradores y vendedores pueden modificar o eliminar productos"}), 403
+        return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden modificar o eliminar productos"}), 403
 
     if request.method == 'GET':
         try:
@@ -95,7 +95,6 @@ def product_single(product_id):
             return jsonify({"msg": "Error fetching product", "error": str(e)}), 500
 
     elif request.method == 'PUT':
-        # ... (Lógica de actualización de producto, no necesita cambios)
         data = request.get_json()
         if not data:
             return jsonify({"msg": "No data provided for update"}), 400
