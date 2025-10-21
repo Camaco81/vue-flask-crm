@@ -1,10 +1,23 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-# from db import get_db_cursor <-- Antiguo
-from backend.db import get_db_cursor # <-- Nuevo
-# from utils.helpers import ... <-- Antiguo
+from backend.db import get_db_cursor
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
+
 product_bp = Blueprint('product', __name__, url_prefix='/api/products')
+
+# --- Helper para obtener el producto completo después de INSERT/UPDATE ---
+def _fetch_product_details(cur, product_row):
+    """
+    Convierte la fila de la base de datos (después de RETURNING *) a un diccionario.
+    Asume que el cursor ha ejecutado una sentencia RETURNING.
+    """
+    if product_row:
+        # Obtiene los nombres de las columnas del cursor
+        columns = [desc[0] for desc in cur.description]
+        return dict(zip(columns, product_row))
+    return None
+
+# --------------------------------------------------------------------------
 
 @product_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
@@ -18,17 +31,29 @@ def products_collection():
             return jsonify({"msg": "Acceso denegado: solo administradores pueden crear productos"}), 403
         
         data = request.get_json()
+        
+        # Validación de campos requeridos (incluyendo 'stock')
         if not validate_required_fields(data, ['name', 'price', 'stock']):
             return jsonify({"msg": "Missing required fields: name, price, stock"}), 400
 
         try:
             with get_db_cursor(commit=True) as cur:
+                # Modificado: Usar 'RETURNING id, name, price, stock' para obtener el objeto completo
                 cur.execute(
-                    "INSERT INTO products (name, price, stock) VALUES (%s, %s, %s) RETURNING id;",
+                    "INSERT INTO products (name, price, stock) VALUES (%s, %s, %s) RETURNING id, name, price, stock;",
                     (data['name'], float(data['price']), int(data['stock']))
                 )
-                new_product_id = cur.fetchone()[0]
-            return jsonify({"msg": "Product created successfully", "product_id": new_product_id}), 201
+                
+                # Recuperar y formatear el producto insertado
+                new_product_row = cur.fetchone()
+                new_product = _fetch_product_details(cur, new_product_row)
+            
+            if new_product:
+                # Retorna el objeto completo del producto creado (incluye stock)
+                return jsonify(new_product), 201
+            else:
+                return jsonify({"msg": "Product creation failed to return data"}), 500
+
         except Exception as e:
             return jsonify({"msg": "Error creating product", "error": str(e)}), 500
 
@@ -36,9 +61,11 @@ def products_collection():
         # Todos los usuarios autenticados pueden ver la lista de productos
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name,  price, stock FROM products ORDER BY name;")
+                # Asegura que 'stock' se incluye en la consulta
+                cur.execute("SELECT id, name, price, stock FROM products ORDER BY name;")
                 products = cur.fetchall()
-                products_list = [dict(p) for p in products]
+                # Se asume que get_db_cursor usa RealDictCursor o se convierte a dict en el frontend
+                products_list = [dict(p) for p in products] 
             return jsonify(products_list), 200
         except Exception as e:
             return jsonify({"msg": "Error fetching products", "error": str(e)}), 500
@@ -57,6 +84,7 @@ def product_single(product_id):
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
+                # Asegura que 'stock' se incluye en la consulta
                 cur.execute("SELECT id, name, price, stock FROM products WHERE id = %s;", (product_id,))
                 product = cur.fetchone()
             if product:
@@ -72,9 +100,12 @@ def product_single(product_id):
         
         set_clauses = []
         params = []
+        
+        # Itera sobre los campos y prepara la consulta
         for key, value in data.items():
             if key in ['name', 'price', 'stock']:
                 set_clauses.append(f"{key} = %s")
+                # Asegura el tipo correcto para la base de datos
                 if key == 'price': params.append(float(value))
                 elif key == 'stock': params.append(int(value))
                 else: params.append(value)
@@ -83,14 +114,19 @@ def product_single(product_id):
             return jsonify({"msg": "No valid fields to update"}), 400
 
         params.append(product_id)
-        query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id;"
+        # Modificado: Usar 'RETURNING id, name, price, stock' para obtener el objeto actualizado
+        query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, price, stock;"
 
         try:
             with get_db_cursor(commit=True) as cur:
                 cur.execute(query, tuple(params))
-                updated_id = cur.fetchone()
-            if updated_id:
-                return jsonify({"msg": "Product updated successfully", "product_id": updated_id[0]}), 200
+                # Recuperar y formatear el producto actualizado
+                updated_product_row = cur.fetchone()
+                updated_product = _fetch_product_details(cur, updated_product_row)
+
+            if updated_product:
+                # Retorna el objeto completo del producto actualizado (incluye stock)
+                return jsonify(updated_product), 200
             return jsonify({"msg": "Product not found or no changes made"}), 404
         except Exception as e:
             return jsonify({"msg": "Error updating product", "error": str(e)}), 500
