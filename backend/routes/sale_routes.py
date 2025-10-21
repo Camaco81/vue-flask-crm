@@ -3,8 +3,8 @@ from flask_jwt_extended import jwt_required
 # from db import get_db_cursor <-- Antiguo
 from backend.db import get_db_cursor # <-- Nuevo
 # from utils.helpers import ... <-- Antiguo
-from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission # <-- CORREGIDO (añadido check_seller_permission)
-
+ # <-- CORREGIDO (añadido check_seller_permission)
+from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_product_manager_permission
 sale_bp = Blueprint('sale', __name__, url_prefix='/api/sales')
 
 @sale_bp.route('', methods=['GET', 'POST'])
@@ -13,10 +13,10 @@ def sales_collection():
     current_user_id, user_role = get_user_and_role()
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
+    if not check_product_manager_permission(user_role_id):
+        return jsonify({"msg": "Acceso denegado: solo personal de ventas y administradores pueden crear ventas"}), 403
 
     if request.method == "POST":
-        if not check_seller_permission(user_role): # Admins y Vendedores pueden crear ventas
-            return jsonify({"msg": "Acceso denegado: solo vendedores y administradores pueden registrar ventas"}), 403
 
         data = request.get_json()
         if not validate_required_fields(data, ['customer_id', 'items']):
