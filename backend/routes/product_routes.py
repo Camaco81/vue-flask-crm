@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
-# Asegúrate de que tu helpers.py tenga estas funciones
-from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
+# Importar ahora la versión de helper ajustada (que usa IDs de rol)
+from backend.utils.helpers import get_user_and_role, check_product_manager_permission, validate_required_fields 
 
 product_bp = Blueprint('product', __name__, url_prefix='/api/products')
 
@@ -16,36 +16,30 @@ def _fetch_product_details(cur, product_row):
         return dict(zip(columns, product_row))
     return None
 
-# --- Helper: Permisos de Gestión de Productos (incluye Consultor y Admin) ---
-def check_product_manager_permission(user_role):
-    """
-    Verifica si el rol tiene permisos para crear/modificar/eliminar productos.
-    Asume que el user_role ya ha sido limpiado (lower() y strip()).
-    """
-    # Los roles permitidos son 'admin' y 'consultor'
-    return user_role in ['admin', 'consultor']
+# Nota: check_product_manager_permission ahora se importa desde helpers.py
+# y espera el role_id (entero), así que se elimina la función local.
 
 # --------------------------------------------------------------------------
 
 @product_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def products_collection():
-    current_user_id, user_role = get_user_and_role()
+    # user_role ahora es user_role_id (entero 1 o 2)
+    current_user_id, user_role_id = get_user_and_role() 
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
     
-    # *** CORRECCIÓN CLAVE: Estandarizar el rol antes de la verificación ***
-    if user_role:
-        user_role = user_role.lower().strip() 
-    # ***********************************************************************
-
+    # *** CORRECCIÓN CLAVE: Se ELIMINA la lógica de conversión de cadenas fallida ***
+    # La variable user_role_id ya es un entero (1 o 2)
+    
     if request.method == 'POST':
-        # VERIFICACIÓN DE PERMISO
-        if not check_product_manager_permission(user_role):
+        # VERIFICACIÓN DE PERMISO (Usa el ID entero)
+        if not check_product_manager_permission(user_role_id):
             return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden crear productos"}), 403
         
         data = request.get_json()
         
+        # NOTE: validate_required_fields fue ajustado en helpers.py para corregir un bug de retorno
         if not validate_required_fields(data, ['name', 'price', 'stock']):
             return jsonify({"msg": "Missing required fields: name, price, stock"}), 400
 
@@ -65,7 +59,6 @@ def products_collection():
                 return jsonify({"msg": "Product creation failed to return data"}), 500
 
         except Exception as e:
-            # Manejo más específico para errores de tipo (Price/Stock)
             return jsonify({"msg": "Error creating product. Check data types for price and stock.", "error": str(e)}), 500
 
     elif request.method == 'GET':
@@ -73,7 +66,7 @@ def products_collection():
             with get_db_cursor() as cur:
                 cur.execute("SELECT id, name, price, stock FROM products ORDER BY name;")
                 products = cur.fetchall()
-                products_list = [dict(p) for p in products] 
+                products_list = [dict(p) for p in products]  
             return jsonify(products_list), 200
         except Exception as e:
             return jsonify({"msg": "Error fetching products", "error": str(e)}), 500
@@ -83,17 +76,16 @@ def products_collection():
 @product_bp.route('/<string:product_id>', methods=['GET', 'PUT', 'DELETE'])
 @jwt_required()
 def product_single(product_id):
-    current_user_id, user_role = get_user_and_role()
+    # user_role ahora es user_role_id (entero 1 o 2)
+    current_user_id, user_role_id = get_user_and_role()
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
     
-    # *** CORRECCIÓN CLAVE: Estandarizar el rol antes de la verificación ***
-    if user_role:
-        user_role = user_role.lower().strip()
-    # ***********************************************************************
+    # *** CORRECCIÓN CLAVE: Se ELIMINA la lógica de conversión de cadenas fallida ***
+    # La variable user_role_id ya es un entero (1 o 2)
 
-    # VERIFICACIÓN DE PERMISO: Ahora acepta 'admin' y 'consultor' para modificar/eliminar
-    if request.method in ['PUT', 'DELETE'] and not check_product_manager_permission(user_role):
+    # VERIFICACIÓN DE PERMISO (Usa el ID entero)
+    if request.method in ['PUT', 'DELETE'] and not check_product_manager_permission(user_role_id):
         return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden modificar o eliminar productos"}), 403
 
     if request.method == 'GET':
@@ -139,7 +131,6 @@ def product_single(product_id):
                 return jsonify(updated_product), 200
             return jsonify({"msg": "Product not found or no changes made"}), 404
         except Exception as e:
-            # Manejo más específico para errores de tipo (Price/Stock)
             return jsonify({"msg": "Error updating product. Check data types for price and stock.", "error": str(e)}), 500
 
     elif request.method == 'DELETE':
