@@ -4,11 +4,11 @@
     <p>Bienvenido, "Administrador". Desde aquí puedes supervisar y gestionar usuarios, acceder a reportes y configurar el sistema.</p>
     
     <div class="dashboard-buttons">
-      <router-link to="/users" class="dashboard-button">Gestión de Usuarios</router-link>
+      <router-link to="/admin/users" class="dashboard-button">Gestión de Usuarios</router-link>
       
-      <router-link to="/general-reports" class="dashboard-button">Reportes Generales</router-link>
+      <router-link to="/admin/general-reports" class="dashboard-button">Reportes Generales</router-link>
       
-      <router-link to="/settings" class="dashboard-button">Configuración del Sistema</router-link>
+      <router-link to="settings" class="dashboard-button">Configuración del Sistema</router-link>
     </div>
 
     <button @click="logout" class="logout-button">Cerrar Sesión</button>

@@ -1,7 +1,7 @@
 <template>
   <div class="user-management-page admin-section">
     <button class="btn btn-primary add-button">
-   <router-link to="/dashboard-admin">
+   <router-link to="/dashboard">
       <i class="fas fa-arrow-left"></i> Volver al Dashboard Administrativo
     </router-link>
     </button>
@@ -84,7 +84,7 @@
 </template>
 
 <script>
-import axios from '@/axios'; 
+import axios from '@/axios';
 
 export default {
   name: 'UserManagement',
@@ -113,26 +113,60 @@ export default {
       this.loading = true;
       this.error = null;
       try {
-        const response = await axios.get('/admin/users'); 
-        this.users = response.data.users; 
+        const response = await axios.get('/admin/users');
+        
+        // 🚨 CORRECCIÓN CLAVE: Ajustamos la asignación de datos.
+        let userData;
+        
+        // 1. Intentamos obtener la lista directamente (formato actual del backend)
+        if (Array.isArray(response.data)) {
+          userData = response.data;
+        } 
+        // 2. Si es un objeto, intentamos obtenerla de la clave 'users' (fallback)
+        else if (response.data && Array.isArray(response.data.users)) {
+          userData = response.data.users;
+        } else {
+          // Si el formato es inesperado, lanzamos un error claro
+          throw new Error('Formato de respuesta del servidor incorrecto.');
+        }
+
+        // Como el backend ya envía role_name, solo asignamos los datos.
+        // Convertimos el UUID a string para Vue si no lo está:
+        this.users = userData.map(user => ({
+            ...user,
+            id: String(user.id),
+        }));
+
       } catch (err) {
-        this.error = 'No se pudo cargar la lista de usuarios. Verifica el endpoint de tu API.';
-        console.error('Error al obtener usuarios:', err);
+        // Mejoramos el manejo de errores para permisos (código 403)
+        const status = err.response?.status;
+        if (status === 403) {
+             this.error = 'No tienes permisos de Administrador para acceder a esta sección.';
+        } else {
+             this.error = err.response?.data?.msg || 'Error al cargar la lista de usuarios. Verifica el endpoint y la consola.';
+        }
+        console.error('Error al obtener usuarios:', err.response || err);
       } finally {
         this.loading = false;
       }
     },
 
+    // --------------------------------------------------------------------------------
+    // El resto de los métodos (saveUser, deleteUser, openModal, closeModal, confirmDelete) 
+    // se mantienen correctos, ya que usan las rutas y el formato de datos esperados.
+    // --------------------------------------------------------------------------------
     async saveUser() {
       this.isSaving = true;
       try {
         const dataToSend = { ...this.currentUser };
 
         if (this.modalMode === 'create') {
+          // POST /admin/users
           await axios.post('/admin/users', dataToSend);
         } else {
+          // PUT /admin/users/{id} (Solo actualiza role_id)
           delete dataToSend.password; 
-          await axios.put(`/admin/users/${this.currentUser.id}`, dataToSend);
+          await axios.put(`/admin/users/${this.currentUser.id}`, {role_id: dataToSend.role_id}); // Sólo enviamos el rol
         }
         
         this.fetchUsers();
@@ -148,10 +182,11 @@ export default {
     async deleteUser(userId) {
       this.error = null;
       try {
+        // DELETE /admin/users/{id}
         await axios.delete(`/admin/users/${userId}`); 
         this.fetchUsers(); 
       } catch (err) {
-        this.error = 'Error al eliminar el usuario.';
+        this.error = err.response?.data?.msg || 'Error al eliminar el usuario.';
         console.error('Error al eliminar:', err);
       }
     },
@@ -162,6 +197,7 @@ export default {
       if (mode === 'create') {
         this.currentUser = { id: null, email: '', password: '', role_id: 2 };
       } else {
+        // Usamos el 'role_id' para inicializar el select del modal de edición
         this.currentUser = { 
           id: user.id, 
           email: user.email, 

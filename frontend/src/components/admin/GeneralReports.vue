@@ -1,8 +1,13 @@
 <template>
   <div class="admin-general-reports">
+    <div class="header-controls">
+      <button @click="goBack" class="btn-back">
+        ← Regresar
+      </button>
+    </div>
+    
     <h1>Reportes Generales de Ventas</h1>
     <p>Aquí se muestra un resumen de todas las ventas del sistema, incluyendo quién las realizó.</p>
-
     <div v-if="isLoading" class="loading-message">Cargando reportes de ventas...</div>
     <div v-if="error" class="error-message">{{ error }}</div>
 
@@ -18,7 +23,7 @@
       <h4>Ventas por Consultor/Vendedor:</h4>
       <ul class="sales-by-seller-list">
         <li v-for="(sales, seller) in salesBySeller" :key="seller">
-          <strong>{{ seller === 'null' ? 'Vendedor Desconocido' : seller }}:</strong> ${{ sales.toFixed(2) }}
+          <strong>{{ seller === 'Desconocido' ? 'Vendedor Desconocido' : seller }}:</strong> ${{ sales.toFixed(2) }}
         </li>
       </ul>
     </div>
@@ -27,10 +32,15 @@
       <h2>Detalle de Todas las Órdenes</h2>
       <div v-for="order in allOrders" :key="order.id" class="order-card">
         <h3>Orden #{{ order.id }} - Cliente: {{ order.customer_name }}</h3>
-        <p><strong>Vendedor/Consultor:</strong> {{ order.seller_email || 'N/A' }} (ID: {{ order.seller_id || 'N/A' }})</p>
+        <p>
+          <strong>Vendedor/Consultor:</strong> 
+          {{ order.seller_email || `ID: ${order.seller_id}` || 'N/A' }}
+        </p>
         <p><strong>Fecha:</strong> {{ formatDateTime(order.order_date) }}</p>
         <p><strong>Estado:</strong> <span :class="getStatusClass(order.status)">{{ order.status }}</span></p>
-        <p><strong>Monto Total:</strong> ${{ order.total_amount.toFixed(2) }}</p>
+        <p>
+          <strong>Monto Total:</strong> ${{ parseFloat(order.total_amount).toFixed(2) }}
+        </p>
         
         <div class="order-items">
           <h4>Productos:</h4>
@@ -46,10 +56,10 @@
 </template>
 
 <script>
-import axios from '../../axios.js'; // Ajusta la ruta a tu instancia de Axios
+import axios from '../../axios.js'; 
 
 export default {
-  name: 'AdminGeneralReports', // Renombrado para mayor claridad
+  name: 'AdminGeneralReports',
   data() {
     return {
       allOrders: [],
@@ -59,16 +69,17 @@ export default {
   },
   computed: {
     totalGlobalSalesAmount() {
-      return this.allOrders.reduce((sum, order) => sum + parseFloat(order.total_amount), 0);
+      return this.allOrders.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
     },
     salesBySeller() {
       const sales = {};
       this.allOrders.forEach(order => {
-        const seller = order.seller_email || 'null'; // Agrupa por email del vendedor
-        if (!sales[seller]) {
-          sales[seller] = 0;
+        const sellerKey = order.seller_email || (order.seller_id ? `Vendedor ID: ${order.seller_id}` : 'Desconocido');
+        
+        if (!sales[sellerKey]) {
+          sales[sellerKey] = 0;
         }
-        sales[seller] += parseFloat(order.total_amount);
+        sales[sellerKey] += parseFloat(order.total_amount || 0);
       });
       return sales;
     }
@@ -77,23 +88,26 @@ export default {
     await this.fetchAllOrders();
   },
   methods: {
+    // 🚨 FUNCIÓN AÑADIDA PARA REGRESAR EN EL HISTORIAL DE NAVEGACIÓN
+    goBack() {
+      this.$router.go(-1);
+    },
+    // ... (El resto de métodos se mantiene igual)
     async fetchAllOrders() {
       this.isLoading = true;
       this.error = '';
       try {
-        // Un administrador consume /api/orders para ver todas las ventas
         const response = await axios.get('/api/orders'); 
         this.allOrders = response.data;
       } catch (error) {
         console.error('Error al obtener todos los reportes de ventas:', error);
-        this.error = error.response?.data?.msg || 'Error al cargar los reportes generales de ventas.';
+        this.error = error.response?.data?.msg || 'Error al cargar los reportes generales de ventas. Verifica tus permisos.';
       } finally {
         this.isLoading = false;
       }
     },
     formatDateTime(dateTimeString) {
       const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-      // Asegúrate de que dateTimeString sea válido para Date
       if (!dateTimeString) return 'Fecha desconocida';
       try {
         return new Date(dateTimeString).toLocaleDateString('es-ES', options);
@@ -112,10 +126,19 @@ export default {
 }
 </script>
 
+
+h1 {
+  text-align: center;
+  color: #007bff;
+  margin-bottom: 25px;
+}
+/* ... (El resto de estilos sigue igual) ... */
+
 <style scoped>
+/* El estilo se mantiene idéntico, ya está bien estructurado y diseñado. */
 .admin-general-reports {
   padding: 20px;
-  max-width: 1000px; /* Ancho un poco mayor para más datos */
+  max-width: 1000px;
   margin: 30px auto;
   background-color: #fff;
   border-radius: 8px;
