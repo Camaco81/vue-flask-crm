@@ -4,7 +4,7 @@ from backend.db import get_db_cursor
 # Importaciones necesarias
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_product_manager_permission
 
-sale_bp = Blueprint('sale', __name__, url_prefix='/api/sales')
+sale_bp = Blueprint('sale', __name__)
 
 @sale_bp.route('', methods=['GET', 'POST'])
 @jwt_required()

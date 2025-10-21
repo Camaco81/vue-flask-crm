@@ -44,17 +44,17 @@ CORS(
 # Nota de optimización: Revisa que cada BP tenga su 'url_prefix' definido 
 # para modularizar correctamente. (Ej: /api/auth, /api/customers, /admin)
 
-app.register_blueprint(auth_bp, url_prefix='/api/auth')         # Ej: /api/auth/login
-app.register_blueprint(customer_bp, url_prefix='/api/customers') # Ej: /api/customers
-app.register_blueprint(product_bp, url_prefix='/api/products')   # Ej: /api/products
-app.register_blueprint(sale_bp, url_prefix='/api/sales')         # Ej: /api/sales y reportes
-app.register_blueprint(user_bp, url_prefix='/api/users')         # Ej: /api/users/profile
-app.register_blueprint(admin_bp, url_prefix='/admin')            # Ej: /admin/users
+app.register_blueprint(auth_bp, url_prefix='/api/auth')
+app.register_blueprint(customer_bp, url_prefix='/api/customers')
+app.register_blueprint(product_bp, url_prefix='/api/products')
 
-# 🚨 ANÁLISIS CRÍTICO DE RUTAS 🚨
-# Para que funcione:
-# - El frontend pide: /admin/users -> (admin_bp debe tener la ruta '/users')
-# - El frontend pide: /api/orders (o reportes) -> (sale_bp debe tener la ruta '/reportes' o similar)
+# 🚨 CORRECCIÓN 1: Cambiar 'sales' por 'orders' para resolver el 404 del reporte
+app.register_blueprint(sale_bp, url_prefix='/api/orders') 
+
+# 🚨 CORRECCIÓN 2: Añadir strict_slashes=False al Blueprint de Admin
+# Esto permite que /admin/users y /admin/users/ funcionen sin redirección (308)
+app.register_blueprint(user_bp, url_prefix='/api/users')
+app.register_blueprint(admin_bp, url_prefix='/admin', strict_slashes=False)
 
 
 # Ruta de prueba simple

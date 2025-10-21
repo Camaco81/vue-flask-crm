@@ -114,7 +114,7 @@ def upload_profile_image_endpoint():
 # =========================================================
 
 # Esta ruta se traduce a GET /admin/users/
-@admin_bp.route('/users/', methods=['GET']) 
+@admin_bp.route('/users', methods=['GET']) 
 @jwt_required()
 def admin_list_users():
     """Lista todos los usuarios con roles de Administrador (1) y Consultor (2)."""
@@ -150,7 +150,7 @@ def admin_list_users():
 
 
 # Esta ruta se traduce a POST /admin/users/
-@admin_bp.route('/users/', methods=['POST']) 
+@admin_bp.route('/users', methods=['POST']) 
 @jwt_required()
 def admin_create_user():
     """Crea un nuevo usuario (solo para roles 1 o 2)."""
