@@ -1,7 +1,14 @@
-# utils/__init__.py
+# backend/utils/__init__.py
 
-from .helpers import get_user_and_role, check_admin_permission, check_seller_permission, validate_required_fields, ADMIN_ROLE_ID, SELLER_ROLE_ID, CUSTOMER_ROLE_ID
+from .helpers import (
+    get_user_and_role, 
+    check_admin_permission, 
+    # check_seller_permission, <--- ELIMINAR ESTO
+    check_product_manager_permission, # <--- AÑADIR ESTA NUEVA FUNCIÓN DE PERMISO
+    validate_required_fields, 
+    ADMIN_ROLE_ID, 
+    CONSULTOR_ROLE_ID, # <--- USAR EL NOMBRE CORREGIDO
+    CUSTOMER_ROLE_ID
+)
 
-# También puedes definir aquí constantes o funciones de utilidad que apliquen a todo el paquete utils
-# Por ejemplo:
-# DEFAULT_API_VERSION = "v1"
+# ... otras líneas si existen
