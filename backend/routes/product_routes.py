@@ -18,7 +18,7 @@ def _fetch_product_details(cur, product_row):
 
 # --- Helper: Permisos de Gestión de Productos (incluye Vendedor y Admin) ---
 def check_product_manager_permission(user_role):
-    return user_role in ['admin', 'vendedor','consultor']
+    return user_role in ['admin','consultor']
 
 
 # --------------------------------------------------------------------------
@@ -33,7 +33,7 @@ def products_collection():
     if request.method == 'POST':
         # MODIFICADO: Usar el nuevo helper para incluir vendedores
         if not check_product_manager_permission(user_role):
-            return jsonify({"msg": "Acceso denegado: solo administradores y vendedores pueden crear productos"}), 403
+            return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden crear productos"}), 403
         
         data = request.get_json()
         
