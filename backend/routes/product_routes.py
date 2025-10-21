@@ -17,9 +17,11 @@ def _fetch_product_details(cur, product_row):
     return None
 
 # --- Helper: Permisos de Gestión de Productos (incluye Consultor y Admin) ---
-# **ESTO ES EL AJUSTE CLAVE**
 def check_product_manager_permission(user_role):
-    """Verifica si el rol tiene permisos para crear/modificar/eliminar productos."""
+    """
+    Verifica si el rol tiene permisos para crear/modificar/eliminar productos.
+    Asume que el user_role ya ha sido limpiado (lower() y strip()).
+    """
     # Los roles permitidos son 'admin' y 'consultor'
     return user_role in ['admin', 'consultor']
 
@@ -31,9 +33,14 @@ def products_collection():
     current_user_id, user_role = get_user_and_role()
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
+    
+    # *** CORRECCIÓN CLAVE: Estandarizar el rol antes de la verificación ***
+    if user_role:
+        user_role = user_role.lower().strip() 
+    # ***********************************************************************
 
     if request.method == 'POST':
-        # VERIFICACIÓN DE PERMISO: Ahora acepta 'admin' y 'consultor'
+        # VERIFICACIÓN DE PERMISO
         if not check_product_manager_permission(user_role):
             return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden crear productos"}), 403
         
@@ -58,7 +65,8 @@ def products_collection():
                 return jsonify({"msg": "Product creation failed to return data"}), 500
 
         except Exception as e:
-            return jsonify({"msg": "Error creating product", "error": str(e)}), 500
+            # Manejo más específico para errores de tipo (Price/Stock)
+            return jsonify({"msg": "Error creating product. Check data types for price and stock.", "error": str(e)}), 500
 
     elif request.method == 'GET':
         try:
@@ -78,6 +86,11 @@ def product_single(product_id):
     current_user_id, user_role = get_user_and_role()
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
+    
+    # *** CORRECCIÓN CLAVE: Estandarizar el rol antes de la verificación ***
+    if user_role:
+        user_role = user_role.lower().strip()
+    # ***********************************************************************
 
     # VERIFICACIÓN DE PERMISO: Ahora acepta 'admin' y 'consultor' para modificar/eliminar
     if request.method in ['PUT', 'DELETE'] and not check_product_manager_permission(user_role):
@@ -105,6 +118,7 @@ def product_single(product_id):
         for key, value in data.items():
             if key in ['name', 'price', 'stock']:
                 set_clauses.append(f"{key} = %s")
+                # Asegura la conversión de tipos
                 if key == 'price': params.append(float(value))
                 elif key == 'stock': params.append(int(value))
                 else: params.append(value)
@@ -125,7 +139,8 @@ def product_single(product_id):
                 return jsonify(updated_product), 200
             return jsonify({"msg": "Product not found or no changes made"}), 404
         except Exception as e:
-            return jsonify({"msg": "Error updating product", "error": str(e)}), 500
+            # Manejo más específico para errores de tipo (Price/Stock)
+            return jsonify({"msg": "Error updating product. Check data types for price and stock.", "error": str(e)}), 500
 
     elif request.method == 'DELETE':
         try:
