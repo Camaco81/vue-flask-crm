@@ -18,7 +18,7 @@ def _fetch_product_details(cur, product_row):
 
 # --- Helper: Permisos de Gestión de Productos (incluye Vendedor y Admin) ---
 def check_product_manager_permission(user_role):
-    return user_role in ['admin', 'vendedor']
+    return user_role in ['admin', 'vendedor','consultor']
 
 
 # --------------------------------------------------------------------------
