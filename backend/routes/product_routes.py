@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 # Importar ahora la versión de helper ajustada (que usa IDs de rol)
-rom backend.utils.helpers import get_user_and_role, check_product_manager_permission, validate_required_fields
+from backend.utils.helpers import get_user_and_role, check_product_manager_permission, validate_required_fields
 product_bp = Blueprint('product', __name__, url_prefix='/api/products')
 
 # --- Helper para obtener el producto completo después de INSERT/UPDATE ---
