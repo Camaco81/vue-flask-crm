@@ -49,7 +49,7 @@ app.register_blueprint(customer_bp, url_prefix='/api/customers')
 app.register_blueprint(product_bp, url_prefix='/api/products')
 
 # 🚨 CORRECCIÓN 1: Cambiar 'sales' por 'orders' para resolver el 404 del reporte
-app.register_blueprint(sale_bp, url_prefix='/api/orders') 
+app.register_blueprint(sale_bp, url_prefix='api/sales') 
 
 # 🚨 CORRECCIÓN 2: Añadir strict_slashes=False al Blueprint de Admin
 # Esto permite que /admin/users y /admin/users/ funcionen sin redirección (308)

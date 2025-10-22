@@ -97,7 +97,7 @@ export default {
       this.isLoading = true;
       this.error = '';
       try {
-        const response = await axios.get('/api/orders'); 
+        const response = await axios.get('/api/sales'); 
         this.allOrders = response.data;
       } catch (error) {
         console.error('Error al obtener todos los reportes de ventas:', error);
