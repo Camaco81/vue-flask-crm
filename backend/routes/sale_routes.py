@@ -3,13 +3,8 @@ from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 # Importaciones necesarias
 # (Asumo que estas funciones auxiliares están bien implementadas, por lo que no las toco)
-from backend.utils.helpers import (
-    get_user_and_role, 
-    check_admin_permission, 
-    validate_required_fields, 
-    SELLER_ROLE_ID,          # <--- ¡CORREGIDO!
-    CUSTOMER_ROLE_ID
-)
+# En backend/routes/sale_routes.py - Cerca de las importaciones
+from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission # <--- Importa la función correcta
 sale_bp = Blueprint('sale', __name__)
 
 @sale_bp.route('', methods=['GET', 'POST'])
@@ -21,7 +16,7 @@ def sales_collection():
     
     # Permiso para CREAR (POST) y LISTAR (GET)
     # NOTA: Renombré la función de permiso en el FRONTEND a 'check_seller_permission' para ser más claro
-    if not check_product_manager_permission(user_role):
+    if not check_seller_permission(user_role):
         return jsonify({"msg": "Acceso denegado: solo personal de ventas y administradores pueden acceder a ventas"}), 403
 
     if request.method == "POST":
