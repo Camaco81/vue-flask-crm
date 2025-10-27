@@ -5,8 +5,15 @@ from werkzeug.security import generate_password_hash
 # 1. Importaciones de Helpers y DB
 from backend.db import get_db_cursor
 # 🚨 ASUMO QUE EL HELPER YA DEVUELVE EL ROLE_ID DE ALMACENISTA si existe.
-from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, CONSULTOR_ROLE_ID
-
+# LÍNEA 8 CORREGIDA Y MEJORADA
+from backend.utils.helpers import (
+    get_user_and_role, 
+    check_admin_permission, 
+    validate_required_fields, 
+    ADMIN_ROLE_ID, 
+    SELLER_ROLE_ID, 
+    CUSTOMER_ROLE_ID # Si lo usas
+)
 # 🚨 NUEVA CONSTANTE DE ROL
 ALMACENISTA_ROLE_ID = 3 
 ADMIN_ROLE_ID = 1
