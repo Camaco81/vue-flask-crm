@@ -2,21 +2,19 @@ from flask import Flask, jsonify
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 import logging
-from dotenv import load_dotenv # Mantenemos esta línea
+from dotenv import load_dotenv
 
 # 1. Cargar variables de entorno PRIMERO
 load_dotenv()
 
-# 2. Importaciones ABSOLUTAS (Asegúrate que las rutas sean consistentes)
+# 2. Importaciones ABSOLUTAS
 from backend.config import Config
 from backend.auth import auth_bp
 from backend.routes.customer_routes import customer_bp
 from backend.routes.product_routes import product_bp
 from backend.routes.sale_routes import sale_bp
-# 🚨 IMPORTANTE: Verificación de Blueprints
-# user_bp: Rutas como /api/profile
-# admin_bp: Rutas de administración. Asumimos que maneja /admin/users
-from backend.routes.user_routes import user_bp, admin_bp 
+# Importamos AMBOS Blueprints: user_bp (profile) y admin_bp (admin/users)
+from backend.routes.user_routes import user_bp, admin_bp
 
 
 # Configuración de logging
@@ -25,13 +23,12 @@ app_logger = logging.getLogger(__name__)
 
 # Inicialización de la aplicación
 app = Flask(__name__)
-# 🚨 Sugerencia: Usar 'backend.config.Config' si no está en el mismo nivel
-app.config.from_object(Config)
+app.config.from_object(Config) # Correcto uso de Config
 
 # Inicializar JWT
 jwt = JWTManager(app)
 
-# Configurar CORS (Mantener '*' es flexible para desarrollo)
+# Configurar CORS 
 CORS(
     app, 
     origins="*",
@@ -39,21 +36,22 @@ CORS(
 )
 
 # ----------------------------------------------------
-# 3. Registro de Blueprints
+# 3. Registro de Blueprints (¡CORREGIDO!)
 # ----------------------------------------------------
-# Nota de optimización: Revisa que cada BP tenga su 'url_prefix' definido 
-# para modularizar correctamente. (Ej: /api/auth, /api/customers, /admin)
+# Nota: La convención es registrar los Blueprints bajo un prefijo común (/api) 
+# y dejar que el Blueprint use rutas relativas (ej. user_bp.route('/profile')).
 
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(customer_bp, url_prefix='/api/customers')
 app.register_blueprint(product_bp, url_prefix='/api/products')
-
-# 🚨 CORRECCIÓN 1: Cambiar 'sales' por 'orders' para resolver el 404 del reporte
 app.register_blueprint(sale_bp, url_prefix='/api/sales') 
 
-# 🚨 CORRECCIÓN 2: Añadir strict_slashes=False al Blueprint de Admin
-# Esto permite que /admin/users y /admin/users/ funcionen sin redirección (308)
-app.register_blueprint(user_bp, url_prefix='/api/users')
+# 🚨 CORRECCIÓN CLAVE: El user_bp contiene la ruta /profile, que debe ser accesible bajo /api/profile.
+# El url_prefix de este Blueprint debe ser /api.
+app.register_blueprint(user_bp, url_prefix='/api') 
+
+# 🚨 CORRECCIÓN CLAVE: El admin_bp debe ser registrado bajo el prefijo /admin, 
+# y como contiene /users, la ruta final será /admin/users.
 app.register_blueprint(admin_bp, url_prefix='/admin', strict_slashes=False)
 
 
@@ -63,12 +61,11 @@ def index():
     return "Welcome to the Sales API!"
 
 # ----------------------------------------------------
-# 4. Manejadores de errores
+# 4. Manejadores de errores (Sin cambios, son correctos)
 # ----------------------------------------------------
 @app.errorhandler(404)
 def not_found_error(error):
-    # Loguea el intento de acceso a ruta no encontrada
-    app_logger.warning(f"404 Not Found: Path accessed: {error.description}")
+    app_logger.warning(f"404 Not Found: Path accessed: {request.path}") # Usar request.path para mejor log
     return jsonify({"msg": "Resource not found", "error_code": 404}), 404
 
 @app.errorhandler(500)
@@ -77,6 +74,6 @@ def internal_error(error):
     return jsonify({"msg": "Internal server error", "error_code": 500}), 500
 
 if __name__ == '__main__':
-    # Usar host='0.0.0.0' para ser accesible en Docker/Render
     app_logger.info("Starting Flask application...")
+    # El entorno de producción (Render, Gunicorn) manejará el host y port
     app.run(debug=True, host='0.0.0.0', port=5000)
