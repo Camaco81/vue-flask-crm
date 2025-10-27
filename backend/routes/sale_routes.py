@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 # Importaciones necesarias
 # (Asumo que estas funciones auxiliares están bien implementadas, por lo que no las toco)
-from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_product_manager_permission 
+from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission 
 
 sale_bp = Blueprint('sale', __name__)
 
