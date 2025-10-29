@@ -108,7 +108,7 @@ export default {
         this.$router.push('/vendedor/vendedor-dasboard'); // O la ruta específica de vendedor
       } else {
         // En caso de rol desconocido o por defecto (ej. consultor)
-        this.$router.push('/'); 
+        this.$router.push('/almacenista/dashboard'); 
       }
     }
   }

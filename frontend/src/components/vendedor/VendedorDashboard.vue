@@ -10,13 +10,7 @@
               <div class="nav-indicator"></div>
             </router-link>
           </li>
-          <li class="nav-item">
-            <router-link to="/vendedor/products" class="nav-link">
-              <div class="nav-icon"><i class="fas fa-box-open"></i></div>
-              <span class="nav-text">Productos</span>
-              <div class="nav-indicator"></div>
-            </router-link>
-          </li>
+          
           <li class="nav-item">
             <router-link to="/vendedor/sales" class="nav-link">
               <div class="nav-icon"><i class="fas fa-shopping-cart"></i></div>
@@ -24,13 +18,7 @@
               <div class="nav-indicator"></div>
             </router-link>
           </li>
-          <li class="nav-item">
-            <router-link to="/vendedor/analytics" class="nav-link">
-              <div class="nav-icon"><i class="fas fa-chart-bar"></i></div>
-              <span class="nav-text">Analíticas</span>
-              <div class="nav-indicator"></div>
-            </router-link>
-          </li>
+          
           <li class="nav-item">
             <router-link to="/vendedor/profile" class="nav-link">
               <div class="nav-icon"><i class="fas fa-user"></i></div>
@@ -61,8 +49,8 @@
     <main class="main-content">
       <header class="content-header">
         <div class="header-content">
-          <h1 class="welcome-title">¡Bienvenido de vuelta!</h1>
-          <p class="welcome-subtitle">Aquí tienes un resumen de tu panel de control</p>
+          <h1 class="welcome-title">¡Bienvenido!</h1>
+          <p class="welcome-subtitle">Tu centro de operaciones de ventas.</p>
         </div>
         <div class="header-actions">
           <button class="action-btn">
@@ -90,20 +78,6 @@
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon products">
-              <i class="fas fa-box-open"></i>
-            </div>
-            <div class="stat-content">
-              <h3 class="stat-number">
-                <span v-if="loading.products" class="spinner-small"></span>
-                <span v-else>{{ metrics.products }}</span>
-              </h3>
-              <p class="stat-label">Productos</p>
-            </div>
-          </div>
-
-
-          <div class="stat-card">
             <div class="stat-icon revenue">
               <i class="fas fa-dollar-sign"></i>
             </div>
@@ -115,24 +89,29 @@
               <p class="stat-label">Ingresos Totales</p>
             </div>
           </div>
-        </div>
+          
+          </div>
 
         <div class="quick-actions">
-          <h2 class="section-title">Acciones Rápidas</h2>
+          <h2 class="section-title">Enfoque Rápido</h2>
           <div class="actions-grid">
-            <router-link to="/vendedor/customers" class="quick-action-card"> <i class="fas fa-user-plus"></i>
+            
+            <router-link to="/vendedor/customers" class="quick-action-card">
+              <i class="fas fa-user-plus"></i>
               <span>Agregar Cliente</span>
             </router-link>
-            <router-link to="/vendedor/products" class="quick-action-card"> <i class="fas fa-plus"></i>
-              <span>Nuevo Producto</span>
+            
+            <router-link to="/vendedor/sales" class="quick-action-card primary-action"> 
+              <i class="fas fa-cash-register"></i> 
+              <span>Registrar Venta</span>
             </router-link>
-            <router-link to="/vendedor/sales" class="quick-action-card"> <i class="fas fa-cash-register"></i> <span>Registrar Venta</span>
+            
+            <router-link to="/vendedor/sales" class="quick-action-card">
+              <i class="fas fa-list-alt"></i>
+              <span>Ver Historial de Ventas</span>
             </router-link>
-            <router-link to="/vendedor/analytics" class="quick-action-card">
-              <i class="fas fa-chart-line"></i>
-              <span>Reportes</span>
-            </router-link>
-          </div>
+            
+            </div>
         </div>
       </div>
     </main>
@@ -143,41 +122,39 @@
 import apiClient from '../../axios';
 
 export default {
-    name: 'HomeDashboard',
+    name: 'VendedorDashboard', // Renombrado de HomeDashboard para ser específico
     data() {
         return {
             metrics: {
                 customers: 0,
-                products: 0,
-                salesCount: 0, // <-- Nuevo nombre: Cantidad de Ventas
-                totalRevenue: 0, // <-- Nuevo nombre: Ingresos Totales
+                // Eliminamos 'products'
+                totalRevenue: 0, 
             },
             loading: {
                 customers: true,
-                products: true,
-                salesCount: true, // <-- Ajustado
-                totalRevenue: true, // <-- Ajustado
+                // Eliminamos 'products'
+                totalRevenue: true, 
             },
             errors: {
                 customers: null,
-                products: null,
-                salesCount: null,
+                // Eliminamos 'products'
                 totalRevenue: null,
             }
         };
     },
     methods: {
         logout() {
-            sessionStorage.removeItem('access_token');
+            // Usar localStorage o sessionStorage consistentemente. Asumo localStorage por el router/index.js
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user_info'); 
             this.$router.push('/login');
         },
         
         // Función para obtener la lista completa de Clientes
         async fetchCustomers() {
             try {
+                // Asumimos que esta ruta devuelve una lista completa de clientes que el vendedor puede ver
                 const response = await apiClient.get('/api/customers');
-                // Se asume que el backend filtra las ventas por vendedor si no es admin,
-                // pero los clientes son visibles para contar el total.
                 this.metrics.customers = response.data.length;
             } catch (error) {
                 console.error("Error al cargar clientes:", error);
@@ -187,67 +164,37 @@ export default {
             }
         },
         
-        // Función para obtener la lista completa de Productos
-        async fetchProducts() {
+        // Eliminamos fetchProducts()
+        
+        // Lógica CONSOLIDADA para Ventas e Ingresos
+        async fetchSalesMetrics() {
             try {
-                const response = await apiClient.get('/api/products');
-                this.metrics.products = response.data.length;
+                this.loading.totalRevenue = true;
+                this.metrics.totalRevenue = 0;
+
+                // Asumimos que esta ruta devuelve SÓLO las ventas del vendedor autenticado
+                const response = await apiClient.get('/api/sales');
+                const sales = response.data; // Lista de todas las ventas del vendedor
+
+                // Calcular Ingresos Totales
+                const totalRevenue = sales.reduce((sum, sale) => {
+                    const amount = parseFloat(sale.total_amount) || 0; 
+                    return sum + amount;
+                }, 0);
+                
+                this.metrics.totalRevenue = totalRevenue.toFixed(2);
+
             } catch (error) {
-                console.error("Error al cargar productos:", error);
-                this.errors.products = "Error al cargar productos";
+                console.error("Error al cargar métricas de ventas:", error);
+                this.errors.totalRevenue = "Error al cargar ingresos";
             } finally {
-                this.loading.products = false;
+                this.loading.totalRevenue = false;
             }
         },
         
-        // Lógica NUEVA y CONSOLIDADA para Ventas e Ingresos
-          // La función fetchSalesMetrics() corregida en tu componente Vue.js
-async fetchSalesMetrics() {
-    try {
-        this.loading.salesCount = true;
-        this.loading.totalRevenue = true;
-        this.metrics.salesCount = 0;
-        this.metrics.totalRevenue = 0;
-
-        const response = await apiClient.get('/api/sales');
-        const sales = response.data; // Lista de todas las ventas del vendedor
-
-        // 1. Contar Ventas de Hoy (CORRECCIÓN APLICADA AQUÍ)
-        const today = new Date().toISOString().split('T')[0];
-        
-        // El sale_date del backend viene en formato 'YYYY-MM-DD HH:MM:SS' o similar.
-        // Usamos startsWith para filtrar las ventas cuya fecha coincida con la de hoy.
-        const salesToday = sales.filter(sale => 
-            sale.sale_date && sale.sale_date.startsWith(today)
-        );
-
-        // **USAMOS EL RESULTADO PARA LA MÉTRICA** <-- CORREGIDO
-        this.metrics.salesCount = salesToday.length; 
-
-        // 2. Calcular Ingresos Totales (Métrica ya estaba bien, pero se optimiza el parseo)
-        // Calcula el ingreso total de todas las ventas recuperadas.
-        const totalRevenue = sales.reduce((sum, sale) => {
-            // Se asegura de parsear el valor a un número flotante de forma segura
-            const amount = parseFloat(sale.total_amount) || 0; 
-            return sum + amount;
-        }, 0);
-        
-        this.metrics.totalRevenue = totalRevenue.toFixed(2);
-
-    } catch (error) {
-        console.error("Error al cargar métricas de ventas:", error);
-        this.errors.salesCount = "Error al cargar ventas";
-        this.errors.totalRevenue = "Error al cargar ingresos";
-    } finally {
-        this.loading.salesCount = false;
-        this.loading.totalRevenue = false;
-    }
-},
-          
         fetchDashboardData() {
             this.fetchCustomers();
-            this.fetchProducts();
-            // Ejecutar la nueva función consolidada
+            // Eliminamos this.fetchProducts();
             this.fetchSalesMetrics(); 
         }
     },
@@ -255,8 +202,9 @@ async fetchSalesMetrics() {
         this.fetchDashboardData();
     }
 };
-
 </script>
+
+
 
 
 
@@ -692,5 +640,33 @@ async fetchSalesMetrics() {
   .welcome-title {
     font-size: 24px;
   }
+}
+
+/* Estilo para la acción de registrar venta */
+.quick-action-card.primary-action {
+  /* Usamos los colores del theme principal para darle más énfasis */
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #5a66c8;
+  box-shadow: 0 8px 30px rgba(102, 126, 234, 0.4);
+}
+
+.quick-action-card.primary-action:hover {
+  transform: translateY(-8px); /* Más levantado para enfatizar */
+  box-shadow: 0 15px 50px rgba(102, 126, 234, 0.5);
+  border-color: #ffffff; /* Borde blanco al pasar el mouse */
+}
+
+/* Ajuste del icono para que se vea blanco */
+.quick-action-card.primary-action i {
+    color: white;
+}
+
+/* Eliminación de productos en la rejilla de iconos, se mantiene revenue y customers */
+.stat-icon.products {
+    /* Eliminamos el gradiente, si se mantiene este estilo es inútil, 
+       pero se deja para no romper si otros componentes lo usan.
+       En este componente, la métrica ya fue eliminada. */
+    display: none; 
 }
 </style>
