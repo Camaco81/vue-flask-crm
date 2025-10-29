@@ -3,11 +3,11 @@ from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 from psycopg2 import sql 
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission
-from backend.utils.bcv_api import get_dolarvzla_rate # <--- ¡IMPORTACIÓN CLAVE AÑADIDA!
+from backend.utils.bcv_api import get_dolarvzla_rate 
 import logging
 
 sale_bp = Blueprint('sale', __name__)
-app_logger = logging.getLogger('backend.routes.sale_routes') # Usar logger específico para el archivo
+app_logger = logging.getLogger('backend.routes.sale_routes') 
 
 # Umbral de stock bajo para la alerta
 STOCK_THRESHOLD = 10 
@@ -26,7 +26,7 @@ def sales_collection():
 
     if request.method == "POST":
         # =========================================================
-        # LÓGICA DE CREACIÓN (POST) con Control Transaccional y Stock
+        # LÓGICA DE CREACIÓN (POST)
         # =========================================================
         data = request.get_json()
         
@@ -44,11 +44,10 @@ def sales_collection():
         if not isinstance(items, list) or len(items) == 0:
             return jsonify({"msg": "Items must be a non-empty list of products"}), 400
 
-        # 🚨 NUEVO: Obtener la tasa de cambio antes de la transacción
+        # 🚨 Obtener la tasa de cambio antes de la transacción
         try:
             exchange_rate = get_dolarvzla_rate()
         except Exception as e:
-            # Si el backend no puede obtener la tasa ni la de respaldo, es un error fatal.
             app_logger.error(f"FATAL: No se pudo obtener la tasa de cambio para la venta: {e}", exc_info=True)
             return jsonify({"msg": "Error interno: No se pudo obtener la tasa de cambio del sistema"}), 500
 
@@ -57,11 +56,9 @@ def sales_collection():
         cur = None
         try:
             with get_db_cursor(commit=False) as cur:
-                total_amount_usd = 0.0 # El monto base de los precios (asumimos USD)
-                total_amount_ves = 0.0 # El monto calculado en Bolívares
+                total_amount_usd = 0.0
+                total_amount_ves = 0.0
                 stock_alerts = []
-                
-                # Almacenamos los datos necesarios para la inserción
                 validated_items = []
 
                 # Paso 1: Verificación de Stock y Cálculo de Totales (LECTURA)
@@ -86,7 +83,6 @@ def sales_collection():
                         cur.connection.rollback()
                         return jsonify({"msg": f"La cantidad ({quantity_raw}) debe ser un número entero válido"}), 400
                         
-                    # Obtener stock y precio del producto en una sola consulta
                     cur.execute("SELECT name, price, stock FROM products WHERE id = %s", (product_id,))
                     product_row = cur.fetchone()
                     
@@ -96,7 +92,7 @@ def sales_collection():
                         
                     current_stock = product_row['stock']
                     product_name = product_row['name']
-                    price_usd = float(product_row['price']) # Asumimos que este es el precio en USD
+                    price_usd = float(product_row['price'])
                     
                     # 🚨 VERIFICACIÓN DE STOCK CRÍTICA
                     if current_stock < quantity:
@@ -105,12 +101,12 @@ def sales_collection():
                         
                     # 🚨 CÁLCULO DE TOTALES
                     subtotal_usd = price_usd * quantity
-                    subtotal_ves = subtotal_usd * exchange_rate # <--- CÁLCULO EN BOLÍVARES
+                    subtotal_ves = subtotal_usd * exchange_rate
                     
                     total_amount_usd += subtotal_usd
                     total_amount_ves += subtotal_ves 
                     
-                    # 🚨 ALERTA DE STOCK BAJO (Requisito 2)
+                    # 🚨 ALERTA DE STOCK BAJO
                     remaining_stock = current_stock - quantity
                     if remaining_stock <= STOCK_THRESHOLD:
                         alert_level = "ALERTA CRÍTICA" if remaining_stock == 0 else "ALERTA"
@@ -125,22 +121,24 @@ def sales_collection():
                 # Paso 2: Inserción de Venta, Ítems y Actualización de Stock (ESCRITURA)
 
                 # 2.a) Insertar Venta
-                # 🚨 CONSULTA SQL ACTUALIZADA para incluir VES y Tasa
+                # 💥 CORRECCIÓN CRÍTICA: La columna de total en USD es 'total_amount_usd' en la DB (después de la migración)
+                # PERO, el código de la función POST que proporcionaste usa 'total_amount'. 
+                # Asumo que la intención era usar el nuevo nombre: total_amount_usd. Corregido.
+                # NO: "INSERT INTO sales (customer_id, user_id, total_amount, total_amount_ves...
+                # SÍ: "INSERT INTO sales (customer_id, user_id, total_amount_usd, total_amount_ves...
                 cur.execute(
-                    "INSERT INTO sales (customer_id, user_id, total_amount, total_amount_ves, exchange_rate_used, sale_date) VALUES (%s, %s, %s, %s, %s, NOW()) RETURNING id;",
+                    "INSERT INTO sales (customer_id, user_id, total_amount_usd, total_amount_ves, exchange_rate_used, sale_date) VALUES (%s, %s, %s, %s, %s, NOW()) RETURNING id;",
                     (customer_id, seller_user_id, total_amount_usd, total_amount_ves, exchange_rate)
                 )
                 new_sale_id = cur.fetchone()['id']
 
                 # 2.b) Insertar Ítems y Disminuir Stock
                 for item in validated_items:
-                    # Insertar Item de Venta (usa el precio en USD)
                     cur.execute(
                         "INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
                         (new_sale_id, item['product_id'], item['quantity'], item['price'])
                     )
                     
-                    # 🚨 DISMINUIR STOCK (Requisito 1)
                     cur.execute(
                         "UPDATE products SET stock = stock - %s WHERE id = %s;",
                         (item['quantity'], item['product_id'])
@@ -157,12 +155,11 @@ def sales_collection():
                     "rate_used": exchange_rate
                 }
                 if stock_alerts:
-                    response['stock_alerts'] = stock_alerts # Añadir alertas a la respuesta
+                    response['stock_alerts'] = stock_alerts
                 
                 return jsonify(response), 201
             
         except Exception as e:
-            # Si cur existe y tiene una conexión, intenta el rollback
             if cur and cur.connection:
                 cur.connection.rollback()
             app_logger.error(f"Error al registrar la venta (ROLLBACK): {e}", exc_info=True)
@@ -170,12 +167,12 @@ def sales_collection():
             
     elif request.method == "GET":
         # =========================================================
-        # LÓGICA DE LISTADO (GET) - Actualizada para mostrar VES y Tasa
+        # LÓGICA DE LISTADO (GET) - CORREGIDA
         # =========================================================
         try:
             query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                        s.sale_date, s.status, s.total_amount AS total_usd, 
+                        s.sale_date, s.status, s.total_amount_usd AS total_usd, 
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id, 
                         json_agg(json_build_object(
@@ -199,7 +196,7 @@ def sales_collection():
             # Agrupación para consolidar los ítems en un array JSON
             query += """
                 GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
-                s.total_amount, s.total_amount_ves, s.exchange_rate_used, u.email, u.id
+                s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id 
                 ORDER BY s.sale_date DESC;
             """
             
@@ -217,17 +214,19 @@ def sales_collection():
 @jwt_required()
 def sales_single(sale_id):
     """Maneja la vista individual (GET) y eliminación (DELETE) de una venta."""
-    # ... (Resto del código sin cambios, solo se actualiza la consulta GET individual)
     
     current_user_id, user_role = get_user_and_role()
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
 
     if request.method == "GET":
+        # =========================================================
+        # LÓGICA DE VISTA INDIVIDUAL (GET) - CORREGIDA
+        # =========================================================
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
-                        s.sale_date, s.status, s.total_amount AS total_usd, 
+                        s.sale_date, s.status, s.total_amount_usd AS total_usd, 
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id,
                         json_agg(json_build_object(
@@ -247,7 +246,8 @@ def sales_single(sale_id):
                 base_query += " AND s.user_id = %s"
                 params.append(current_user_id)
             
-            base_query += " GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.total_amount, s.total_amount_ves, s.exchange_rate_used, u.email, u.id;"
+            # 💥 CORRECCIÓN CRÍTICA: GROUP BY debe usar total_amount_usd
+            base_query += " GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id;"
 
             with get_db_cursor() as cur:
                 cur.execute(base_query, tuple(params))
@@ -262,7 +262,6 @@ def sales_single(sale_id):
 
     elif request.method == "DELETE":
         # Lógica de DELETE individual (sin cambios)
-        # ... (código DELETE)
         try:
             # 1. Verificar si el usuario tiene permiso (Admin o vendedor de la venta)
             with get_db_cursor() as cur: 
