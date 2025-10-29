@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify
 from backend.utils.bcv_api import get_dolarvzla_rate
 from flask_cors import cross_origin
 
-rate_bp = Blueprint('rate_bp', __name__, url_prefix='/api')
+rate_bp = Blueprint('rate_bp', __name__)
 
 @rate_bp.route('/exchange-rate', methods=['GET'])
 @cross_origin() # Si usas CORS, asegúrate de permitir esta ruta
