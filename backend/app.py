@@ -15,6 +15,7 @@ from backend.routes.product_routes import product_bp
 from backend.routes.sale_routes import sale_bp
 # Importamos AMBOS Blueprints: user_bp (profile) y admin_bp (admin/users)
 from backend.routes.user_routes import user_bp, admin_bp
+from backend.routes.common_routes import rate_bp
 
 
 # Configuración de logging
@@ -45,6 +46,8 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(customer_bp, url_prefix='/api/customers')
 app.register_blueprint(product_bp, url_prefix='/api/products')
 app.register_blueprint(sale_bp, url_prefix='/api/sales') 
+app.register_blueprint(rate_bp , url_prefix='/api/exchange-rate') 
+
 
 # 🚨 CORRECCIÓN CLAVE: El user_bp contiene la ruta /profile, que debe ser accesible bajo /api/profile.
 # El url_prefix de este Blueprint debe ser /api.
