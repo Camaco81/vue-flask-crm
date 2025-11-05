@@ -1,8 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-# from db import get_db_cursor <-- Antiguo
-from backend.db import get_db_cursor # <-- Nuevo
-# from utils.helpers import ... <-- Antiguo
+from backend.db import get_db_cursor
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
 customer_bp = Blueprint('customer', __name__, url_prefix='/api/customers')
 
@@ -18,27 +16,35 @@ def customers_collection():
             return jsonify({"msg": "Acceso denegado: solo administradores pueden crear clientes"}), 403
         
         data = request.get_json()
-        if not validate_required_fields(data, ['name', 'email']):
-            return jsonify({"msg": "Missing required fields: name, email"}), 400
+        # 🚨 CAMBIO 1: 'cedula' es ahora un campo requerido para el POST
+        if not validate_required_fields(data, ['name', 'email', 'cedula']):
+            return jsonify({"msg": "Missing required fields: name, email, cedula"}), 400
 
         try:
             with get_db_cursor(commit=True) as cur:
+                # 🚨 CAMBIO 2: Incluir 'cedula' en la query INSERT
                 cur.execute(
-                    "INSERT INTO customers (name, email, phone, address) VALUES (%s, %s, %s, %s) RETURNING id;",
-                    (data['name'], data['email'], data.get('phone'), data.get('address'))
+                    "INSERT INTO customers (name, email, phone, address, cedula) VALUES (%s, %s, %s, %s, %s) RETURNING id;",
+                    (data['name'], data['email'], data.get('phone'), data.get('address'), data['cedula'])
                 )
                 new_customer_id = cur.fetchone()[0]
             return jsonify({"msg": "Customer created successfully", "customer_id": new_customer_id}), 201
         except Exception as e:
-            if "duplicate key value violates unique constraint" in str(e):
-                return jsonify({"msg": "Email already exists"}), 409
-            return jsonify({"msg": "Error creating customer", "error": str(e)}), 500
+            error_msg = str(e)
+            if "duplicate key value violates unique constraint" in error_msg:
+                # Manejo específico para email O cedula duplicada (asumiendo UNIQUE constraints en ambos)
+                if 'email' in error_msg:
+                    return jsonify({"msg": "Email already exists"}), 409
+                elif 'cedula' in error_msg:
+                    return jsonify({"msg": "Cedula already exists"}), 409
+            return jsonify({"msg": "Error creating customer", "error": error_msg}), 500
 
     elif request.method == 'GET':
         # Todos los usuarios autenticados pueden ver la lista de clientes
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, email, phone, address FROM customers ORDER BY name;")
+                # 🚨 CAMBIO 3: Incluir 'cedula' en la query SELECT
+                cur.execute("SELECT id, name, email, phone, address, cedula FROM customers ORDER BY name;")
                 customers = cur.fetchall()
                 customers_list = [dict(c) for c in customers]
             return jsonify(customers_list), 200
@@ -59,7 +65,8 @@ def customer_single(customer_id):
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, email, phone, address FROM customers WHERE id = %s;", (customer_id,))
+                # 🚨 CAMBIO 4: Incluir 'cedula' en la query SELECT
+                cur.execute("SELECT id, name, email, phone, address, cedula FROM customers WHERE id = %s;", (customer_id,))
                 customer = cur.fetchone()
             if customer:
                 return jsonify(dict(customer)), 200
@@ -76,7 +83,8 @@ def customer_single(customer_id):
         set_clauses = []
         params = []
         for key, value in data.items():
-            if key in ['name', 'email', 'phone', 'address']: # Campos permitidos para actualizar
+            # 🚨 CAMBIO 5: Permitir la actualización del campo 'cedula'
+            if key in ['name', 'email', 'phone', 'address', 'cedula']: # Campos permitidos para actualizar
                 set_clauses.append(f"{key} = %s")
                 params.append(value)
         
@@ -94,9 +102,14 @@ def customer_single(customer_id):
                 return jsonify({"msg": "Customer updated successfully", "customer_id": updated_id[0]}), 200
             return jsonify({"msg": "Customer not found or no changes made"}), 404
         except Exception as e:
-            if "duplicate key value violates unique constraint" in str(e):
-                return jsonify({"msg": "Email already exists for another customer"}), 409
-            return jsonify({"msg": "Error updating customer", "error": str(e)}), 500
+            error_msg = str(e)
+            if "duplicate key value violates unique constraint" in error_msg:
+                # Manejo específico para email O cedula duplicada
+                if 'email' in error_msg:
+                    return jsonify({"msg": "Email already exists for another customer"}), 409
+                elif 'cedula' in error_msg:
+                    return jsonify({"msg": "Cedula already exists for another customer"}), 409
+            return jsonify({"msg": "Error updating customer", "error": error_msg}), 500
 
     elif request.method == 'DELETE':
         try:
