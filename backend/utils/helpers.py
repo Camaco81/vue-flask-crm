@@ -89,3 +89,9 @@ def validate_required_fields(data, fields):
             return field
             
     return None
+
+ALLOWED_PRODUCT_MANAGER_ROLES = [1, 2, 3] 
+
+def check_product_manager_permission(user_role_id):
+    """Verifica si el ID de rol tiene permiso para gestionar productos (crear/modificar/eliminar)."""
+    return user_role_id in ALLOWED_PRODUCT_MANAGER_ROLES

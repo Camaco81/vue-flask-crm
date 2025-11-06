@@ -20,25 +20,22 @@ def _fetch_product_details(cur, product_row):
 @product_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def products_collection():
-    # user_role_id ya es un entero (1 o 2)
     current_user_id, user_role_id = get_user_and_role() 
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
     
     # ------------------ POST (Crear Producto) ------------------
     if request.method == 'POST':
-        # VERIFICACIÓN DE PERMISO
+        # VERIFICACIÓN DE PERMISO (Ahora incluye el ID 3: Almacenista)
         if not check_product_manager_permission(user_role_id):
-            return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden crear productos"}), 403
+            return jsonify({"msg": "Acceso denegado: solo administradores, consultores y almacenistas pueden crear productos"}), 403
         
         data = request.get_json()
         
-        # Validar campos requeridos (name, price, stock)
         if not validate_required_fields(data, ['name', 'price', 'stock']):
             return jsonify({"msg": "Missing required fields: name, price, stock"}), 400
 
         try:
-            # Asegurar conversión a los tipos correctos para la base de datos
             product_name = data['name'].strip()
             product_price = float(data['price'])
             product_stock = int(data['stock'])
@@ -47,7 +44,6 @@ def products_collection():
                  return jsonify({"msg": "Price must be positive and Stock non-negative."}), 400
 
             with get_db_cursor(commit=True) as cur:
-                # La columna ID en la base de datos debe ser UUID si este es el caso
                 cur.execute(
                     "INSERT INTO products (name, price, stock) VALUES (%s, %s, %s) RETURNING id, name, price, stock;",
                     (product_name, product_price, product_stock)
@@ -83,23 +79,20 @@ def products_collection():
 @product_bp.route('/<string:product_id>', methods=['GET', 'PUT', 'DELETE'])
 @jwt_required()
 def product_single(product_id):
-    # user_role_id ya es un entero (1 o 2)
     current_user_id, user_role_id = get_user_and_role()
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
     
-    # ¡CORRECCIÓN CLAVE! Ya NO se necesita la conversión a INT.
     # El product_id (el UUID) se usa directamente.
 
-    # VERIFICACIÓN DE PERMISO
+    # VERIFICACIÓN DE PERMISO (Ahora incluye el ID 3: Almacenista)
     if request.method in ['PUT', 'DELETE'] and not check_product_manager_permission(user_role_id):
-        return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden modificar o eliminar productos"}), 403
+        return jsonify({"msg": "Acceso denegado: solo administradores, consultores y almacenistas pueden modificar o eliminar productos"}), 403
 
     # ------------------ GET (Producto Único) ------------------
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                # Usamos product_id directamente (la cadena UUID)
                 cur.execute("SELECT id, name, price, stock FROM products WHERE id = %s;", (product_id,))
                 product = cur.fetchone()
             if product:
@@ -143,7 +136,6 @@ def product_single(product_id):
         if not set_clauses:
             return jsonify({"msg": "No valid fields to update"}), 400
 
-        # CAMBIO CLAVE: Usamos product_id (el UUID)
         params.append(product_id) 
         query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, price, stock;"
 
@@ -163,7 +155,6 @@ def product_single(product_id):
     elif request.method == 'DELETE':
         try:
             with get_db_cursor(commit=True) as cur:
-                # Usamos product_id directamente (la cadena UUID)
                 cur.execute("DELETE FROM products WHERE id = %s RETURNING id;", (product_id,)) 
                 deleted_id = cur.fetchone()
             if deleted_id:
