@@ -11,7 +11,6 @@ def _fetch_product_details(cur, product_row):
     Convierte la fila de la base de datos (después de RETURNING * o SELECT) a un diccionario.
     """
     if product_row:
-        # Asegura obtener las columnas, necesarias si el cursor no lo hace automáticamente
         columns = [desc[0] for desc in cur.description]
         return dict(zip(columns, product_row))
     return None
@@ -48,13 +47,13 @@ def products_collection():
                  return jsonify({"msg": "Price must be positive and Stock non-negative."}), 400
 
             with get_db_cursor(commit=True) as cur:
+                # La columna ID en la base de datos debe ser UUID si este es el caso
                 cur.execute(
                     "INSERT INTO products (name, price, stock) VALUES (%s, %s, %s) RETURNING id, name, price, stock;",
                     (product_name, product_price, product_stock)
                 )
                 
                 new_product_row = cur.fetchone()
-                # Usamos el helper para obtener el diccionario completo
                 new_product = _fetch_product_details(cur, new_product_row)
                 
             if new_product:
@@ -71,13 +70,8 @@ def products_collection():
     elif request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                # Se utiliza fetchall_dict para asegurar que el resultado ya sea una lista de diccionarios
-                # Si get_db_cursor devuelve un cursor que soporta 'fetchall_dict' (ej: psycopg2.extras.RealDictCursor)
-                # Si no, se mantiene la conversión manual de tu código original:
                 cur.execute("SELECT id, name, price, stock FROM products ORDER BY name;")
                 products = cur.fetchall()
-                
-                # Conversión manual de filas a diccionarios (según tu código original)
                 products_list = [dict(p) for p in products] 
                 
             return jsonify(products_list), 200
@@ -89,24 +83,26 @@ def products_collection():
 @product_bp.route('/<string:product_id>', methods=['GET', 'PUT', 'DELETE'])
 @jwt_required()
 def product_single(product_id):
+    # user_role_id ya es un entero (1 o 2)
     current_user_id, user_role_id = get_user_and_role()
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
     
-    # Intenta convertir product_id a entero para validación y uso en SQL
-    try:
-        product_id_int = int(product_id)
-    except ValueError:
-        return jsonify({"msg": "Invalid product ID format."}), 400
+    # ¡CORRECCIÓN CLAVE! Ya NO se necesita la conversión a INT.
+    # El product_id (el UUID) se usa directamente.
+
+    # VERIFICACIÓN DE PERMISO
+    if request.method in ['PUT', 'DELETE'] and not check_product_manager_permission(user_role_id):
+        return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden modificar o eliminar productos"}), 403
 
     # ------------------ GET (Producto Único) ------------------
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, price, stock FROM products WHERE id = %s;", (product_id_int,))
+                # Usamos product_id directamente (la cadena UUID)
+                cur.execute("SELECT id, name, price, stock FROM products WHERE id = %s;", (product_id,))
                 product = cur.fetchone()
             if product:
-                # Usamos dict(product) para retornar el formato JSON correcto
                 return jsonify(dict(product)), 200
             return jsonify({"msg": "Product not found"}), 404
         except Exception as e:
@@ -114,10 +110,6 @@ def product_single(product_id):
 
     # ------------------ PUT (Actualizar Producto) ------------------
     elif request.method == 'PUT':
-        # VERIFICACIÓN DE PERMISO
-        if not check_product_manager_permission(user_role_id):
-            return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden modificar o eliminar productos"}), 403
-
         data = request.get_json()
         if not data:
             return jsonify({"msg": "No data provided for update"}), 400
@@ -125,13 +117,11 @@ def product_single(product_id):
         set_clauses = []
         params = []
         
-        # Iterar sobre los datos recibidos y construir la query de actualización
         try:
             for key, value in data.items():
                 if key in ['name', 'price', 'stock']:
                     set_clauses.append(f"{key} = %s")
                     
-                    # CORRECCIÓN CLAVE: Asegurar la conversión de tipos con manejo de excepciones
                     if key == 'price': 
                         product_price = float(value)
                         if product_price <= 0:
@@ -153,7 +143,8 @@ def product_single(product_id):
         if not set_clauses:
             return jsonify({"msg": "No valid fields to update"}), 400
 
-        params.append(product_id_int) # Usar la versión entera del ID
+        # CAMBIO CLAVE: Usamos product_id (el UUID)
+        params.append(product_id) 
         query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, price, stock;"
 
         try:
@@ -170,13 +161,10 @@ def product_single(product_id):
 
     # ------------------ DELETE (Eliminar Producto) ------------------
     elif request.method == 'DELETE':
-        # VERIFICACIÓN DE PERMISO
-        if not check_product_manager_permission(user_role_id):
-            return jsonify({"msg": "Acceso denegado: solo administradores y consultores pueden modificar o eliminar productos"}), 403
-            
         try:
             with get_db_cursor(commit=True) as cur:
-                cur.execute("DELETE FROM products WHERE id = %s RETURNING id;", (product_id_int,)) # Usar el ID entero
+                # Usamos product_id directamente (la cadena UUID)
+                cur.execute("DELETE FROM products WHERE id = %s RETURNING id;", (product_id,)) 
                 deleted_id = cur.fetchone()
             if deleted_id:
                 return jsonify({"msg": "Product deleted successfully"}), 200
