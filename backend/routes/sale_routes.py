@@ -15,7 +15,8 @@ STOCK_THRESHOLD = 10
 @sale_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def sales_collection():
-    """Maneja la creación de una nueva venta (POST) y el listado de ventas (GET)."""
+    """Maneja la creación de una nueva venta (POST) y el listado de ventas (GET).
+    El listado filtra por user_id si no es Administrador."""
     current_user_id, user_role = get_user_and_role() 
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
@@ -26,7 +27,7 @@ def sales_collection():
 
     if request.method == "POST":
         # =========================================================
-        # LÓGICA DE CREACIÓN (POST)
+        # LÓGICA DE CREACIÓN (POST) - (Sin cambios funcionales aquí)
         # =========================================================
         data = request.get_json()
         
@@ -44,7 +45,7 @@ def sales_collection():
         if not isinstance(items, list) or len(items) == 0:
             return jsonify({"msg": "Items must be a non-empty list of products"}), 400
 
-        # 🚨 Obtener la tasa de cambio antes de la transacción
+        # Obtener la tasa de cambio antes de la transacción
         try:
             exchange_rate = get_dolarvzla_rate()
         except Exception as e:
@@ -94,19 +95,19 @@ def sales_collection():
                     product_name = product_row['name']
                     price_usd = float(product_row['price'])
                     
-                    # 🚨 VERIFICACIÓN DE STOCK CRÍTICA
+                    # VERIFICACIÓN DE STOCK CRÍTICA
                     if current_stock < quantity:
                         cur.connection.rollback()
                         return jsonify({"msg": f"Stock insuficiente para {product_name}. Stock actual: {current_stock}"}), 400
                         
-                    # 🚨 CÁLCULO DE TOTALES
+                    # CÁLCULO DE TOTALES
                     subtotal_usd = price_usd * quantity
                     subtotal_ves = subtotal_usd * exchange_rate
                     
                     total_amount_usd += subtotal_usd
                     total_amount_ves += subtotal_ves 
                     
-                    # 🚨 ALERTA DE STOCK BAJO
+                    # ALERTA DE STOCK BAJO
                     remaining_stock = current_stock - quantity
                     if remaining_stock <= STOCK_THRESHOLD:
                         alert_level = "ALERTA CRÍTICA" if remaining_stock == 0 else "ALERTA"
@@ -121,11 +122,6 @@ def sales_collection():
                 # Paso 2: Inserción de Venta, Ítems y Actualización de Stock (ESCRITURA)
 
                 # 2.a) Insertar Venta
-                # 💥 CORRECCIÓN CRÍTICA: La columna de total en USD es 'total_amount_usd' en la DB (después de la migración)
-                # PERO, el código de la función POST que proporcionaste usa 'total_amount'. 
-                # Asumo que la intención era usar el nuevo nombre: total_amount_usd. Corregido.
-                # NO: "INSERT INTO sales (customer_id, user_id, total_amount, total_amount_ves...
-                # SÍ: "INSERT INTO sales (customer_id, user_id, total_amount_usd, total_amount_ves...
                 cur.execute(
                     "INSERT INTO sales (customer_id, user_id, total_amount_usd, total_amount_ves, exchange_rate_used, sale_date) VALUES (%s, %s, %s, %s, %s, NOW()) RETURNING id;",
                     (customer_id, seller_user_id, total_amount_usd, total_amount_ves, exchange_rate)
@@ -167,18 +163,21 @@ def sales_collection():
             
     elif request.method == "GET":
         # =========================================================
-        # LÓGICA DE LISTADO (GET) - CORREGIDA
+        # LÓGICA DE LISTADO (GET /api/sales) - CORRECCIÓN DE ALIAS
         # =========================================================
         try:
             query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                        s.sale_date, s.status, s.total_amount_usd AS total_usd, 
+                        s.sale_date, s.status, 
+                        -- 🟢 CORRECCIÓN: Alias a total_amount para Vue
+                        s.total_amount_usd AS total_amount, 
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id, 
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
-                            'price_usd', si.price 
+                            -- 🟢 CORRECCIÓN: Alias a price para Vue
+                            'price', si.price 
                         )) AS items
                 FROM sales s
                 JOIN customers c ON s.customer_id = c.id
@@ -219,20 +218,26 @@ def sales_single(sale_id):
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
 
+    # 🟢 Asegurar que el UUID se convierte a string para Psycopg2
+    sale_id_str = str(sale_id)
+
     if request.method == "GET":
         # =========================================================
-        # LÓGICA DE VISTA INDIVIDUAL (GET) - CORREGIDA
+        # LÓGICA DE VISTA INDIVIDUAL (GET) - CORRECCIÓN DE ALIAS
         # =========================================================
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
-                        s.sale_date, s.status, s.total_amount_usd AS total_usd, 
+                        s.sale_date, s.status, 
+                        -- 🟢 CORRECCIÓN: Alias a total_amount para Vue
+                        s.total_amount_usd AS total_amount, 
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id,
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
-                            'price_usd', si.price
+                            -- 🟢 CORRECCIÓN: Alias a price para Vue
+                            'price', si.price
                         )) AS items
                 FROM sales s
                 JOIN customers c ON s.customer_id = c.id
@@ -241,12 +246,12 @@ def sales_single(sale_id):
                 JOIN products p ON si.product_id = p.id
                 WHERE s.id = %s
             """
-            params = [str(sale_id)]
+            params = [sale_id_str]
             if not check_admin_permission(user_role):
                 base_query += " AND s.user_id = %s"
                 params.append(current_user_id)
             
-            # 💥 CORRECCIÓN CRÍTICA: GROUP BY debe usar total_amount_usd
+            # GROUP BY
             base_query += " GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id;"
 
             with get_db_cursor() as cur:
@@ -261,11 +266,11 @@ def sales_single(sale_id):
             return jsonify({"msg": "Error al obtener la venta", "error": str(e)}), 500
 
     elif request.method == "DELETE":
-        # Lógica de DELETE individual (sin cambios)
+        # Lógica de DELETE individual (se mantiene igual, usando sale_id_str)
         try:
             # 1. Verificar si el usuario tiene permiso (Admin o vendedor de la venta)
             with get_db_cursor() as cur: 
-                cur.execute("SELECT user_id FROM sales WHERE id = %s", (str(sale_id),))
+                cur.execute("SELECT user_id FROM sales WHERE id = %s", (sale_id_str,))
                 sale_user_id_row = cur.fetchone()
 
             if not sale_user_id_row:
@@ -276,17 +281,67 @@ def sales_single(sale_id):
             if not check_admin_permission(user_role) and str(sale_user_id) != str(current_user_id):
                 return jsonify({"msg": "No autorizado para eliminar esta venta"}), 403
 
-            # 2. Eliminar venta e ítems (Transacción implícita si get_db_cursor tiene commit=True por defecto)
+            # 2. Eliminar venta e ítems
             with get_db_cursor(commit=True) as cur: 
                 # Eliminar items primero (Foreign Key constraint)
-                cur.execute("DELETE FROM sale_items WHERE sale_id = %s;", (str(sale_id),))
-                cur.execute("DELETE FROM sales WHERE id = %s;", (str(sale_id),))
+                cur.execute("DELETE FROM sale_items WHERE sale_id = %s;", (sale_id_str,))
+                cur.execute("DELETE FROM sales WHERE id = %s;", (sale_id_str,))
                 deleted_rows = cur.rowcount
             
             if deleted_rows > 0:
                 return jsonify({"msg": "Venta y sus items eliminados exitosamente"}), 200
+            # Note: The check 'if not sale_user_id_row' above should catch 404, but keeping 500 as fallback
             return jsonify({"msg": "Error al eliminar la venta o venta ya eliminada"}), 500
 
         except Exception as e:
             app_logger.error(f"Error al eliminar la venta {sale_id}: {e}", exc_info=True)
             return jsonify({"msg": "Error al eliminar la venta", "error": str(e)}), 500
+
+
+# =========================================================
+# RUTAS DE REPORTES ADMIN - NUEVA RUTA
+# =========================================================
+
+@sale_bp.route('/reports', methods=['GET'])
+@jwt_required()
+def admin_general_reports():
+    """Obtiene el listado COMPLETO de todas las ventas (Admin only)."""
+    current_user_id, user_role = get_user_and_role()
+    
+    # 1. Verificar Permisos (Solo Admin)
+    if not check_admin_permission(user_role):
+        return jsonify({"msg": "Acceso denegado: Se requiere rol de Administrador."}), 403
+
+    try:
+        query = """
+            SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
+                    s.sale_date, s.status, 
+                    -- 🟢 Alias a total_amount para compatibilidad con Vue
+                    s.total_amount_usd AS total_amount, 
+                    s.total_amount_ves, s.exchange_rate_used, 
+                    u.email as seller_email, u.id as seller_id, 
+                    json_agg(json_build_object(
+                        'product_name', p.name,
+                        'quantity', si.quantity,
+                        -- 🟢 Alias a price para compatibilidad con Vue
+                        'price', si.price 
+                    )) AS items
+            FROM sales s
+            JOIN customers c ON s.customer_id = c.id
+            JOIN users u ON s.user_id = u.id 
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN products p ON si.product_id = p.id
+            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
+            s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id 
+            ORDER BY s.sale_date DESC;
+        """
+        
+        with get_db_cursor() as cur:
+            cur.execute(query)
+            sales_list = [dict(record) for record in cur.fetchall()]
+            
+        return jsonify(sales_list), 200
+        
+    except Exception as e:
+        app_logger.error(f"Error al obtener los reportes generales admin: {e}", exc_info=True)
+        return jsonify({"msg": "Error al cargar los reportes generales del administrador", "error": str(e)}), 500
