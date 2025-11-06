@@ -1,11 +1,11 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from werkzeug.security import generate_password_hash
+# Importación del módulo UUID de Python para manipulación
+import uuid
 
 # 1. Importaciones de Helpers y DB
 from backend.db import get_db_cursor
-# 🚨 ASUMO QUE EL HELPER YA DEVUELVE EL ROLE_ID DE ALMACENISTA si existe.
-# LÍNEA 8 CORREGIDA Y MEJORADA
 from backend.utils.helpers import (
     get_user_and_role, 
     check_admin_permission, 
@@ -14,12 +14,12 @@ from backend.utils.helpers import (
     SELLER_ROLE_ID, 
     CUSTOMER_ROLE_ID # Si lo usas
 )
-# 🚨 NUEVA CONSTANTE DE ROL
+# Constantes de Roles (Asegurando la definición)
 ALMACENISTA_ROLE_ID = 3 
 ADMIN_ROLE_ID = 1
 CONSULTOR_ROLE_ID = 2 # Role 2 es el Vendedor
 
-# 🚨 ROL PERMITIDOS PARA CREACIÓN/MODIFICACIÓN POR EL ADMIN
+# Roles permitidos para gestión por el Administrador (1, 2, 3)
 ALLOWED_ROLES_FOR_ADMIN = (ADMIN_ROLE_ID, CONSULTOR_ROLE_ID, ALMACENISTA_ROLE_ID)
 
 
@@ -35,7 +35,6 @@ admin_bp = Blueprint('admin', __name__)
 
 # =========================================================
 # RUTAS DE PERFIL DE USUARIO (Acceso General: /api/profile/*)
-# (NO NECESITAN CAMBIOS DE LÓGICA DE ROL)
 # =========================================================
 
 @user_bp.route('/profile', methods=['GET'])
@@ -87,10 +86,12 @@ def upload_profile_image_endpoint():
     file = request.files['profile_image']
 
     try:
+        # Aquí, current_user_id ya se usa como str en el helper
         new_image_url = upload_profile_image(file, str(current_user_id)) 
 
         if new_image_url:
             with get_db_cursor() as cur:
+                # current_user_id se pasa como UUID
                 cur.execute("SELECT profile_image_url FROM users WHERE id = %s", (current_user_id,))
                 old_url_row = cur.fetchone()
                 old_url = old_url_row['profile_image_url'] if old_url_row else None
@@ -119,7 +120,6 @@ def upload_profile_image_endpoint():
 # RUTAS DE GESTIÓN DE USUARIOS (Acceso de Administrador: /admin/users/*)
 # =========================================================
 
-# Esta ruta se traduce a GET /admin/users/
 @admin_bp.route('/users', methods=['GET']) 
 @jwt_required()
 def admin_list_users():
@@ -132,7 +132,6 @@ def admin_list_users():
 
     try:
         with get_db_cursor() as cur:
-            # 🚨 CAMBIO AÑADIDO: Ahora incluye el rol 3 (Almacenista)
             cur.execute(
                 """
                 SELECT u.id, u.email, u.role_id, r.name as role_name
@@ -147,6 +146,7 @@ def admin_list_users():
             users_list = [dict(row) for row in cur.fetchall()]
             
             for user in users_list:
+                 # Se asegura que el ID sea string para el frontend (Vue.js)
                  user['id'] = str(user['id'])
 
             return jsonify(users_list), 200
@@ -156,7 +156,6 @@ def admin_list_users():
         return jsonify({"msg": "Error interno del servidor al listar usuarios"}), 500
 
 
-# Esta ruta se traduce a POST /admin/users/
 @admin_bp.route('/users', methods=['POST']) 
 @jwt_required()
 def admin_create_user():
@@ -174,7 +173,6 @@ def admin_create_user():
     password = data['password']
     role_id = int(data['role_id']) 
 
-    # 🚨 CAMBIO AÑADIDO: Permitir la creación de usuarios con Rol 3 (Almacenista)
     if role_id not in ALLOWED_ROLES_FOR_ADMIN:
         allowed_names = ", ".join(map(str, ALLOWED_ROLES_FOR_ADMIN))
         return jsonify({"msg": f"Solo se permite crear usuarios con Rol {allowed_names}."}), 400
@@ -197,7 +195,6 @@ def admin_create_user():
         return jsonify({"msg": "Error interno del servidor al crear usuario"}), 500
 
 
-# Esta ruta se traduce a PUT /admin/users/<uuid:user_id>
 @admin_bp.route('/users/<uuid:user_id>', methods=['PUT']) 
 @jwt_required()
 def admin_update_user_role(user_id):
@@ -214,7 +211,6 @@ def admin_update_user_role(user_id):
 
     new_role_id = int(new_role_id)
 
-    # 🚨 CAMBIO AÑADIDO: Permitir la asignación de Rol 3 (Almacenista)
     if new_role_id not in ALLOWED_ROLES_FOR_ADMIN:
         allowed_names = ", ".join(map(str, ALLOWED_ROLES_FOR_ADMIN))
         return jsonify({"msg": f"Solo se permite asignar Rol {allowed_names}."}), 400
@@ -223,10 +219,13 @@ def admin_update_user_role(user_id):
            return jsonify({"msg": "Operación no permitida: No puedes modificar tu propio rol o contraseña."}), 403
 
     try:
+        # 🟢 CORRECCIÓN CLAVE: Convertir el objeto UUID a string para el driver DB
+        user_id_str = str(user_id)
+
         with get_db_cursor(commit=True) as cur:
             cur.execute(
                 "UPDATE users SET role_id = %s WHERE id = %s RETURNING id",
-                (new_role_id, user_id)
+                (new_role_id, user_id_str)
             )
             if cur.fetchone():
                 return jsonify({"msg": f"Rol del usuario {user_id} actualizado a {new_role_id} exitosamente."}), 200
@@ -234,11 +233,11 @@ def admin_update_user_role(user_id):
                 return jsonify({"msg": "Usuario no encontrado."}), 404
 
     except Exception as e:
+        # Usamos print y el mensaje genérico para evitar exponer detalles internos al cliente
         print(f"Error al actualizar rol: {e}")
         return jsonify({"msg": "Error interno del servidor al actualizar el rol"}), 500
 
 
-# Esta ruta se traduce a DELETE /admin/users/<uuid:user_id>
 @admin_bp.route('/users/<uuid:user_id>', methods=['DELETE']) 
 @jwt_required()
 def admin_delete_user(user_id):
@@ -251,14 +250,20 @@ def admin_delete_user(user_id):
            return jsonify({"msg": "Operación no permitida: No puedes eliminarte a ti mismo."}), 403
 
     try:
+        # 🟢 CORRECCIÓN CLAVE: Convertir el objeto UUID a string para el driver DB
+        user_id_str = str(user_id)
+
         with get_db_cursor(commit=True) as cur:
-            cur.execute("SELECT profile_image_url FROM users WHERE id = %s", (user_id,))
+            # Usamos la cadena
+            cur.execute("SELECT profile_image_url FROM users WHERE id = %s", (user_id_str,))
             user_data = cur.fetchone()
             
-            cur.execute("DELETE FROM users WHERE id = %s RETURNING id", (user_id,))
+            # Usamos la cadena
+            cur.execute("DELETE FROM users WHERE id = %s RETURNING id", (user_id_str,))
             
             if cur.fetchone():
                 if user_data and user_data.get('profile_image_url'):
+                    # La función de Cloudinary ya maneja URLs, no necesita el UUID object
                     delete_profile_image(user_data['profile_image_url']) 
                     
                 return jsonify({"msg": f"Usuario {user_id} eliminado exitosamente."}), 200
