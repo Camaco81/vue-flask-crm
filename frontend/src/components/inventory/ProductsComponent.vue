@@ -1,284 +1,314 @@
 <template>
- <div class="products-container">
-  <div class="page-header">
-   <div class="header-content">
-    <div class="header-info">
-     <div class="header-icon">
-      <i class="fas fa-boxes"></i>
-     </div>
-     <div class="header-text">
-      <h1 class="page-title">Gestión de Productos</h1>
-
-      <p class="page-subtitle">Administra tu inventario de productos</p>
-      <BackButton />
-     </div>
-    </div>
-    <div class="header-stats">
-     <div class="stat-item">
-      <span class="stat-number">{{ products ? products.length : 0 }}</span>
-      <span class="stat-label">Productos</span>
-     </div>
-          <div class="stat-item">
-      <span class="stat-number">{{ totalStock }}</span>
-      <span class="stat-label">Unidades en Stock</span>
-     </div>
-    </div>
-   </div>
+<div class="products-container">
+ <div class="page-header">
+ <div class="header-content">
+  <div class="header-info">
+  <div class="header-icon">
+   <i class="fas fa-boxes"></i>
   </div>
+<div class="header-text">
+ <h1 class="page-title">Gestión de Productos</h1>
 
-  <div class="content-wrapper">
-   <div class="form-card">
-    <div class="card-header">
-     <div class="card-icon">
-      <i class="fas fa-box-open"></i>
-     </div>
-     <div class="card-title">
-      <h3>Registrar Nuevo Producto</h3>
-      <p>Agrega un nuevo producto a tu inventario</p>
-     </div>
-    </div>
-    <div class="card-content">
-     <form @submit.prevent="addProduct" class="product-form">
-      <div class="form-grid">
-              <div class="form-group">
-        <label for="product-name">
-         <i class="fas fa-tag"></i>
-         <span>Nombre del Producto *</span>
-        </label>
-        <input
-         id="product-name"
-         type="text"
-         v-model="newProduct.name"
-         placeholder="Ingresa el nombre del producto"
-         required
-         class="form-input"
-        />
-       </div>
+ <p class="page-subtitle">Administra tu inventario de productos</p>
+ <BackButton />
+</div>
+ </div>
+ <div class="header-stats">
+<div class="stat-item">
+ <span class="stat-number">{{ products ? products.length : 0 }}</span>
+ <span class="stat-label">Productos</span>
+</div>
+<div class="stat-item">
+ <span class="stat-number">{{ totalStock }}</span>
+ <span class="stat-label">Unidades en Stock</span>
+</div>
+ </div>
+</div>
+ </div>
 
-              <div class="form-group">
-        <label for="product-price">
-         <i class="fas fa-dollar-sign"></i>
-         <span>Precio *</span>
-        </label>
-        <input
-         id="product-price"
-         type="number"
-         v-model.number="newProduct.price"
-         placeholder="0.00"
-         min="0"
-         step="0.01"
-         required
-         class="form-input"
-        />
-       </div>
+ <div class="content-wrapper">
+<div class="form-card">
+ <div class="card-header">
+<div class="card-icon">
+ <i class="fas fa-box-open"></i>
+</div>
+<div class="card-title">
+ <h3>Registrar Nuevo Producto</h3>
+ <p>Agrega un nuevo producto a tu inventario</p>
+</div>
+ </div>
+ <div class="card-content">
+<form @submit.prevent="addProduct" class="product-form">
+ <div class="form-grid">
+ <div class="form-group">
+<label for="product-name">
+ <i class="fas fa-tag"></i>
+ <span>Nombre del Producto *</span>
+</label>
+<input
+ id="product-name"
+ type="text"
+ v-model="newProduct.name"
+ placeholder="Ingresa el nombre del producto"
+ required
+ class="form-input"
+/>
+ </div>
 
-              <div class="form-group">
-        <label for="product-stock">
-         <i class="fas fa-warehouse"></i>
-         <span>Stock Inicial *</span>
-        </label>
-        <input
-         id="product-stock"
-         type="number"
-         v-model.number="newProduct.stock"
-         placeholder="Cantidad inicial en inventario"
-         required
-         min="0"
-         class="form-input"
-        />
-       </div>
-      </div>
+ <div class="form-group">
+<label for="product-price">
+ <i class="fas fa-dollar-sign"></i>
+ <span>Precio *</span>
+</label>
+<input
+ id="product-price"
+ type="number"
+ v-model.number="newProduct.price"
+ placeholder="0.00"
+ min="0"
+ step="0.01"
+ required
+ class="form-input"
+/>
+ </div>
 
-      <div class="form-actions">
-       <button type="button" @click="resetForm" class="reset-btn">
-        <i class="fas fa-undo"></i>
-        <span>Limpiar</span>
-       </button>
-       <button type="submit" class="submit-btn" :disabled="isSubmitting">
-        <div v-if="isSubmitting" class="button-spinner"></div>
-        <i v-else class="fas fa-plus"></i>
-        <span>{{ isSubmitting ? 'Agregando...' : 'Agregar Producto' }}</span>
-       </button>
-      </div>
-     </form>
-    </div>
-        
-            <transition name="slide-down">
-     <div v-if="addError" class="alert alert-error">
-      <div class="alert-icon">
-       <i class="fas fa-exclamation-circle"></i>
-      </div>
-      <div class="alert-content">
-       <strong>Error:</strong> {{ addError }}
-      </div>
-      <button @click="addError = null" class="alert-close">
-       <i class="fas fa-times"></i>
-      </button>
-     </div>
-    </transition>
+ <div class="form-group">
+<label for="product-stock">
+ <i class="fas fa-warehouse"></i>
+ <span>Stock Inicial *</span>
+</label>
+<input
+ id="product-stock"
+ type="number"
+ v-model.number="newProduct.stock"
+ placeholder="Cantidad inicial en inventario"
+ required
+ min="0"
+ class="form-input"
+/>
+ </div>
+ </div>
 
-    <transition name="slide-down">
-     <div v-if="addSuccess" class="alert alert-success">
-      <div class="alert-icon">
-       <i class="fas fa-check-circle"></i>
-      </div>
-      <div class="alert-content">
-       <strong>¡Éxito!</strong> {{ addSuccess }}
-      </div>
-      <button @click="addSuccess = null" class="alert-close">
-       <i class="fas fa-times"></i>
-      </button>
-     </div>
-    </transition>
-   </div>
+ <div class="form-actions">
+ <button type="button" @click="resetForm" class="reset-btn">
+<i class="fas fa-undo"></i>
+<span>Limpiar</span>
+ </button>
+ <button type="submit" class="submit-btn" :disabled="isSubmitting">
+<div v-if="isSubmitting" class="button-spinner"></div>
+<i v-else class="fas fa-plus"></i>
+<span>{{ isSubmitting ? 'Agregando...' : 'Agregar Producto' }}</span>
+ </button>
+ </div>
+</form>
+ </div>
+ 
+ <transition name="slide-down">
+<div v-if="addError" class="alert alert-error">
+ <div class="alert-icon">
+ <i class="fas fa-exclamation-circle"></i>
+ </div>
+ <div class="alert-content">
+ <strong>Error:</strong> {{ addError }}
+ </div>
+ <button @click="addError = null" class="alert-close">
+ <i class="fas fa-times"></i>
+ </button>
+</div>
+ </transition>
 
-   <div class="list-card">
-        <div class="card-header">
-     <div class="card-icon">
-      <i class="fas fa-cubes"></i>
-     </div>
-     <div class="card-title">
-      <h3>Lista de Productos</h3>
-      <p>Visualiza y gestiona tu inventario de productos</p>
-     </div>
-     <div class="card-actions">
-      <button @click="fetchProducts" class="refresh-btn" :disabled="loading">
-       <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
-       <span>{{ loading ? 'Cargando...' : 'Actualizar' }}</span>
-      </button>
-     </div>
-    </div>
+ <transition name="slide-down">
+<div v-if="addSuccess" class="alert alert-success">
+ <div class="alert-icon">
+ <i class="fas fa-check-circle"></i>
+ </div>
+ <div class="alert-content">
+ <strong>¡Éxito!</strong> {{ addSuccess }}
+ </div>
+ <button @click="addSuccess = null" class="alert-close">
+ <i class="fas fa-times"></i>
+ </button>
+</div>
+ </transition>
+</div>
 
-    <div class="search-section">
-     <div class="search-bar">
-      <div class="search-icon">
-       <i class="fas fa-search"></i>
-      </div>
-      <input
-       type="text"
-       v-model="searchTerm"
-       placeholder="Buscar productos por nombre..."
-       class="search-input"
-      />
-      <button v-if="searchTerm" @click="searchTerm = ''" class="clear-search">
-       <i class="fas fa-times"></i>
-      </button>
-     </div>
-    </div>
+<div class="list-card">
+ <div class="card-header">
+<div class="card-icon">
+ <i class="fas fa-cubes"></i>
+</div>
+<div class="card-title">
+ <h3>Lista de Productos</h3>
+ <p>Visualiza y gestiona tu inventario de productos</p>
+</div>
+<div class="card-actions">
+ <button @click="fetchProducts" class="refresh-btn" :disabled="loading">
+ <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
+ <span>{{ loading ? 'Cargando...' : 'Actualizar' }}</span>
+ </button>
+</div>
+ </div>
 
-    <div v-if="loading && products.length === 0" class="loading-state">
-     <div class="loading-spinner">
-      <div class="spinner"></div>
-     </div>
-     <p class="loading-text">Cargando productos...</p>
-    </div>
+ <div class="search-section">
+<div class="search-bar">
+ <div class="search-icon">
+ <i class="fas fa-search"></i>
+ </div>
+ <input
+ type="text"
+ v-model="searchTerm"
+ placeholder="Buscar productos por nombre..."
+ class="search-input"
+ />
+ <button v-if="searchTerm" @click="searchTerm = ''" class="clear-search">
+ <i class="fas fa-times"></i>
+ </button>
+</div>
+ </div>
 
-    <div v-if="error && !loading" class="error-state">
-     <div class="error-icon">
-      <i class="fas fa-exclamation-triangle"></i>
-     </div>
-     <div class="error-content">
-      <h3>Error al cargar productos</h3>
-      <p>{{ error }}</p>
-      <button @click="fetchProducts" class="retry-btn">
-       <i class="fas fa-redo-alt"></i>
-       Reintentar
-      </button>
-     </div>
-    </div>
+ <div v-if="loading && products.length === 0" class="loading-state">
+<div class="loading-spinner">
+ <div class="spinner"></div>
+</div>
+<p class="loading-text">Cargando productos...</p>
+ </div>
 
-    <div v-if="!loading && !error && products.length === 0" class="empty-state">
-     <div class="empty-icon">
-      <i class="fas fa-boxes"></i>
-     </div>
-     <div class="empty-content">
-      <h3>No hay productos registrados</h3>
-      <p>Comienza agregando tu primer producto usando el formulario de arriba</p>
-     </div>
-    </div>
-        
-        <div v-if="!loading && !error && filteredProducts.length > 0" class="products-grid">
-     <transition-group name="product-item" tag="div" class="grid-container">
-      <div
-       v-for="product in paginatedProducts"
-       :key="product.id"
-       class="product-card"
-      >
-       <div class="product-avatar">
-        <i class="fas fa-box"></i>
-       </div>
-       <div class="product-info">
-        <h4 class="product-name">{{ product.name }}</h4>
-        <p class="product-price">
-         <i class="fas fa-dollar-sign"></i>
-         {{ product.price }}
-        </p>
-                <p class="product-stock" :class="{ 'low-stock': product.stock < 10 }">
-         <i class="fas fa-cubes"></i>
-         Stock: {{ product.stock }}
-        </p>
-       </div>
-       <div class="product-actions">
-        <button
-         class="action-btn edit-btn"
-         title="Editar"
-         @click="openEditModal(product)"
-        >
-         <i class="fas fa-edit"></i>
-        </button>
-        <button
-         class="action-btn delete-btn"
-         title="Eliminar"
-         @click="confirmDelete(product)"
-        >
-         <i class="fas fa-trash"></i>
-        </button>
-       </div>
-      </div>
-     </transition-group>
-    </div>
+ <div v-if="error && !loading" class="error-state">
+<div class="error-icon">
+ <i class="fas fa-exclamation-triangle"></i>
+</div>
+<div class="error-content">
+ <h3>Error al cargar productos</h3>
+ <p>{{ error }}</p>
+ <button @click="fetchProducts" class="retry-btn">
+ <i class="fas fa-redo-alt"></i>
+ Reintentar
+ </button>
+</div>
+ </div>
 
-       </div>
-  </div>
+ <div v-if="!loading && !error && products.length === 0" class="empty-state">
+<div class="empty-icon">
+ <i class="fas fa-boxes"></i>
+</div>
+<div class="empty-content">
+ <h3>No hay productos registrados</h3>
+ <p>Comienza agregando tu primer producto usando el formulario de arriba</p>
+</div>
+</div>
+ 
+ <div v-if="!loading && !error && filteredProducts.length > 0" class="products-grid">
+<transition-group name="product-item" tag="div" class="grid-container">
+ <div
+ v-for="product in paginatedProducts"
+ :key="product.id"
+ class="product-card"
+ >
+ <div class="product-avatar">
+<i class="fas fa-box"></i>
+ </div>
+ <div class="product-info">
+<h4 class="product-name">{{ product.name }}</h4>
+<p class="product-price">
+ <i class="fas fa-dollar-sign"></i>
+ {{ parseFloat(product.price).toFixed(2) }} </p>
+   <p class="product-stock" :class="{ 'low-stock': product.stock < 10 }">
+ <i class="fas fa-cubes"></i>
+ Stock: {{ product.stock }}
+</p>
+ </div>
+ <div class="product-actions">
+<button
+ class="action-btn edit-btn"
+ title="Editar"
+ @click="openEditModal(product)"
+>
+ <i class="fas fa-edit"></i>
+</button>
+<button
+ class="action-btn delete-btn"
+ title="Eliminar"
+ @click="confirmDelete(product)"
+>
+ <i class="fas fa-trash"></i>
+</button>
+ </div>
+ </div >
+</transition-group>
+ </div>
 
-    <transition name="fade">
-   <div v-if="showEditModal" class="modal-overlay">
-    <div class="modal-container">
-     <div class="modal-header">
-      <h3>Editar Producto</h3>
-      <button class="close-btn" @click="closeEditModal">
-       <i class="fas fa-times"></i>
-      </button>
+ <div v-if="totalPages > 1 && filteredProducts.length > 0" class="pagination">
+<button
+ @click="prevPage"
+ :disabled="currentPage === 1"
+ class="page-btn"
+>
+ <i class="fas fa-chevron-left"></i>
+</button>
+
+<div class="page-numbers">
+ <button
+ v-for="page in visiblePages"
+ :key="page"
+ @click="goToPage(page)"
+ :class="['page-number', { active: page === currentPage }]"
+ >
+ {{ page }}
+ </button>
+</div>
+
+<button
+ @click="nextPage"
+ :disabled="currentPage === totalPages"
+ class="page-btn"
+>
+ <i class="fas fa-chevron-right"></i>
+</button>
+ </div>
+ <div v-if="!loading && filteredProducts.length > 0" class="results-info">
+Mostrando {{ (currentPage - 1) * itemsPerPage + 1 }} - {{ Math.min(currentPage * itemsPerPage, filteredProducts.length) }} de {{ filteredProducts.length }} productos.
+ </div>
+</div>
+ </div>
+
+ <transition name="fade">
+<div v-if="showEditModal" class="modal-overlay">
+ <div class="modal-container">
+<div class="modal-header">
+ <h3>Editar Producto</h3>
+ <button class="close-btn" @click="closeEditModal">
+ <i class="fas fa-times"></i>
+ </button>
 </div>
 <form @submit.prevent="updateProduct" class="modal-form">
  <div class="form-group">
-  <label for="edit-name">Nombre del Producto</label>
-  <input type="text" id="edit-name" v-model="editingProduct.name" required class="form-input" />
+ <label for="edit-name">Nombre del Producto</label>
+ <input type="text" id="edit-name" v-model="editingProduct.name" required class="form-input" />
  </div>
  <div class="form-group">
-  <label for="edit-price">Precio</label>
-  <input type="number" id="edit-price" v-model.number="editingProduct.price" required class="form-input" />
+ <label for="edit-price">Precio</label>
+ <input type="number" id="edit-price" v-model.number="editingProduct.price" required class="form-input" min="0" step="0.01" />
  </div>
-  <div class="form-group">
-  <label for="edit-stock">Stock</label>
-  <input type="number" id="edit-stock" v-model.number="editingProduct.stock" required class="form-input" min="0" />
+ <div class="form-group">
+ <label for="edit-stock">Stock</label>
+ <input type="number" id="edit-stock" v-model.number="editingProduct.stock" required class="form-input" min="0" />
  </div>
  <div class="form-actions">
-  <button type="button" class="cancel-btn" @click="closeEditModal">Cancelar</button>
-  <button type="submit" class="submit-btn" :disabled="isUpdating">
-   <div v-if="isUpdating" class="button-spinner"></div>
-   <i v-else class="fas fa-save"></i>
-   <span>{{ isUpdating ? 'Actualizando...' : 'Guardar Cambios' }}</span>
-  </button>
+ <button type="button" class="cancel-btn" @click="closeEditModal">Cancelar</button>
+ <button type="submit" class="submit-btn" :disabled="isUpdating">
+<div v-if="isUpdating" class="button-spinner"></div>
+<i v-else class="fas fa-save"></i>
+<span>{{ isUpdating ? 'Actualizando...' : 'Guardar Cambios' }}</span>
+ </button>
  </div>
 </form>
 <transition name="slide-down">
  <div v-if="editError" class="alert alert-error">{{ editError }}</div>
 </transition>
-    </div>
-   </div>
-  </transition>
  </div>
+</div>
+ </transition>
+</div>
 </template>
 
 <script>
@@ -288,209 +318,286 @@ import BackButton from '../vendedor/BackButton.vue';
 export default {
 name: 'ProductsManagement',
 components: {
- BackButton
+BackButton
 },
 data() {
- return {
- products: [],
- newProduct: {
-  name: '',
-  price: 0,
-  stock: 0 // Nuevo campo: Stock inicial
- },
- loading: false,
- error: null,
- addError: null,
- addSuccess: null,
- isSubmitting: false,
- searchTerm: '',
- currentPage: 1,
- itemsPerPage: 6,
- showEditModal: false,
- editingProduct: null,
- editError: null,
- isUpdating: false
- };
+return {
+products: [],
+newProduct: {
+ // Inicializar price como 0.00 para reforzar el tipo decimal/número
+ name: '',
+ price: 0.00, 
+ stock: 0
+},
+loading: false,
+error: null,
+addError: null,
+addSuccess: null,
+isSubmitting: false,
+searchTerm: '',
+currentPage: 1,
+itemsPerPage: 6,
+showEditModal: false,
+editingProduct: null,
+editError: null,
+isUpdating: false
+};
 },
 computed: {
- filteredProducts() {
+filteredProducts() {
  if (!this.searchTerm) return this.products;
 
  const term = this.searchTerm.toLowerCase();
  return this.products.filter(product =>
-  product.name.toLowerCase().includes(term)
+product.name.toLowerCase().includes(term)
  );
- },
+},
 
- totalPages() {
- return Math.ceil(this.filteredProducts.length / this.itemsPerPage);
- },
+totalPages() {
+ // Asegura que el número de páginas sea al menos 1
+ return Math.ceil(this.filteredProducts.length / this.itemsPerPage) || 1;
+},
 
- paginatedProducts() {
+paginatedProducts() {
  const start = (this.currentPage - 1) * this.itemsPerPage;
-   const end = start + this.itemsPerPage;
-   return this.filteredProducts.slice(start, end);
- },
+ const end = start + this.itemsPerPage;
+ return this.filteredProducts.slice(start, end);
+},
 
- totalStock() { // Nuevo computed para el stat
+totalStock() {
+ // Se asegura que el stock siempre sea un número (o 0 si es nulo/inválido) antes de sumar
  return this.products.reduce((sum, product) => sum + (product.stock || 0), 0);
- },
+},
 
- visiblePages() {
+visiblePages() {
  const pages = [];
  const maxVisible = 5;
  let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
  let end = Math.min(this.totalPages, start + maxVisible - 1);
 
  if (end - start < maxVisible - 1) {
-    start = Math.max(1, end - maxVisible + 1);
-   }
-
-   for (let i = start; i <= end; i++) {
-    pages.push(i);
-   }
-
-   return pages;
+start = Math.max(1, end - maxVisible + 1);
  }
+
+ for (let i = start; i <= end; i++) {
+pages.push(i);
+ }
+
+ return pages;
+}
 },
 watch: {
- searchTerm() {
+searchTerm() {
  this.currentPage = 1;
+},
+// Asegura que la página actual sea válida al cambiar el filtro
+filteredProducts() {
+ if (this.currentPage > this.totalPages) {
+this.currentPage = this.totalPages;
  }
+}
 },
 methods: {
- async addProduct() {
+// --- Métodos de Paginación ---
+goToPage(page) {
+ if (page >= 1 && page <= this.totalPages) {
+this.currentPage = page;
+ }
+},
+prevPage() {
+ if (this.currentPage > 1) {
+this.currentPage--;
+ }
+},
+nextPage() {
+ if (this.currentPage < this.totalPages) {
+this.currentPage++;
+ }
+},
+
+async addProduct() {
  this.addError = null;
  this.addSuccess = null;
  this.isSubmitting = true;
+ 
+ // Saneamiento inicial: asegura que null/undefined se manejen como 0
+ const price = this.newProduct.price === null || this.newProduct.price === undefined ? 0 : this.newProduct.price;
+ const stock = this.newProduct.stock === null || this.newProduct.stock === undefined ? 0 : this.newProduct.stock;
+ 
+ // Validaciones de negocio y tipo de dato
+ if (!this.newProduct.name.trim() || isNaN(price) || price <= 0 || isNaN(stock) || stock < 0) {
+this.addError = "El nombre, el precio y el stock son obligatorios. El precio debe ser positivo y el stock no negativo.";
+this.isSubmitting = false;
+return;
+ }
 
- // Validación actualizada para incluir el stock
- if (!this.newProduct.name.trim() || !this.newProduct.price || this.newProduct.stock === undefined || this.newProduct.stock < 0) {
-  this.addError = "Todos los campos (nombre, precio, stock) son obligatorios y el stock no puede ser negativo.";
-  this.isSubmitting = false;
-  return;
-   }
+ // Clonar y formatear el producto antes de enviar
+ const productToSend = {
+name: this.newProduct.name.trim(),
+// Asegura dos decimales para el envío a la API
+price: parseFloat(price).toFixed(2),
+stock: parseInt(stock)
+ };
+
 
  try {
-   // Se envía el nuevo campo 'stock' a la API
-   const { data } = await apiClient.post('/api/products', {
-    name: this.newProduct.name.trim(),
-    price: this.newProduct.price,
-    stock: this.newProduct.stock // Enviando Stock
-   });
+const { data } = await apiClient.post('/api/products', productToSend);
 
-   this.addSuccess = 'Producto registrado exitosamente.';
-   // Aseguramos que el producto agregado tenga todos los campos, incluyendo stock
-   this.products.unshift(data);
-   this.resetForm();
+this.addSuccess = `Producto "${data.name}" registrado exitosamente.`;
+// Añadimos el nuevo producto (mapeando a números para el FE)
+this.products.unshift({
+...data,
+price: parseFloat(data.price),
+stock: parseInt(data.stock)
+});
 
-   setTimeout(() => {
-    this.addSuccess = null;
-   }, 5000);
-   } catch (error) {
-    if (error.response?.data?.msg) {
-    this.addError = error.response.data.msg;
-    } else {
-    this.addError = 'Error al registrar el producto. Por favor, inténtalo de nuevo.';
-    }
-    console.error("Error al agregar producto:", error);
-   } finally {
-    this.isSubmitting = false;
-   }
- },
+this.resetForm();
 
- async fetchProducts() {
-   this.loading = true;
-   this.error = null;
+// Ir a la primera página para ver el producto recién agregado
+this.currentPage = 1;
 
-   try {
-    const { data } = await apiClient.get('/api/products');
-    this.products = data;
-   } catch (error) {
-    this.error = 'Error al cargar los productos. Por favor, inténtalo de nuevo.';
-    console.error("Error al cargar productos:", error);
-   } finally {
-    this.loading = false;
-   }
- },
-
- resetForm() {
-   this.newProduct = {
-    name: '',
-    price: 0,
-    stock: 0 // Restablecer stock
-   };
-   this.addError = null;
-   this.addSuccess = null;
- },
-
- // --- Métodos de Edición ---
- openEditModal(product) {
-   // Aseguramos que editingProduct tenga el campo 'stock'
-   this.editingProduct = { ...product };
-   this.showEditModal = true;
-   this.editError = null;
- },
-
- closeEditModal() {
-   this.showEditModal = false;
-   this.editingProduct = null;
- },
-
- async updateProduct() {
-   this.isUpdating = true;
-   this.editError = null;
-
-   // Validación de stock en edición
-   if (this.editingProduct.stock === undefined || this.editingProduct.stock < 0) {
-    this.editError = "El stock debe ser un número positivo.";
-    this.isUpdating = false;
-    return;
-   }
-
-   try {
-    const productId = this.editingProduct.id;
-
-    // Se envía el campo 'stock' a la API para la actualización
-    const { data } = await apiClient.put(`/api/products/${productId}`, this.editingProduct);
-
-    const index = this.products.findIndex(p => p.id === data.id);
-    if (index !== -1) {
-    // Actualizamos el producto con los nuevos datos (incluyendo stock)
-    this.products.splice(index, 1, data);
-    }
-
-    this.closeEditModal();
-    alert('Producto actualizado exitosamente.');
-   } catch (error) {
-    this.editError = 'Error al actualizar el producto. Por favor, inténtalo de nuevo.';
-    console.error("Error al actualizar producto:", error);
-   } finally {
-    this.isUpdating = false;
-   }
- },
-
- // --- Método de Eliminación ---
- async confirmDelete(product) {
-   if (confirm(`¿Estás seguro de que quieres eliminar el producto "${product.name}"?`)) {
-    try {
-    const productId = product.id;
-
-    await apiClient.delete(`/api/products/${productId}`);
-
-    this.products = this.products.filter(p => p.id !== product.id);
-
-    alert('Producto eliminado exitosamente.');
-    } catch (error) {
-    alert('Error al eliminar el producto.');
-    console.error("Error al eliminar producto:", error);
-    }
-   }
+setTimeout(() => {
+ this.addSuccess = null;
+}, 5000);
+ } catch (error) {
+if (error.response?.data?.msg) {
+ this.addError = error.response.data.msg;
+} else {
+ this.addError = 'Error al registrar el producto. Por favor, inténtalo de nuevo.';
+}
+console.error("Error al agregar producto:", error);
+ } finally {
+this.isSubmitting = false;
  }
 },
 
+async fetchProducts() {
+ this.loading = true;
+ this.error = null;
+
+ try {
+const { data } = await apiClient.get('/api/products');
+// Mapeamos los datos para asegurar que price y stock son NUMEROS antes de guardarlos en el estado de Vue
+this.products = data.map(p => ({
+ ...p,
+ price: parseFloat(p.price),
+ stock: parseInt(p.stock)
+}));
+ } catch (error) {
+ } finally {
+this.loading = false;
+ }
+},
+
+resetForm() {
+ this.newProduct = {
+name: '',
+price: 0.00, 
+stock: 0
+ };
+ this.addError = null;
+ this.addSuccess = null;
+},
+
+// --- Métodos de Edición ---
+openEditModal(product) {
+ // Aseguramos que los valores sean números antes de ponerlos en el modal (crucial para v-model.number)
+ this.editingProduct = {
+ ...product,
+ price: parseFloat(product.price),
+ stock: parseInt(product.stock)
+ };
+ this.showEditModal = true;
+ this.editError = null;
+},
+
+closeEditModal() {
+ this.showEditModal = false;
+ this.editingProduct = null;
+},
+
+async updateProduct() {
+// 1. Saneamiento: Si el usuario borra el campo, v-model.number lo setea a null.
+// Esto causaría el 400 en el backend. Lo saneamos a 0.
+const price = this.editingProduct.price === null || this.editingProduct.price === undefined ? 0 : this.editingProduct.price;
+const stock = this.editingProduct.stock === null || this.editingProduct.stock === undefined ? 0 : this.editingProduct.stock;
+
+// Asignar los valores saneados para la validación (Vue actualizará el input)
+this.editingProduct.price = price;
+this.editingProduct.stock = stock;
+
+this.isUpdating = true;
+this.editError = null;
+
+// 2. Validación: precio debe ser positivo y stock no negativo
+if (!this.editingProduct.name.trim() || isNaN(price) || price <= 0 || isNaN(stock) || stock < 0) {
+this.editError = "El nombre, el precio y el stock son obligatorios. El precio debe ser positivo y el stock no negativo.";
+this.isUpdating = false;
+return; // Detiene la ejecución si la validación falla
+}
+ 
+ // **AQUÍ SE CORRIGIÓ EL ERROR DE SINTAXIS:**
+ try {
+const productId = this.editingProduct.id;
+
+// 3. Formateo y Envío: Clonamos y formateamos antes de enviar
+const productUpdate = {
+ // Formatear precio antes de enviar (ej: 12.5 -> "12.50")
+ price: parseFloat(price).toFixed(2),
+ stock: parseInt(stock),
+ name: this.editingProduct.name.trim()
+};
+
+const { data } = await apiClient.put(`/api/products/${productId}`, productUpdate);
+
+const index = this.products.findIndex(p => p.id === data.id);
+if (index !== -1) {
+ // 4. Actualización del Estado: Actualizamos con los nuevos datos (mapeando a números para el frontend)
+ this.products.splice(index, 1, {
+...data,
+price: parseFloat(data.price),
+stock: parseInt(data.stock)
+ });
+}
+
+this.closeEditModal();
+alert(`Producto "${data.name}" actualizado exitosamente.`);
+ } catch (error) {
+// Manejo de error de la API (incluyendo el 400 Bad Request que venías recibiendo)
+this.editError = error.response?.data?.msg || 'Error al actualizar el producto. Por favor, inténtalo de nuevo.';
+console.error("Error al actualizar producto:", error);
+ } finally {
+this.isUpdating = false;
+ }
+},
+
+// --- Método de Eliminación ---
+async confirmDelete(product) {
+ if (confirm(`¿Estás seguro de que quieres eliminar el producto "${product.name}"?`)) {
+try {
+ const productId = product.id;
+
+ await apiClient.delete(`/api/products/${productId}`);
+
+ // Filtramos la lista para remover el producto eliminado
+ this.products = this.products.filter(p => p.id !== product.id);
+
+ // Aseguramos que la paginación se ajuste si se elimina el último elemento de la página
+ if (this.paginatedProducts.length === 0 && this.currentPage > 1) {
+this.currentPage--;
+ }
+
+ alert(`Producto "${product.name}" eliminado exitosamente.`);
+} catch (error) {
+ alert('Error al eliminar el producto.');
+ console.error("Error al eliminar producto:", error);
+}
+ }
+}
+},
+
 mounted() {
- this.fetchProducts();
+this.fetchProducts();
 }
 };
 </script>

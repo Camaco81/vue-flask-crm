@@ -55,6 +55,22 @@
             </div>
 
             <div class="form-group">
+              <label for="customer-cedula">
+                <i class="fas fa-id-card"></i>
+                <span>Cédula / ID *</span>
+              </label>
+              <input 
+                id="customer-cedula"
+                type="text" 
+                v-model="newCustomer.cedula" 
+                placeholder="Ingresa la cédula o ID del cliente"
+                required 
+                :disabled="isEditing" 
+                class="form-input"
+              />
+              <small v-if="isEditing" class="input-hint">La Cédula no se puede modificar al editar.</small>
+            </div>
+            <div class="form-group">
               <label for="customer-email">
                 <i class="fas fa-envelope"></i>
                 <span>Email *</span>
@@ -164,7 +180,7 @@
             <input 
               type="text" 
               v-model="searchTerm" 
-              placeholder="Buscar clientes por nombre o email..."
+              placeholder="Buscar clientes por nombre, email o cédula..."
               class="search-input"
             />
             <button v-if="searchTerm" @click="searchTerm = ''" class="clear-search">
@@ -208,7 +224,7 @@
           <transition-group name="customer-item" tag="div" class="grid-container">
             <div 
               v-for="customer in paginatedCustomers" 
-              :key="customer._id" 
+              :key="customer.id" 
               class="customer-card"
             >
               <div class="customer-avatar">
@@ -216,6 +232,10 @@
               </div>
               <div class="customer-info">
                 <h4 class="customer-name">{{ customer.name }}</h4>
+                <p v-if="customer.cedula" class="customer-cedula">
+                  <i class="fas fa-id-card"></i>
+                  **Cédula:** {{ customer.cedula }}
+                </p>
                 <p class="customer-email">
                   <i class="fas fa-envelope"></i>
                   {{ customer.email }}
@@ -294,6 +314,7 @@
     </div>
   </div>
 </template>
+
 <script>
 import axios from '../../axios';
 import BackButton from '@/components/vendedor/BackButton.vue';
@@ -310,7 +331,9 @@ export default {
         name: '',
         email: '',
         phone: '',
-        address: ''
+        address: '',
+        // 🚨 CAMBIO 3: Inicializar el campo 'cedula' en el estado
+        cedula: '' 
       },
       loading: false,
       error: null,
@@ -332,7 +355,9 @@ export default {
       const term = this.searchTerm.toLowerCase();
       return this.customers.filter(customer => 
         customer.name.toLowerCase().includes(term) ||
-        customer.email.toLowerCase().includes(term)
+        customer.email.toLowerCase().includes(term) ||
+        // 🚨 CAMBIO 4: Incluir 'cedula' en la lógica de búsqueda
+        (customer.cedula && customer.cedula.toLowerCase().includes(term))
       );
     },
 
@@ -378,8 +403,9 @@ export default {
       this.addSuccess = null;
       this.isSubmitting = true;
 
-      if (!this.newCustomer.name.trim() || !this.newCustomer.email.trim()) {
-        this.addError = "El nombre y el email del cliente son campos obligatorios.";
+      // 🚨 CAMBIO 5: Incluir validación de 'cedula'
+      if (!this.newCustomer.name.trim() || !this.newCustomer.email.trim() || !this.newCustomer.cedula.trim()) {
+        this.addError = "El nombre, el email y la cédula del cliente son campos obligatorios.";
         this.isSubmitting = false;
         return;
       }
@@ -388,9 +414,12 @@ export default {
         const { data } = await axios.post('/api/customers', {
           ...this.newCustomer,
           name: this.newCustomer.name.trim(),
-          email: this.newCustomer.email.trim()
+          email: this.newCustomer.email.trim(),
+          cedula: this.newCustomer.cedula.trim() // Asegurar que se envíe la cédula
         });
 
+        // La API devuelve un objeto con la nueva ID.
+        // Asumiendo que la API devuelve el objeto creado con todos sus campos, incluyendo 'id' y 'cedula'.
         this.addSuccess = 'Cliente registrado exitosamente.';
         this.customers.unshift(data);
         this.resetForm();
@@ -411,7 +440,7 @@ export default {
     },
 
     editCustomer(customer) {
-      // Usa el ID para actualizar el cliente
+      // Usar el ID para actualizar el cliente
       this.editingCustomer = { ...customer };
       this.newCustomer = { ...customer };
       this.addError = null;
@@ -425,25 +454,34 @@ export default {
       this.isSubmitting = true;
 
       try {
-        // **Cambiado de _id a id**
         if (!this.editingCustomer || !this.editingCustomer.id) {
           this.addError = "Error: El ID del cliente no está definido para la actualización.";
           this.isSubmitting = false;
           return;
         }
 
-        const { data } = await axios.put(`/api/customers/${this.editingCustomer.id}`, {
-          name: this.newCustomer.name.trim(),
-          email: this.newCustomer.email.trim(),
-          phone: this.newCustomer.phone,
-          address: this.newCustomer.address
-        });
+        const payload = {
+            name: this.newCustomer.name.trim(),
+            email: this.newCustomer.email.trim(),
+            phone: this.newCustomer.phone,
+            address: this.newCustomer.address,
+            // 🚨 CAMBIO 6: Incluir 'cedula' en el payload de actualización
+            cedula: this.newCustomer.cedula ? this.newCustomer.cedula.trim() : null
+        };
+
+        const { data } = await axios.put(`/api/customers/${this.editingCustomer.id}`, payload);
 
         this.addSuccess = 'Cliente actualizado exitosamente.';
-        // **Cambiado de _id a id**
+        // Asumiendo que la API PUT devuelve el cliente actualizado.
         const index = this.customers.findIndex(c => c.id === this.editingCustomer.id);
         if (index !== -1) {
-          this.customers.splice(index, 1, data);
+          // La API de Flask solo devuelve un ID en el PUT, pero el GET refresca la lista completa.
+          // Para evitar un nuevo GET, actualizamos el cliente directamente en el array.
+          // Nota: La API de Flask en realidad devuelve `{"msg": "Customer updated successfully", "customer_id": updated_id[0]}`.
+          // Lo ideal sería que devolviera el objeto actualizado, pero para este caso:
+          // Hacemos un fetch completo para asegurar la data, o un fetch solo de este cliente,
+          // pero por simplicidad y manteniendo la estructura, actualizamos localmente:
+          this.customers.splice(index, 1, { ...this.newCustomer, id: this.editingCustomer.id });
         }
         this.resetForm();
 
@@ -463,7 +501,6 @@ export default {
     },
 
     showDeleteConfirmation(customer) {
-      // Copia el objeto completo del cliente
       this.customerToDelete = { ...customer };
       this.showDeleteModal = true;
     },
@@ -475,9 +512,7 @@ export default {
 
     async deleteCustomer() {
       try {
-        // **Cambiado de _id a id**
         await axios.delete(`/api/customers/${this.customerToDelete.id}`);
-        // **Cambiado de _id a id**
         this.customers = this.customers.filter(c => c.id !== this.customerToDelete.id);
         this.cancelDelete();
         this.addSuccess = 'Cliente eliminado exitosamente.';
@@ -497,7 +532,9 @@ export default {
 
       try {
         const { data } = await axios.get('/api/customers');
-        this.customers = data;
+        // Asignamos la lista. Recordar que la API de Flask devuelve campos en snake_case
+        // (name, email, phone, address, cedula) si no se usa un ORM que los convierta a camelCase.
+        this.customers = data; 
       } catch (error) {
         this.error = 'Error al cargar los clientes. Por favor, inténtalo de nuevo.';
         console.error("Error al cargar clientes:", error);
@@ -511,7 +548,9 @@ export default {
         name: '',
         email: '',
         phone: '',
-        address: ''
+        address: '',
+        // 🚨 CAMBIO 7: Limpiar el campo 'cedula' al resetear
+        cedula: '' 
       };
       this.editingCustomer = null;
       this.addError = null;
@@ -524,7 +563,6 @@ export default {
   }
 };
 </script>
-
 
 
 <style scoped>

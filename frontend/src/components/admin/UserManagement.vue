@@ -1,14 +1,13 @@
 <template>
   <div class="user-management-page admin-section">
     <button class="btn btn-primary add-button">
-   <router-link to="/dashboard">
-      <i class="fas fa-arrow-left"></i> Volver al Dashboard Administrativo
-    </router-link>
+      <router-link to="/dashboard">
+        <i class="fas fa-arrow-left"></i> Volver al Dashboard Administrativo
+      </router-link>
     </button>
- 
-    
-    <h1 class="section-title">Gestión de Usuarios (Roles 1 y 2)</h1>
-    
+
+    <h1 class="section-title">Gestión de Usuarios (Roles 1, 2 y 3)</h1> 
+
     <button @click="openModal('create')" class="btn btn-primary add-button">
       <i class="fas fa-plus-circle"></i> Agregar Nuevo Usuario
     </button>
@@ -31,7 +30,7 @@
             <td>{{ user.id }}</td>
             <td>{{ user.email }}</td>
             <td>
-              <span :class="{'role-admin': user.role_id === 1, 'role-seller': user.role_id === 2}">
+              <span :class="{'role-admin': user.role_id === 1, 'role-seller': user.role_id === 2, 'role-warehouse': user.role_id === 3}">
                 {{ user.role_name }}
               </span>
             </td>
@@ -67,8 +66,8 @@
             <label for="role">Rol</label>
             <select id="role" v-model="currentUser.role_id" required>
               <option :value="1">1 (Administrador)</option>
-              <option :value="2">2 (Vendedor)</option>
-            </select>
+              <option :value="2">2 (Vendedor/Consultor)</option>
+              <option :value="3">3 (Almacenista)</option> </select>
           </div>
           
           <div class="modal-actions">
@@ -115,30 +114,23 @@ export default {
       try {
         const response = await axios.get('/admin/users');
         
-        // 🚨 CORRECCIÓN CLAVE: Ajustamos la asignación de datos.
         let userData;
         
-        // 1. Intentamos obtener la lista directamente (formato actual del backend)
         if (Array.isArray(response.data)) {
           userData = response.data;
         } 
-        // 2. Si es un objeto, intentamos obtenerla de la clave 'users' (fallback)
         else if (response.data && Array.isArray(response.data.users)) {
           userData = response.data.users;
         } else {
-          // Si el formato es inesperado, lanzamos un error claro
           throw new Error('Formato de respuesta del servidor incorrecto.');
         }
 
-        // Como el backend ya envía role_name, solo asignamos los datos.
-        // Convertimos el UUID a string para Vue si no lo está:
         this.users = userData.map(user => ({
             ...user,
             id: String(user.id),
         }));
 
       } catch (err) {
-        // Mejoramos el manejo de errores para permisos (código 403)
         const status = err.response?.status;
         if (status === 403) {
              this.error = 'No tienes permisos de Administrador para acceder a esta sección.';
@@ -151,10 +143,6 @@ export default {
       }
     },
 
-    // --------------------------------------------------------------------------------
-    // El resto de los métodos (saveUser, deleteUser, openModal, closeModal, confirmDelete) 
-    // se mantienen correctos, ya que usan las rutas y el formato de datos esperados.
-    // --------------------------------------------------------------------------------
     async saveUser() {
       this.isSaving = true;
       try {
@@ -166,7 +154,8 @@ export default {
         } else {
           // PUT /admin/users/{id} (Solo actualiza role_id)
           delete dataToSend.password; 
-          await axios.put(`/admin/users/${this.currentUser.id}`, {role_id: dataToSend.role_id}); // Sólo enviamos el rol
+          // Solo enviamos el role_id
+          await axios.put(`/admin/users/${this.currentUser.id}`, {role_id: dataToSend.role_id}); 
         }
         
         this.fetchUsers();
@@ -195,9 +184,9 @@ export default {
       this.modalMode = mode;
       this.error = null;
       if (mode === 'create') {
-        this.currentUser = { id: null, email: '', password: '', role_id: 2 };
+        // Establecer un valor por defecto (ej. Vendedor)
+        this.currentUser = { id: null, email: '', password: '', role_id: 2 }; 
       } else {
-        // Usamos el 'role_id' para inicializar el select del modal de edición
         this.currentUser = { 
           id: user.id, 
           email: user.email, 
@@ -227,7 +216,7 @@ export default {
 /* ------------------------------------------------------------------ */
 .admin-section {
   padding: 40px 20px;
-  background-color: #f8f9fa; /* Fondo claro */
+  background-color: #f8f9fa; 
   font-family: 'Arial', sans-serif;
 }
 
@@ -243,7 +232,7 @@ export default {
 /* --- Botón Principal de Acción (Añadir) --- */
 .add-button {
   margin-bottom: 20px;
-  background-color: #27ae60; /* Verde para Añadir */
+  background-color: #27ae60; 
   border: none;
   font-weight: bold;
 }
@@ -283,7 +272,7 @@ export default {
 }
 
 .user-table thead {
-  background-color: #3498db; /* Azul para el encabezado */
+  background-color: #3498db; 
   color: white;
 }
 
@@ -299,6 +288,11 @@ export default {
 .role-seller {
   font-weight: bold;
   color: #27ae60; /* Verde para Vendedor */
+}
+/* --- ESTILO AÑADIDO --- */
+.role-warehouse {
+  font-weight: bold;
+  color: #3498db; /* Azul para Almacenista */
 }
 
 /* --- Botones de Acción de la Tabla --- */
@@ -366,7 +360,7 @@ export default {
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 5px;
-  box-sizing: border-box; /* Incluye padding y borde en el ancho total */
+  box-sizing: border-box; 
   transition: border-color 0.2s;
 }
 

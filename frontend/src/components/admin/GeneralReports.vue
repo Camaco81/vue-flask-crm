@@ -39,14 +39,14 @@
         <p><strong>Fecha:</strong> {{ formatDateTime(order.order_date) }}</p>
         <p><strong>Estado:</strong> <span :class="getStatusClass(order.status)">{{ order.status }}</span></p>
         <p>
-          <strong>Monto Total:</strong> ${{ parseFloat(order.total_amount).toFixed(2) }}
+          <strong>Monto Total:</strong> ${{ parseFloat(order.total_amount || 0).toFixed(2) }}
         </p>
         
         <div class="order-items">
           <h4>Productos:</h4>
           <ul>
             <li v-for="(item, index) in order.items" :key="index">
-              {{ item.product_name }} (x{{ item.quantity }}) - ${{ item.price.toFixed(2) }} c/u
+              {{ item.product_name }} (x{{ item.quantity }}) - ${{ parseFloat(item.price || 0).toFixed(2) }} c/u
             </li>
           </ul>
         </div>
@@ -69,6 +69,7 @@ export default {
   },
   computed: {
     totalGlobalSalesAmount() {
+      // 🟢 Mejorado: Asegura que si order.total_amount es nulo/undefined, usa 0
       return this.allOrders.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
     },
     salesBySeller() {
@@ -79,6 +80,7 @@ export default {
         if (!sales[sellerKey]) {
           sales[sellerKey] = 0;
         }
+        // 🟢 Mejorado: Asegura que si order.total_amount es nulo/undefined, usa 0
         sales[sellerKey] += parseFloat(order.total_amount || 0);
       });
       return sales;
@@ -92,7 +94,6 @@ export default {
     goBack() {
       this.$router.go(-1);
     },
-    // ... (El resto de métodos se mantiene igual)
     async fetchAllOrders() {
       this.isLoading = true;
       this.error = '';
@@ -126,13 +127,6 @@ export default {
 }
 </script>
 
-
-h1 {
-  text-align: center;
-  color: #007bff;
-  margin-bottom: 25px;
-}
-/* ... (El resto de estilos sigue igual) ... */
 
 <style scoped>
 /* El estilo se mantiene idéntico, ya está bien estructurado y diseñado. */
