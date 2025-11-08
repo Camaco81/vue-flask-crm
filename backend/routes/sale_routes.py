@@ -5,7 +5,7 @@ from psycopg2 import sql
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission
 from backend.utils.bcv_api import get_dolarvzla_rate 
 import logging
-
+from decimal import Decimal
 sale_bp = Blueprint('sale', __name__)
 app_logger = logging.getLogger('backend.routes.sale_routes') 
 
@@ -345,3 +345,117 @@ def admin_general_reports():
     except Exception as e:
         app_logger.error(f"Error al obtener los reportes generales admin: {e}", exc_info=True)
         return jsonify({"msg": "Error al cargar los reportes generales del administrador", "error": str(e)}), 500
+
+        # LÓGICA DE BACKEND (Python - módulo de inventario/ventas)
+
+def verificar_stock_y_alertar(product_id):
+    """Verifica si el stock de un producto está por debajo de su umbral mínimo."""
+    
+    product = Product.query.get(product_id)
+    
+    if not product:
+        # Manejar error si el producto no existe
+        return 
+
+    # 1. Aplicar la Regla de Alerta
+    if product.stock_actual <= product.stock_minimo:
+        
+        # 2. Generar Notificación para el Almacenista
+        mensaje = (
+            f"🚨 Stock Crítico: El producto '{product.name}' tiene solo "
+            f"{product.stock_actual} unidades. Reponer pronto."
+        )
+        
+        # 3. Registrar la alerta en la base de datos de notificaciones
+        # (Se asume una función de utilidad para crear notificaciones)
+        
+        # NOTA: Debes evitar crear notificaciones duplicadas en el mismo día
+        # o mientras el stock permanezca bajo el umbral.
+        
+        crear_notificacion(
+            rol_destino='almacenista',
+            mensaje=mensaje,
+            tipo='stock_critico',
+            referencia_id=product.id
+        )
+        
+        print(f"Alerta generada para {product.name}")
+    
+# --- Ejemplo de uso ---
+# Supongamos que vendiste 10 unidades del Producto A (ID=1)
+# El stock final es 4 y el stock_minimo es 5.
+# verificar_stock_y_alertar(product_id='1')
+
+# Lógica de registro de venta (fragmento)
+@jwt_required()
+@app.route('/api/sales', methods=['POST'])
+def create_sale():
+    user_id, role_id = get_user_and_role()
+    if not check_seller_permission(role_id):
+        return jsonify({"msg": "Permiso denegado"}), 403
+
+    data = request.get_json()
+    # Asume que 'customer_id', 'total_amount_usd', 'tipo_pago' están en 'data'
+    
+    tipo_pago = data.get('tipo_pago')
+    total_amount_usd = data.get('total_amount_usd')
+    customer_id = data.get('customer_id')
+
+    if tipo_pago == 'Crédito':
+        try:
+            total_amount_usd = float(total_amount_usd)
+        except ValueError:
+            return jsonify({"msg": "Monto total inválido"}), 400
+
+        dias_credito = data.get('dias_credito', 30)
+        
+        # 1. Validación de Límite de Crédito
+        with get_db_cursor() as cur:
+            cur.execute(
+                "SELECT credit_limit_usd, balance_pendiente_usd FROM customers WHERE id = %s",
+                (customer_id,)
+            )
+            customer = cur.fetchone()
+
+        if not customer:
+            return jsonify({"msg": "Cliente no encontrado"}), 404
+
+        limite = float(customer['credit_limit_usd'])
+        balance = float(customer['balance_pendiente_usd'])
+        
+        nuevo_balance = balance + total_amount_usd
+        
+        if nuevo_balance > limite:
+            return jsonify({
+                "msg": f"Límite de crédito excedido. Límite: {limite}, Pendiente: {balance}, Venta: {total_amount_usd}. Nuevo Balance: {round(nuevo_balance, 2)}",
+                "code": "CREDIT_LIMIT_EXCEEDED"
+            }), 400
+
+        # --- Si el crédito es aprobado, procede a la inserción ---
+
+        with get_db_cursor(commit=True) as cur:
+            sale_id = str(uuid.uuid4())
+            # 2. Insertar la Venta a Crédito (Añadir campos de crédito)
+            cur.execute(
+                """
+                INSERT INTO sales (id, customer_id, user_id, sale_date, total_amount_usd, status,
+                                   tipo_pago, dias_credito, monto_pendiente, fecha_vencimiento)
+                VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s, 'Abierto',
+                        'Crédito', %s, %s, CURRENT_DATE + INTERVAL '%s days')
+                """,
+                (sale_id, customer_id, user_id, total_amount_usd, 
+                 dias_credito, total_amount_usd, dias_credito)
+            )
+
+            # 3. Actualizar el balance total del cliente
+            cur.execute(
+                "UPDATE customers SET balance_pendiente_usd = %s WHERE id = %s",
+                (nuevo_balance, customer_id)
+            )
+
+        # 4. Lógica de stock
+        # Descuento de stock y LLAMADA a verificar_stock_y_alertar(product_id)
+
+        return jsonify({"msg": "Venta a crédito registrada exitosamente.", "sale_id": sale_id}), 201
+    
+    # ... Resto de la lógica para ventas al contado
