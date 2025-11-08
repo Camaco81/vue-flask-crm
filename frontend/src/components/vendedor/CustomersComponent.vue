@@ -1,318 +1,318 @@
 <template>
-  <div class="customers-container">
-    <div class="page-header">
-      <div class="header-content">
-        <div class="header-info">
-          <div class="header-icon">
-            <i class="fas fa-users"></i>
-          </div>
-          <div class="header-text-container">
-            <div class="header-text">
-              <h1 class="page-title">Gestión de Clientes</h1>
-              <p class="page-subtitle">Administra tu base de datos de clientes</p>
-            </div>
-            <div class="header-actions">
-              <BackButton />
-            </div>
-          </div>
-        </div>
-        <div class="header-stats">
-          <div class="stat-item">
-            <span class="stat-number">{{ customers.length }}</span>
-            <span class="stat-label">Clientes</span>
-          </div>
-        </div>
+ <div class="customers-container">
+  <div class="page-header">
+   <div class="header-content">
+    <div class="header-info">
+     <div class="header-icon">
+      <i class="fas fa-users"></i>
+     </div>
+     <div class="header-text-container">
+      <div class="header-text">
+       <h1 class="page-title">Gestión de Clientes</h1>
+       <p class="page-subtitle">Administra tu base de datos de clientes</p>
       </div>
+      <div class="header-actions">
+       <BackButton />
+      </div>
+     </div>
     </div>
-
-    <div class="content-wrapper">
-      <div class="form-card">
-        <div class="card-header">
-          <div class="card-icon">
-            <i :class="isEditing ? 'fas fa-user-edit' : 'fas fa-user-plus'"></i>
-          </div>
-          <div class="card-title">
-            <h3>{{ isEditing ? 'Editar Cliente' : 'Registrar Nuevo Cliente' }}</h3>
-            <p>{{ isEditing ? 'Modifica los datos del cliente seleccionado' : 'Agrega un nuevo cliente a tu base de datos' }}</p>
-          </div>
-        </div>
-        
-        <form @submit.prevent="isEditing ? updateCustomer() : addCustomer()" class="customer-form">
-          <div class="form-grid">
-            <div class="form-group full-width">
-              <label for="customer-name">
-                <i class="fas fa-user"></i>
-                <span>Nombre del Cliente *</span>
-              </label>
-              <input 
-                id="customer-name"
-                type="text" 
-                v-model="newCustomer.name" 
-                placeholder="Ingresa el nombre completo del cliente"
-                required 
-                class="form-input"
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="customer-cedula">
-                <i class="fas fa-id-card"></i>
-                <span>Cédula / ID *</span>
-              </label>
-              <input 
-                id="customer-cedula"
-                type="text" 
-                v-model="newCustomer.cedula" 
-                placeholder="Ingresa la cédula o ID del cliente"
-                required 
-                :disabled="isEditing" 
-                class="form-input"
-              />
-              <small v-if="isEditing" class="input-hint">La Cédula no se puede modificar al editar.</small>
-            </div>
-            <div class="form-group">
-              <label for="customer-email">
-                <i class="fas fa-envelope"></i>
-                <span>Email *</span>
-              </label>
-              <input 
-                id="customer-email"
-                type="email" 
-                v-model="newCustomer.email" 
-                placeholder="cliente@ejemplo.com"
-                required 
-                class="form-input"
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="customer-phone">
-                <i class="fas fa-phone-alt"></i>
-                <span>Teléfono</span>
-              </label>
-              <input 
-                id="customer-phone"
-                type="tel" 
-                v-model="newCustomer.phone" 
-                placeholder="Ingresa el número de teléfono"
-                class="form-input"
-              />
-            </div>
-          </div>
-          
-          <div class="form-group full-width">
-            <label for="customer-address">
-              <i class="fas fa-map-marker-alt"></i>
-              <span>Dirección</span>
-            </label>
-            <textarea 
-              id="customer-address"
-              v-model="newCustomer.address" 
-              placeholder="Ingresa la dirección del cliente"
-              class="form-textarea"
-            ></textarea>
-          </div>
-
-          <div class="form-actions">
-            <button type="button" @click="resetForm" class="reset-btn">
-              <i class="fas fa-undo"></i>
-              <span>{{ isEditing ? 'Cancelar' : 'Limpiar' }}</span>
-            </button>
-            <button type="submit" class="submit-btn" :disabled="isSubmitting">
-              <div v-if="isSubmitting" class="button-spinner"></div>
-              <i v-else :class="isEditing ? 'fas fa-save' : 'fas fa-plus'"></i>
-              <span>{{ isSubmitting ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Agregar Cliente') }}</span>
-            </button>
-          </div>
-        </form>
-
-        <transition name="slide-down">
-          <div v-if="addError" class="alert alert-error">
-            <div class="alert-icon">
-              <i class="fas fa-exclamation-circle"></i>
-            </div>
-            <div class="alert-content">
-              <strong>Error:</strong> {{ addError }}
-            </div>
-            <button @click="addError = null" class="alert-close">
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-        </transition>
-
-        <transition name="slide-down">
-          <div v-if="addSuccess" class="alert alert-success">
-            <div class="alert-icon">
-              <i class="fas fa-check-circle"></i>
-            </div>
-            <div class="alert-content">
-              <strong>¡Éxito!</strong> {{ addSuccess }}
-            </div>
-            <button @click="addSuccess = null" class="alert-close">
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-        </transition>
-      </div>
-
-      <div class="list-card">
-        <div class="card-header">
-          <div class="card-icon">
-            <i class="fas fa-address-book"></i>
-          </div>
-          <div class="card-title">
-            <h3>Lista de Clientes</h3>
-            <p>Visualiza y gestiona tu base de clientes</p>
-          </div>
-          <div class="card-actions">
-            <button @click="fetchCustomers" class="refresh-btn" :disabled="loading">
-              <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
-              <span>{{ loading ? 'Cargando...' : 'Actualizar' }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="search-section">
-          <div class="search-bar">
-            <div class="search-icon">
-              <i class="fas fa-search"></i>
-            </div>
-            <input 
-              type="text" 
-              v-model="searchTerm" 
-              placeholder="Buscar clientes por nombre, email o cédula..."
-              class="search-input"
-            />
-            <button v-if="searchTerm" @click="searchTerm = ''" class="clear-search">
-              <i class="fas fa-times"></i>
-            </button>
-          </div>
-        </div>
-
-        <div v-if="loading && customers.length === 0" class="loading-state">
-          <div class="loading-spinner">
-            <div class="spinner"></div>
-          </div>
-          <p class="loading-text">Cargando clientes...</p>
-        </div>
-
-        <div v-if="error && !loading" class="error-state">
-          <div class="error-icon">
-            <i class="fas fa-exclamation-triangle"></i>
-          </div>
-          <div class="error-content">
-            <h3>Error al cargar clientes</h3>
-            <p>{{ error }}</p>
-            <button @click="fetchCustomers" class="retry-btn">
-              <i class="fas fa-redo-alt"></i>
-              Reintentar
-            </button>
-          </div>
-        </div>
-
-        <div v-if="!loading && !error && customers.length === 0" class="empty-state">
-          <div class="empty-icon">
-            <i class="fas fa-users-slash"></i>
-          </div>
-          <div class="empty-content">
-            <h3>No hay clientes registrados</h3>
-            <p>Comienza agregando tu primer cliente usando el formulario de arriba</p>
-          </div>
-        </div>
-
-        <div v-if="!loading && !error && filteredCustomers.length > 0" class="customers-grid">
-          <transition-group name="customer-item" tag="div" class="grid-container">
-            <div 
-              v-for="customer in paginatedCustomers" 
-              :key="customer.id" 
-              class="customer-card"
-            >
-              <div class="customer-avatar">
-                <i class="fas fa-user-circle"></i>
-              </div>
-              <div class="customer-info">
-                <h4 class="customer-name">{{ customer.name }}</h4>
-                <p v-if="customer.cedula" class="customer-cedula">
-                  <i class="fas fa-id-card"></i>
-                  **Cédula:** {{ customer.cedula }}
-                </p>
-                <p class="customer-email">
-                  <i class="fas fa-envelope"></i>
-                  {{ customer.email }}
-                </p>
-                <p v-if="customer.phone" class="customer-phone">
-                  <i class="fas fa-phone-alt"></i>
-                  {{ customer.phone }}
-                </p>
-              </div>
-              <div class="customer-actions">
-                <button @click="editCustomer(customer)" class="action-btn edit-btn" title="Editar">
-                  <i class="fas fa-edit"></i>
-                </button>
-                <button @click="showDeleteConfirmation(customer)" class="action-btn delete-btn" title="Eliminar">
-                  <i class="fas fa-trash"></i>
-                </button>
-              </div>
-            </div>
-          </transition-group>
-        </div>
-
-        <div v-if="totalPages > 1" class="pagination">
-          <button 
-            @click="currentPage--" 
-            :disabled="currentPage === 1"
-            class="page-btn"
-          >
-            <i class="fas fa-chevron-left"></i>
-          </button>
-          
-          <div class="page-numbers">
-            <button 
-              v-for="page in visiblePages" 
-              :key="page"
-              @click="currentPage = page"
-              :class="['page-number', { active: currentPage === page }]"
-            >
-              {{ page }}
-            </button>
-          </div>
-
-          <button 
-            @click="currentPage++" 
-            :disabled="currentPage === totalPages"
-            class="page-btn"
-          >
-            <i class="fas fa-chevron-right"></i>
-          </button>
-        </div>
-
-        <div v-if="filteredCustomers.length > 0" class="results-info">
-          <span>
-            Mostrando {{ ((currentPage - 1) * itemsPerPage) + 1 }} - 
-            {{ Math.min(currentPage * itemsPerPage, filteredCustomers.length) }} 
-            de {{ filteredCustomers.length }} clientes
-          </span>
-        </div>
-      </div>
+    <div class="header-stats">
+     <div class="stat-item">
+      <span class="stat-number">{{ customers.length }}</span>
+      <span class="stat-label">Clientes</span>
+     </div>
     </div>
-
-    <div v-if="showDeleteModal" class="modal-overlay">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Confirmar Eliminación</h3>
-          <button @click="cancelDelete" class="modal-close-btn">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p>¿Estás seguro de que deseas eliminar a **{{ customerToDelete.name }}**?</p>
-          <p>Esta acción no se puede deshacer.</p>
-        </div>
-        <div class="modal-footer">
-          <button @click="cancelDelete" class="btn-cancel">Cancelar</button>
-          <button @click="deleteCustomer" class="btn-delete">Eliminar</button>
-        </div>
-      </div>
-    </div>
+   </div>
   </div>
+
+  <div class="content-wrapper">
+   <div class="form-card">
+    <div class="card-header">
+     <div class="card-icon">
+      <i :class="isEditing ? 'fas fa-user-edit' : 'fas fa-user-plus'"></i>
+     </div>
+     <div class="card-title">
+      <h3>{{ isEditing ? 'Editar Cliente' : 'Registrar Nuevo Cliente' }}</h3>
+      <p>{{ isEditing ? 'Modifica los datos del cliente seleccionado' : 'Agrega un nuevo cliente a tu base de datos' }}</p>
+     </div>
+    </div>
+   
+    <form @submit.prevent="isEditing ? updateCustomer() : addCustomer()" class="customer-form">
+     <div class="form-grid">
+      <div class="form-group full-width">
+       <label for="customer-name">
+        <i class="fas fa-user"></i>
+        <span>Nombre del Cliente *</span>
+       </label>
+       <input
+        id="customer-name"
+        type="text"
+        v-model="newCustomer.name"
+        placeholder="Ingresa el nombre completo del cliente"
+        required
+        class="form-input"
+       />
+      </div>
+
+      <div class="form-group">
+       <label for="customer-cedula">
+        <i class="fas fa-id-card"></i>
+        <span>Cédula / ID *</span>
+       </label>
+       <input
+        id="customer-cedula"
+        type="text"
+        v-model="newCustomer.cedula"
+        placeholder="Ingresa la cédula o ID del cliente"
+        required
+        :disabled="isEditing"
+        class="form-input"
+       />
+       <small v-if="isEditing" class="input-hint">La Cédula no se puede modificar al editar.</small>
+      </div>
+      <div class="form-group">
+       <label for="customer-email">
+        <i class="fas fa-envelope"></i>
+        <span>Email *</span>
+       </label>
+       <input
+        id="customer-email"
+        type="email"
+        v-model="newCustomer.email"
+        placeholder="cliente@ejemplo.com"
+        required
+        class="form-input"
+       />
+      </div>
+
+      <div class="form-group">
+       <label for="customer-phone">
+        <i class="fas fa-phone-alt"></i>
+        <span>Teléfono</span>
+       </label>
+       <input
+        id="customer-phone"
+        type="tel"
+        v-model="newCustomer.phone"
+        placeholder="Ingresa el número de teléfono"
+        class="form-input"
+       />
+      </div>
+     </div>
+    
+     <div class="form-group full-width">
+      <label for="customer-address">
+       <i class="fas fa-map-marker-alt"></i>
+       <span>Dirección</span>
+      </label>
+      <textarea
+       id="customer-address"
+       v-model="newCustomer.address"
+       placeholder="Ingresa la dirección del cliente"
+       class="form-textarea"
+      ></textarea>
+     </div>
+
+     <div class="form-actions">
+      <button type="button" @click="resetForm" class="reset-btn">
+       <i class="fas fa-undo"></i>
+       <span>{{ isEditing ? 'Cancelar' : 'Limpiar' }}</span>
+      </button>
+      <button type="submit" class="submit-btn" :disabled="isSubmitting">
+       <div v-if="isSubmitting" class="button-spinner"></div>
+       <i v-else :class="isEditing ? 'fas fa-save' : 'fas fa-plus'"></i>
+       <span>{{ isSubmitting ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Agregar Cliente') }}</span>
+      </button>
+     </div>
+    </form>
+
+    <transition name="slide-down">
+     <div v-if="addError" class="alert alert-error">
+      <div class="alert-icon">
+       <i class="fas fa-exclamation-circle"></i>
+      </div>
+      <div class="alert-content">
+       <strong>Error:</strong> {{ addError }}
+      </div>
+      <button @click="addError = null" class="alert-close">
+       <i class="fas fa-times"></i>
+      </button>
+     </div>
+    </transition>
+
+    <transition name="slide-down">
+     <div v-if="addSuccess" class="alert alert-success">
+      <div class="alert-icon">
+       <i class="fas fa-check-circle"></i>
+      </div>
+      <div class="alert-content">
+       <strong>¡Éxito!</strong> {{ addSuccess }}
+      </div>
+      <button @click="addSuccess = null" class="alert-close">
+       <i class="fas fa-times"></i>
+      </button>
+     </div>
+    </transition>
+   </div>
+
+   <div class="list-card">
+    <div class="card-header">
+     <div class="card-icon">
+      <i class="fas fa-address-book"></i>
+     </div>
+     <div class="card-title">
+      <h3>Lista de Clientes</h3>
+      <p>Visualiza y gestiona tu base de clientes</p>
+     </div>
+     <div class="card-actions">
+      <button @click="fetchCustomers" class="refresh-btn" :disabled="loading">
+       <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
+       <span>{{ loading ? 'Cargando...' : 'Actualizar' }}</span>
+      </button>
+     </div>
+    </div>
+
+    <div class="search-section">
+     <div class="search-bar">
+      <div class="search-icon">
+       <i class="fas fa-search"></i>
+      </div>
+      <input
+       type="text"
+       v-model="searchTerm"
+       placeholder="Buscar clientes por nombre, email o cédula..."
+       class="search-input"
+      />
+      <button v-if="searchTerm" @click="searchTerm = ''" class="clear-search">
+       <i class="fas fa-times"></i>
+      </button>
+     </div>
+    </div>
+
+    <div v-if="loading && customers.length === 0" class="loading-state">
+     <div class="loading-spinner">
+      <div class="spinner"></div>
+     </div>
+     <p class="loading-text">Cargando clientes...</p>
+    </div>
+
+    <div v-if="error && !loading" class="error-state">
+     <div class="error-icon">
+      <i class="fas fa-exclamation-triangle"></i>
+     </div>
+     <div class="error-content">
+      <h3>Error al cargar clientes</h3>
+      <p>{{ error }}</p>
+      <button @click="fetchCustomers" class="retry-btn">
+       <i class="fas fa-redo-alt"></i>
+       Reintentar
+      </button>
+     </div>
+    </div>
+
+    <div v-if="!loading && !error && customers.length === 0" class="empty-state">
+     <div class="empty-icon">
+      <i class="fas fa-users-slash"></i>
+     </div>
+     <div class="empty-content">
+      <h3>No hay clientes registrados</h3>
+      <p>Comienza agregando tu primer cliente usando el formulario de arriba</p>
+     </div>
+    </div>
+
+    <div v-if="!loading && !error && filteredCustomers.length > 0" class="customers-grid">
+     <transition-group name="customer-item" tag="div" class="grid-container">
+      <div
+       v-for="customer in paginatedCustomers"
+       :key="customer.id"
+       class="customer-card"
+      >
+       <div class="customer-avatar">
+        <i class="fas fa-user-circle"></i>
+       </div>
+       <div class="customer-info">
+        <h4 class="customer-name">{{ customer.name }}</h4>
+        <p v-if="customer.cedula" class="customer-cedula">
+         <i class="fas fa-id-card"></i>
+         **Cédula:** {{ customer.cedula }}
+        </p>
+        <p class="customer-email">
+         <i class="fas fa-envelope"></i>
+         {{ customer.email }}
+        </p>
+        <p v-if="customer.phone" class="customer-phone">
+         <i class="fas fa-phone-alt"></i>
+         {{ customer.phone }}
+        </p>
+       </div>
+       <div class="customer-actions">
+        <button @click="editCustomer(customer)" class="action-btn edit-btn" title="Editar">
+         <i class="fas fa-edit"></i>
+        </button>
+        <button @click="showDeleteConfirmation(customer)" class="action-btn delete-btn" title="Eliminar">
+         <i class="fas fa-trash"></i>
+        </button>
+       </div>
+      </div>
+     </transition-group>
+    </div>
+
+    <div v-if="totalPages > 1" class="pagination">
+     <button
+      @click="currentPage--"
+      :disabled="currentPage === 1"
+      class="page-btn"
+     >
+      <i class="fas fa-chevron-left"></i>
+     </button>
+    
+     <div class="page-numbers">
+      <button
+       v-for="page in visiblePages"
+       :key="page"
+       @click="currentPage = page"
+       :class="['page-number', { active: currentPage === page }]"
+      >
+       {{ page }}
+      </button>
+     </div>
+
+     <button
+      @click="currentPage++"
+      :disabled="currentPage === totalPages"
+      class="page-btn"
+     >
+      <i class="fas fa-chevron-right"></i>
+     </button>
+    </div>
+
+    <div v-if="filteredCustomers.length > 0" class="results-info">
+     <span>
+      Mostrando {{ ((currentPage - 1) * itemsPerPage) + 1 }} -
+      {{ Math.min(currentPage * itemsPerPage, filteredCustomers.length) }}
+      de {{ filteredCustomers.length }} clientes
+     </span>
+    </div>
+   </div>
+  </div>
+
+  <div v-if="showDeleteModal" class="modal-overlay">
+   <div class="modal-content">
+    <div class="modal-header">
+     <h3>Confirmar Eliminación</h3>
+     <button @click="cancelDelete" class="modal-close-btn">&times;</button>
+    </div>
+    <div class="modal-body">
+     <p>¿Estás seguro de que deseas eliminar a **{{ customerToDelete.name }}**?</p>
+     <p>Esta acción no se puede deshacer.</p>
+    </div>
+    <div class="modal-footer">
+     <button @click="cancelDelete" class="btn-cancel">Cancelar</button>
+     <button @click="deleteCustomer" class="btn-delete">Eliminar</button>
+    </div>
+   </div>
+  </div>
+ </div>
 </template>
 
 <script>
@@ -320,249 +320,247 @@ import axios from '../../axios';
 import BackButton from '@/components/vendedor/BackButton.vue';
 
 export default {
-  components: {
-    BackButton
-  },
-  name: 'CustomersManagement',
-  data() {
-    return {
-      customers: [],
-      newCustomer: {
-        name: '',
-        email: '',
-        phone: '',
-        address: '',
-        // 🚨 CAMBIO 3: Inicializar el campo 'cedula' en el estado
-        cedula: '' 
-      },
-      loading: false,
-      error: null,
-      addError: null,
-      addSuccess: null,
-      isSubmitting: false,
-      searchTerm: '',
-      currentPage: 1,
-      itemsPerPage: 6,
-      editingCustomer: null,
-      customerToDelete: null,
-      showDeleteModal: false
-    };
-  },
-  computed: {
-    filteredCustomers() {
-      if (!this.searchTerm) return this.customers;
+ components: {
+  BackButton
+ },
+ name: 'CustomersManagement',
+ data() {
+  return {
+   customers: [],
+   newCustomer: {
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    // Inicializar el campo 'cedula' en el estado
+    cedula: ''
+   },
+   loading: false,
+   error: null,
+   addError: null,
+   addSuccess: null,
+   isSubmitting: false,
+   searchTerm: '',
+   currentPage: 1,
+   itemsPerPage: 6,
+   editingCustomer: null,
+   customerToDelete: null,
+   showDeleteModal: false
+  };
+ },
+ computed: {
+  filteredCustomers() {
+   if (!this.searchTerm) return this.customers;
 
-      const term = this.searchTerm.toLowerCase();
-      return this.customers.filter(customer => 
-        customer.name.toLowerCase().includes(term) ||
-        customer.email.toLowerCase().includes(term) ||
-        // 🚨 CAMBIO 4: Incluir 'cedula' en la lógica de búsqueda
-        (customer.cedula && customer.cedula.toLowerCase().includes(term))
-      );
-    },
-
-    totalPages() {
-      return Math.ceil(this.filteredCustomers.length / this.itemsPerPage);
-    },
-
-    paginatedCustomers() {
-      const start = (this.currentPage - 1) * this.itemsPerPage;
-      const end = start + this.itemsPerPage;
-      return this.filteredCustomers.slice(start, end);
-    },
-
-    visiblePages() {
-      const pages = [];
-      const maxVisible = 5;
-      let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
-      let end = Math.min(this.totalPages, start + maxVisible - 1);
-
-      if (end - start < maxVisible - 1) {
-        start = Math.max(1, end - maxVisible + 1);
-      }
-
-      for (let i = start; i <= end; i++) {
-        pages.push(i);
-      }
-
-      return pages;
-    },
-
-    isEditing() {
-      return this.editingCustomer !== null;
-    }
-  },
-  watch: {
-    searchTerm() {
-      this.currentPage = 1;
-    }
-  },
-  methods: {
-    async addCustomer() {
-      this.addError = null;
-      this.addSuccess = null;
-      this.isSubmitting = true;
-
-      // 🚨 CAMBIO 5: Incluir validación de 'cedula'
-      if (!this.newCustomer.name.trim() || !this.newCustomer.email.trim() || !this.newCustomer.cedula.trim()) {
-        this.addError = "El nombre, el email y la cédula del cliente son campos obligatorios.";
-        this.isSubmitting = false;
-        return;
-      }
-
-      try {
-        const { data } = await axios.post('/api/customers', {
-          ...this.newCustomer,
-          name: this.newCustomer.name.trim(),
-          email: this.newCustomer.email.trim(),
-          cedula: this.newCustomer.cedula.trim() // Asegurar que se envíe la cédula
-        });
-
-        // La API devuelve un objeto con la nueva ID.
-        // Asumiendo que la API devuelve el objeto creado con todos sus campos, incluyendo 'id' y 'cedula'.
-        this.addSuccess = 'Cliente registrado exitosamente.';
-        this.customers.unshift(data);
-        this.resetForm();
-
-        setTimeout(() => {
-          this.addSuccess = null;
-        }, 5000);
-      } catch (error) {
-        if (error.response?.data?.msg) {
-          this.addError = error.response.data.msg;
-        } else {
-          this.addError = 'Error al registrar el cliente. Por favor, inténtalo de nuevo.';
-        }
-        console.error("Error al agregar cliente:", error);
-      } finally {
-        this.isSubmitting = false;
-      }
-    },
-
-    editCustomer(customer) {
-      // Usar el ID para actualizar el cliente
-      this.editingCustomer = { ...customer };
-      this.newCustomer = { ...customer };
-      this.addError = null;
-      this.addSuccess = null;
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-
-    async updateCustomer() {
-      this.addError = null;
-      this.addSuccess = null;
-      this.isSubmitting = true;
-
-      try {
-        if (!this.editingCustomer || !this.editingCustomer.id) {
-          this.addError = "Error: El ID del cliente no está definido para la actualización.";
-          this.isSubmitting = false;
-          return;
-        }
-
-        const payload = {
-            name: this.newCustomer.name.trim(),
-            email: this.newCustomer.email.trim(),
-            phone: this.newCustomer.phone,
-            address: this.newCustomer.address,
-            // 🚨 CAMBIO 6: Incluir 'cedula' en el payload de actualización
-            cedula: this.newCustomer.cedula ? this.newCustomer.cedula.trim() : null
-        };
-
-        const { data } = await axios.put(`/api/customers/${this.editingCustomer.id}`, payload);
-
-        this.addSuccess = 'Cliente actualizado exitosamente.';
-        // Asumiendo que la API PUT devuelve el cliente actualizado.
-        const index = this.customers.findIndex(c => c.id === this.editingCustomer.id);
-        if (index !== -1) {
-          // La API de Flask solo devuelve un ID en el PUT, pero el GET refresca la lista completa.
-          // Para evitar un nuevo GET, actualizamos el cliente directamente en el array.
-          // Nota: La API de Flask en realidad devuelve `{"msg": "Customer updated successfully", "customer_id": updated_id[0]}`.
-          // Lo ideal sería que devolviera el objeto actualizado, pero para este caso:
-          // Hacemos un fetch completo para asegurar la data, o un fetch solo de este cliente,
-          // pero por simplicidad y manteniendo la estructura, actualizamos localmente:
-          this.customers.splice(index, 1, { ...this.newCustomer, id: this.editingCustomer.id });
-        }
-        this.resetForm();
-
-        setTimeout(() => {
-          this.addSuccess = null;
-        }, 5000);
-      } catch (error) {
-        if (error.response?.data?.msg) {
-          this.addError = error.response.data.msg;
-        } else {
-          this.addError = 'Error al actualizar el cliente. Por favor, inténtalo de nuevo.';
-        }
-        console.error("Error al actualizar cliente:", error);
-      } finally {
-        this.isSubmitting = false;
-      }
-    },
-
-    showDeleteConfirmation(customer) {
-      this.customerToDelete = { ...customer };
-      this.showDeleteModal = true;
-    },
-
-    cancelDelete() {
-      this.customerToDelete = null;
-      this.showDeleteModal = false;
-    },
-
-    async deleteCustomer() {
-      try {
-        await axios.delete(`/api/customers/${this.customerToDelete.id}`);
-        this.customers = this.customers.filter(c => c.id !== this.customerToDelete.id);
-        this.cancelDelete();
-        this.addSuccess = 'Cliente eliminado exitosamente.';
-        setTimeout(() => {
-          this.addSuccess = null;
-        }, 5000);
-      } catch (error) {
-        this.addError = 'Error al eliminar el cliente. Por favor, inténtalo de nuevo.';
-        console.error("Error al eliminar cliente:", error);
-        this.cancelDelete();
-      }
-    },
-
-    async fetchCustomers() {
-      this.loading = true;
-      this.error = null;
-
-      try {
-        const { data } = await axios.get('/api/customers');
-        // Asignamos la lista. Recordar que la API de Flask devuelve campos en snake_case
-        // (name, email, phone, address, cedula) si no se usa un ORM que los convierta a camelCase.
-        this.customers = data; 
-      } catch (error) {
-        this.error = 'Error al cargar los clientes. Por favor, inténtalo de nuevo.';
-        console.error("Error al cargar clientes:", error);
-      } finally {
-        this.loading = false;
-      }
-    },
-
-    resetForm() {
-      this.newCustomer = {
-        name: '',
-        email: '',
-        phone: '',
-        address: '',
-        // 🚨 CAMBIO 7: Limpiar el campo 'cedula' al resetear
-        cedula: '' 
-      };
-      this.editingCustomer = null;
-      this.addError = null;
-      this.addSuccess = null;
-    }
+   const term = this.searchTerm.toLowerCase();
+   return this.customers.filter(customer =>
+    customer.name.toLowerCase().includes(term) ||
+    customer.email.toLowerCase().includes(term) ||
+    // Incluir 'cedula' en la lógica de búsqueda
+    (customer.cedula && customer.cedula.toLowerCase().includes(term))
+   );
   },
 
-  mounted() {
-    this.fetchCustomers();
+  totalPages() {
+   return Math.ceil(this.filteredCustomers.length / this.itemsPerPage);
+  },
+
+  paginatedCustomers() {
+   const start = (this.currentPage - 1) * this.itemsPerPage;
+   const end = start + this.itemsPerPage;
+   return this.filteredCustomers.slice(start, end);
+  },
+
+  visiblePages() {
+   const pages = [];
+   const maxVisible = 5;
+   let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+   let end = Math.min(this.totalPages, start + maxVisible - 1);
+
+   if (end - start < maxVisible - 1) {
+    start = Math.max(1, end - maxVisible + 1);
+   }
+
+   for (let i = start; i <= end; i++) {
+    pages.push(i);
+   }
+
+   return pages;
+  },
+
+  isEditing() {
+   return this.editingCustomer !== null;
   }
+ },
+ watch: {
+  searchTerm() {
+   this.currentPage = 1;
+  }
+ },
+ methods: {
+  async addCustomer() {
+   this.addError = null;
+   this.addSuccess = null;
+   this.isSubmitting = true;
+
+   // Incluir validación de 'cedula'
+   if (!this.newCustomer.name.trim() || !this.newCustomer.email.trim() || !this.newCustomer.cedula.trim()) {
+    this.addError = "El nombre, el email y la cédula del cliente son campos obligatorios.";
+    this.isSubmitting = false;
+    return;
+   }
+
+   try {
+    const { data } = await axios.post('/api/customers', {
+     ...this.newCustomer,
+     name: this.newCustomer.name.trim(),
+     email: this.newCustomer.email.trim(),
+     // Asegurar que se envíe la cédula al crear
+     cedula: this.newCustomer.cedula.trim()
+    });
+
+    // Asumiendo que la API devuelve el objeto creado (o un objeto que se puede usar).
+    this.addSuccess = 'Cliente registrado exitosamente.';
+    this.customers.unshift(data);
+    this.resetForm();
+
+    setTimeout(() => {
+     this.addSuccess = null;
+    }, 5000);
+   } catch (error) {
+    if (error.response?.data?.msg) {
+     this.addError = error.response.data.msg;
+    } else {
+     this.addError = 'Error al registrar el cliente. Por favor, inténtalo de nuevo.';
+    }
+    console.error("Error al agregar cliente:", error);
+   } finally {
+    this.isSubmitting = false;
+   }
+  },
+
+  editCustomer(customer) {
+   // Usar el ID para actualizar el cliente
+   this.editingCustomer = { ...customer };
+   this.newCustomer = { ...customer };
+   this.addError = null;
+   this.addSuccess = null;
+   window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+
+  async updateCustomer() {
+   this.addError = null;
+   this.addSuccess = null;
+   this.isSubmitting = true;
+
+   try {
+    if (!this.editingCustomer || !this.editingCustomer.id) {
+     this.addError = "Error: El ID del cliente no está definido para la actualización.";
+     this.isSubmitting = false;
+     return;
+    }
+
+    const payload = {
+      name: this.newCustomer.name.trim(),
+      email: this.newCustomer.email.trim(),
+      phone: this.newCustomer.phone,
+      address: this.newCustomer.address,
+      // Incluir 'cedula' en el payload de actualización
+      cedula: this.newCustomer.cedula ? this.newCustomer.cedula.trim() : null
+    };
+
+    // 🛑 CORRECCIÓN CLAVE: Desestructuramos 'data' y la usamos para actualizar el estado
+    const { data } = await axios.put(`/api/customers/${this.editingCustomer.id}`, payload);
+
+    this.addSuccess = 'Cliente actualizado exitosamente.';
+   
+    // Actualizamos localmente usando los datos devueltos por la API (data)
+    const index = this.customers.findIndex(c => c.id === this.editingCustomer.id);
+    if (index !== -1) {
+     // Usamos el objeto 'data' devuelto, resolviendo el error no-unused-vars
+     this.customers.splice(index, 1, data);
+    }
+    this.resetForm();
+
+    setTimeout(() => {
+     this.addSuccess = null;
+    }, 5000);
+   } catch (error) {
+    if (error.response?.data?.msg) {
+     this.addError = error.response.data.msg;
+    } else {
+     this.addError = 'Error al actualizar el cliente. Por favor, inténtalo de nuevo.';
+    }
+    console.error("Error al actualizar cliente:", error);
+   } finally {
+    this.isSubmitting = false;
+   }
+  },
+
+  showDeleteConfirmation(customer) {
+   this.customerToDelete = { ...customer };
+   this.showDeleteModal = true;
+  },
+
+  cancelDelete() {
+   this.customerToDelete = null;
+   this.showDeleteModal = false;
+  },
+
+  async deleteCustomer() {
+   try {
+    // Nota: Aquí 'data' NO se desestructura, por lo que no causa el error no-unused-vars.
+    await axios.delete(`/api/customers/${this.customerToDelete.id}`);
+    this.customers = this.customers.filter(c => c.id !== this.customerToDelete.id);
+    this.cancelDelete();
+    this.addSuccess = 'Cliente eliminado exitosamente.';
+    setTimeout(() => {
+     this.addSuccess = null;
+    }, 5000);
+   } catch (error) {
+    this.addError = 'Error al eliminar el cliente. Por favor, inténtalo de nuevo.';
+    console.error("Error al eliminar cliente:", error);
+    this.cancelDelete();
+   }
+  },
+
+  async fetchCustomers() {
+   this.loading = true;
+   this.error = null;
+
+   try {
+    const { data } = await axios.get('/api/customers');
+    // El backend de Flask debe devolver 'cedula' en snake_case
+    this.customers = data;
+   } catch (error) {
+    this.error = 'Error al cargar los clientes. Por favor, inténtalo de nuevo.';
+    console.error("Error al cargar clientes:", error);
+   } finally {
+    this.loading = false;
+   }
+  },
+
+  resetForm() {
+   this.newCustomer = {
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    // Limpiar el campo 'cedula' al resetear
+    cedula: ''
+   };
+   this.editingCustomer = null;
+   this.addError = null;
+   this.addSuccess = null;
+  }
+ },
+
+ mounted() {
+  this.fetchCustomers();
+ }
 };
 </script>
+
 
 
 <style scoped>

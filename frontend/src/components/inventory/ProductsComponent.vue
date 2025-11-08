@@ -324,10 +324,10 @@ data() {
 return {
 products: [],
 newProduct: {
- // Inicializar price como 0.00 para reforzar el tipo decimal/número
- name: '',
- price: 0.00, 
- stock: 0
+// Inicializar price como 0.00 para reforzar el tipo decimal/número
+name: '',
+price: 0.00,
+stock: 0
 },
 loading: false,
 error: null,
@@ -345,102 +345,102 @@ isUpdating: false
 },
 computed: {
 filteredProducts() {
- if (!this.searchTerm) return this.products;
+if (!this.searchTerm) return this.products;
 
- const term = this.searchTerm.toLowerCase();
- return this.products.filter(product =>
+const term = this.searchTerm.toLowerCase();
+return this.products.filter(product =>
 product.name.toLowerCase().includes(term)
- );
+);
 },
 
 totalPages() {
- // Asegura que el número de páginas sea al menos 1
- return Math.ceil(this.filteredProducts.length / this.itemsPerPage) || 1;
+// Asegura que el número de páginas sea al menos 1
+return Math.ceil(this.filteredProducts.length / this.itemsPerPage) || 1;
 },
 
 paginatedProducts() {
- const start = (this.currentPage - 1) * this.itemsPerPage;
- const end = start + this.itemsPerPage;
- return this.filteredProducts.slice(start, end);
+const start = (this.currentPage - 1) * this.itemsPerPage;
+const end = start + this.itemsPerPage;
+return this.filteredProducts.slice(start, end);
 },
 
 totalStock() {
- // Se asegura que el stock siempre sea un número (o 0 si es nulo/inválido) antes de sumar
- return this.products.reduce((sum, product) => sum + (product.stock || 0), 0);
+// Se asegura que el stock siempre sea un número (o 0 si es nulo/inválido) antes de sumar
+return this.products.reduce((sum, product) => sum + (product.stock || 0), 0);
 },
 
 visiblePages() {
- const pages = [];
- const maxVisible = 5;
- let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
- let end = Math.min(this.totalPages, start + maxVisible - 1);
+const pages = [];
+const maxVisible = 5;
+let start = Math.max(1, this.currentPage - Math.floor(maxVisible / 2));
+let end = Math.min(this.totalPages, start + maxVisible - 1);
 
- if (end - start < maxVisible - 1) {
+if (end - start < maxVisible - 1) {
 start = Math.max(1, end - maxVisible + 1);
- }
+}
 
- for (let i = start; i <= end; i++) {
+for (let i = start; i <= end; i++) {
 pages.push(i);
- }
+}
 
- return pages;
+return pages;
 }
 },
 watch: {
 searchTerm() {
- this.currentPage = 1;
+this.currentPage = 1;
 },
 // Asegura que la página actual sea válida al cambiar el filtro
 filteredProducts() {
- if (this.currentPage > this.totalPages) {
+if (this.currentPage > this.totalPages) {
 this.currentPage = this.totalPages;
- }
+}
 }
 },
 methods: {
 // --- Métodos de Paginación ---
 goToPage(page) {
- if (page >= 1 && page <= this.totalPages) {
+if (page >= 1 && page <= this.totalPages) {
 this.currentPage = page;
- }
+}
 },
 prevPage() {
- if (this.currentPage > 1) {
+if (this.currentPage > 1) {
 this.currentPage--;
- }
+}
 },
 nextPage() {
- if (this.currentPage < this.totalPages) {
+if (this.currentPage < this.totalPages) {
 this.currentPage++;
- }
+}
 },
 
 async addProduct() {
- this.addError = null;
- this.addSuccess = null;
- this.isSubmitting = true;
- 
- // Saneamiento inicial: asegura que null/undefined se manejen como 0
- const price = this.newProduct.price === null || this.newProduct.price === undefined ? 0 : this.newProduct.price;
- const stock = this.newProduct.stock === null || this.newProduct.stock === undefined ? 0 : this.newProduct.stock;
- 
- // Validaciones de negocio y tipo de dato
- if (!this.newProduct.name.trim() || isNaN(price) || price <= 0 || isNaN(stock) || stock < 0) {
+this.addError = null;
+this.addSuccess = null;
+this.isSubmitting = true;
+
+// Saneamiento inicial: asegura que null/undefined se manejen como 0
+const price = this.newProduct.price === null || this.newProduct.price === undefined ? 0 : this.newProduct.price;
+const stock = this.newProduct.stock === null || this.newProduct.stock === undefined ? 0 : this.newProduct.stock;
+
+// Validaciones de negocio y tipo de dato
+if (!this.newProduct.name.trim() || isNaN(price) || price <= 0 || isNaN(stock) || stock < 0) {
 this.addError = "El nombre, el precio y el stock son obligatorios. El precio debe ser positivo y el stock no negativo.";
 this.isSubmitting = false;
 return;
- }
+}
 
- // Clonar y formatear el producto antes de enviar
- const productToSend = {
+// Clonar y formatear el producto antes de enviar
+const productToSend = {
 name: this.newProduct.name.trim(),
 // Asegura dos decimales para el envío a la API
 price: parseFloat(price).toFixed(2),
 stock: parseInt(stock)
- };
+};
 
 
- try {
+try {
 const { data } = await apiClient.post('/api/products', productToSend);
 
 this.addSuccess = `Producto "${data.name}" registrado exitosamente.`;
@@ -457,63 +457,66 @@ this.resetForm();
 this.currentPage = 1;
 
 setTimeout(() => {
- this.addSuccess = null;
+this.addSuccess = null;
 }, 5000);
- } catch (error) {
+} catch (error) {
 if (error.response?.data?.msg) {
- this.addError = error.response.data.msg;
+this.addError = error.response.data.msg;
 } else {
- this.addError = 'Error al registrar el producto. Por favor, inténtalo de nuevo.';
+this.addError = 'Error al registrar el producto. Por favor, inténtalo de nuevo.';
 }
 console.error("Error al agregar producto:", error);
- } finally {
+} finally {
 this.isSubmitting = false;
- }
+}
 },
 
 async fetchProducts() {
- this.loading = true;
- this.error = null;
+this.loading = true;
+this.error = null;
 
- try {
+try {
 const { data } = await apiClient.get('/api/products');
 // Mapeamos los datos para asegurar que price y stock son NUMEROS antes de guardarlos en el estado de Vue
 this.products = data.map(p => ({
- ...p,
- price: parseFloat(p.price),
- stock: parseInt(p.stock)
+...p,
+price: parseFloat(p.price),
+stock: parseInt(p.stock)
 }));
- } catch (error) {
- } finally {
+} catch (error) {
+// Manejo de error para el componente de productos
+this.error = 'Error al cargar los productos. Por favor, inténtalo de nuevo.';
+console.error("Error al cargar productos:", error);
+} finally {
 this.loading = false;
- }
+}
 },
 
 resetForm() {
- this.newProduct = {
+this.newProduct = {
 name: '',
-price: 0.00, 
+price: 0.00,
 stock: 0
- };
- this.addError = null;
- this.addSuccess = null;
+};
+this.addError = null;
+this.addSuccess = null;
 },
 
 // --- Métodos de Edición ---
 openEditModal(product) {
- // Aseguramos que los valores sean números antes de ponerlos en el modal (crucial para v-model.number)
- this.editingProduct = {
- ...product,
- price: parseFloat(product.price),
- stock: parseInt(product.stock)
- };
- this.showEditModal = true;
- this.editError = null;
+// Aseguramos que los valores sean números antes de ponerlos en el modal (crucial para v-model.number)
+this.editingProduct = {
+...product,
+price: parseFloat(product.price),
+stock: parseInt(product.stock)
+};
+this.showEditModal = true;
+this.editError = null;
 },
 
 closeEditModal() {
- this.showEditModal = false;
- this.editingProduct = null;
+this.showEditModal = false;
+this.editingProduct = null;
 },
 
 async updateProduct() {
@@ -535,64 +538,64 @@ this.editError = "El nombre, el precio y el stock son obligatorios. El precio de
 this.isUpdating = false;
 return; // Detiene la ejecución si la validación falla
 }
- 
- // **AQUÍ SE CORRIGIÓ EL ERROR DE SINTAXIS:**
- try {
+
+try {
 const productId = this.editingProduct.id;
 
 // 3. Formateo y Envío: Clonamos y formateamos antes de enviar
 const productUpdate = {
- // Formatear precio antes de enviar (ej: 12.5 -> "12.50")
- price: parseFloat(price).toFixed(2),
- stock: parseInt(stock),
- name: this.editingProduct.name.trim()
+// Formatear precio antes de enviar (ej: 12.5 -> "12.50")
+price: parseFloat(price).toFixed(2),
+stock: parseInt(stock),
+name: this.editingProduct.name.trim()
 };
 
 const { data } = await apiClient.put(`/api/products/${productId}`, productUpdate);
 
 const index = this.products.findIndex(p => p.id === data.id);
 if (index !== -1) {
- // 4. Actualización del Estado: Actualizamos con los nuevos datos (mapeando a números para el frontend)
- this.products.splice(index, 1, {
+// 4. Actualización del Estado: Actualizamos con los nuevos datos (mapeando a números para el frontend)
+this.products.splice(index, 1, {
 ...data,
 price: parseFloat(data.price),
 stock: parseInt(data.stock)
- });
+});
 }
 
 this.closeEditModal();
 alert(`Producto "${data.name}" actualizado exitosamente.`);
- } catch (error) {
+} catch (error) {
 // Manejo de error de la API (incluyendo el 400 Bad Request que venías recibiendo)
 this.editError = error.response?.data?.msg || 'Error al actualizar el producto. Por favor, inténtalo de nuevo.';
 console.error("Error al actualizar producto:", error);
- } finally {
+} finally {
 this.isUpdating = false;
- }
+}
 },
 
 // --- Método de Eliminación ---
 async confirmDelete(product) {
- if (confirm(`¿Estás seguro de que quieres eliminar el producto "${product.name}"?`)) {
+if (confirm(`¿Estás seguro de que quieres eliminar el producto "${product.name}"?`)) {
 try {
- const productId = product.id;
+const productId = product.id;
 
- await apiClient.delete(`/api/products/${productId}`);
+// 🟢 CORRECCIÓN 2: Se usa el endpoint y el ID de PRODUCTO
+await apiClient.delete(`/api/products/${productId}`);
 
- // Filtramos la lista para remover el producto eliminado
- this.products = this.products.filter(p => p.id !== product.id);
+// Filtramos la lista para remover el producto eliminado
+this.products = this.products.filter(p => p.id !== product.id);
 
- // Aseguramos que la paginación se ajuste si se elimina el último elemento de la página
- if (this.paginatedProducts.length === 0 && this.currentPage > 1) {
+// Aseguramos que la paginación se ajuste si se elimina el último elemento de la página
+if (this.paginatedProducts.length === 0 && this.currentPage > 1) {
 this.currentPage--;
- }
-
- alert(`Producto "${product.name}" eliminado exitosamente.`);
-} catch (error) {
- alert('Error al eliminar el producto.');
- console.error("Error al eliminar producto:", error);
 }
- }
+
+alert(`Producto "${product.name}" eliminado exitosamente.`);
+} catch (error) {
+alert('Error al eliminar el producto.');
+console.error("Error al eliminar producto:", error);
+}
+}
 }
 },
 
@@ -601,7 +604,6 @@ this.fetchProducts();
 }
 };
 </script>
-
 <style scoped>
 /* ===== RESPONSIVE RESET ===== */
 * {
