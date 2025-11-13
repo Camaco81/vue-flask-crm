@@ -38,14 +38,20 @@ app.config.from_object(Config)
 # Inicializar extensiones
 jwt = JWTManager(app)
 
-# Configurar CORS (Permisivo para desarrollo)
+ALLOWED_ORIGINS = [
+    "http://localhost:8080", 
+    "http://127.0.0.1:8080", 
+    "https://vue-flask-crm.netlify.app/", # Asume que tu frontend también se llama así, sino, usa la URL real
+    # Si vas a desplegar el frontend en otra URL, añádela aquí
+]
+
 CORS(
     app, 
-    origins="*", # Permite cualquier origen (debería ser suficiente)
-    supports_credentials=True, # Permitir cookies, tokens de autorización, etc.
-    # 💡 Añadir headers que usa tu frontend (Authorization para JWT)
+    # Usar la lista de orígenes
+    origins=ALLOWED_ORIGINS, 
+    supports_credentials=True, 
     allow_headers=["Content-Type", "Authorization"], 
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"] # Permitir todos los métodos
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 
 # --- 4. CONFIGURACIÓN Y TAREA PROGRAMADA (SCHEDULER) ---
