@@ -38,17 +38,17 @@ app.config.from_object(Config)
 # Inicializar extensiones
 jwt = JWTManager(app)
 
-ALLOWED_ORIGINS = [
-    "http://localhost:8080", 
-    "http://127.0.0.1:8080", 
-    "https://vue-flask-crm.netlify.app/", # Asume que tu frontend también se llama así, sino, usa la URL real
-    # Si vas a desplegar el frontend en otra URL, añádela aquí
-]
+# ALLOWED_ORIGINS = [
+#     "http://localhost:8080", 
+#     "http://127.0.0.1:8080", 
+#     "https://vue-flask-crm.netlify.app/", # Asume que tu frontend también se llama así, sino, usa la URL real
+#     # Si vas a desplegar el frontend en otra URL, añádela aquí
+# ]
 
 CORS(
     app, 
     # Usar la lista de orígenes
-    origins=ALLOWED_ORIGINS, 
+    origins="*", 
     supports_credentials=True, 
     allow_headers=["Content-Type", "Authorization"], 
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
