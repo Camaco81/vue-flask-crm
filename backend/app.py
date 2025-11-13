@@ -3,6 +3,8 @@ from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 import logging
 from dotenv import load_dotenv
+from flask_apscheduler import APScheduler 
+from backend.utils.inventory_utils import verificar_tendencia_y_alertar
 
 # 1. Cargar variables de entorno PRIMERO
 load_dotenv()
@@ -29,6 +31,8 @@ app.config.from_object(Config) # Correcto uso de Config
 # Inicializar JWT
 jwt = JWTManager(app)
 
+
+
 # Configurar CORS 
 CORS(
     app, 
@@ -36,11 +40,23 @@ CORS(
     supports_credentials=True
 )
 
-# ----------------------------------------------------
-# 3. Registro de Blueprints (¡CORREGIDO!)
-# ----------------------------------------------------
-# Nota: La convención es registrar los Blueprints bajo un prefijo común (/api) 
-# y dejar que el Blueprint use rutas relativas (ej. user_bp.route('/profile')).
+scheduler = APScheduler()
+scheduler.init_app(app)
+
+if not scheduler.running:
+    scheduler.start()
+    app_logger.info("Scheduler iniciado y corriendo...")
+
+    # Define la tarea programada: Ejecutar la verificación diaria a las 02:00 AM
+    scheduler.add_job(
+        id='verificar_alertas_estacionales',
+        func=verificar_tendencia_y_alertar,
+        trigger='cron',
+        hour=2,
+        minute=0,
+        # Nota: Gunicorn maneja el contexto de la aplicación, no necesitas el argumento job_defaults
+    )
+    app_logger.info("Tarea de alertas estacionales programada para las 02:00 AM.")
 
 app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(customer_bp, url_prefix='/api/customers')
