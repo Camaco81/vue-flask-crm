@@ -1,14 +1,14 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 from psycopg2 import sql 
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission
 from backend.utils.bcv_api import get_dolarvzla_rate 
-# 💡 Asumimos que esta función existe en tu backend.utils.inventory_utils o similar
-from backend.utils.inventory_utils import verificar_stock_y_alertar_y_notificar 
+# 🟢 CORRECCIÓN: Usar el nombre de función que existe en inventory_utils.py
+from backend.utils.inventory_utils import verificar_stock_y_alertar 
 import logging
 from decimal import Decimal
-import uuid # Necesario para generar IDs en la venta a crédito
+import uuid
 
 sale_bp = Blueprint('sale', __name__)
 app_logger = logging.getLogger('backend.routes.sale_routes') 
@@ -42,7 +42,7 @@ def sales_collection():
         if error := validate_required_fields(data, required_fields):
             return jsonify({"msg": f"Missing required fields: {error}"}), 400
         
-        # 💡 Campos de venta a crédito (opcionales para el POST general)
+        # Campos de venta a crédito (opcionales para el POST general)
         tipo_pago = data.get('tipo_pago', 'Contado') # Default: Contado
         dias_credito = data.get('dias_credito', 30)
 
@@ -65,7 +65,6 @@ def sales_collection():
         try:
             with get_db_cursor(commit=False) as cur:
                 total_amount_usd = 0.0
-                stock_alerts = []
                 validated_items = []
 
                 # Paso 1: Verificación de Stock y Cálculo de Totales (LECTURA)
@@ -196,14 +195,8 @@ def sales_collection():
                     # 4.c) Generar Alerta de Stock (Llamada de función UTILITARIA)
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
-                        # 💡 Llamamos a la función utilitaria para generar la notificación
-                        # Es crucial que esta función maneje su propia conexión o no haga commit si usa la misma.
-                        # Asumo que esta función existe en backend.utils.inventory_utils
-                        verificar_stock_y_alertar_y_notificar(
-                            item['product_id'], 
-                            remaining_stock, 
-                            STOCK_THRESHOLD
-                        )
+                        # 🟢 CORRECCIÓN: Llamada a la función que SÍ existe, pasando solo el ID.
+                        verificar_stock_y_alertar(item['product_id'])
                 
                 # Confirmar la transacción
                 cur.connection.commit()
@@ -421,10 +414,6 @@ def sales_single(sale_id):
 # =========================================================
 # RUTAS DE REPORTES ADMIN
 # =========================================================
-# NOTA: La lógica de esta ruta '/reports' es idéntica a GET /api/sales pero SIN el filtro de user_id.
-# Podrías considerar eliminarla y manejar la lógica en el frontend,
-# o usar un parámetro query '/api/sales?all=true' para simplificar las rutas.
-# Sin embargo, la dejo como una ruta /reports explícita para Admin, que es una práctica común.
 
 @sale_bp.route('/reports', methods=['GET'])
 @jwt_required()
