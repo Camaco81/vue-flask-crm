@@ -4,7 +4,6 @@ from backend.db import get_db_cursor
 from psycopg2 import sql 
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission
 from backend.utils.bcv_api import get_dolarvzla_rate 
-# 🟢 CORRECCIÓN: Usar el nombre de función que existe en inventory_utils.py
 from backend.utils.inventory_utils import verificar_stock_y_alertar 
 import logging
 from decimal import Decimal
@@ -43,7 +42,7 @@ def sales_collection():
             return jsonify({"msg": f"Missing required fields: {error}"}), 400
         
         # Campos de venta a crédito (opcionales para el POST general)
-        tipo_pago = data.get('tipo_pago', 'Contado') # Default: Contado
+        tipo_pago = data.get('tipo_pago', 'Contado') # Default: Contado (Usado solo en la lógica temporal)
         dias_credito = data.get('dias_credito', 30)
 
         customer_id = data.get("customer_id")
@@ -117,7 +116,7 @@ def sales_collection():
                 total_amount_ves = total_amount_usd * exchange_rate
                 
                 # Paso 2: Validación de Crédito (Si aplica)
-                monto_pendiente = 0.0
+                monto_pendiente = 0.0 # Se mantiene esta variable, pero se insertará en el campo 'balance_due_usd'
                 status = 'Completado'
                 fecha_vencimiento = None
                 
@@ -159,12 +158,13 @@ def sales_collection():
                 
                 # Paso 3: Inserción de Venta
                 
-                # Construir la consulta de inserción de venta dinámicamente
-                fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", "exchange_rate_used", "status", "tipo_pago"]
-                values = [str(uuid.uuid4()), customer_id, seller_user_id, sql.SQL("NOW()"), total_amount_usd, total_amount_ves, exchange_rate, status, tipo_pago]
+                # CORRECCIÓN #1: Eliminar "tipo_pago" de los campos de inserción ya que no existe en la tabla.
+                fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", "exchange_rate_used", "status"]
+                values = [str(uuid.uuid4()), customer_id, seller_user_id, sql.SQL("NOW()"), total_amount_usd, total_amount_ves, exchange_rate, status]
                 
                 if tipo_pago == 'Crédito':
-                    fields.extend(["dias_credito", "monto_pendiente", "fecha_vencimiento"])
+                    # CORRECCIÓN #2: Usar el nombre de campo correcto en la tabla "sales": "balance_due_usd"
+                    fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento"])
                     values.extend([dias_credito, monto_pendiente, fecha_vencimiento])
 
                 # Crear el string SQL para la inserción
@@ -195,7 +195,6 @@ def sales_collection():
                     # 4.c) Generar Alerta de Stock (Llamada de función UTILITARIA)
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
-                        # 🟢 CORRECCIÓN: Llamada a la función que SÍ existe, pasando solo el ID.
                         verificar_stock_y_alertar(item['product_id'])
                 
                 # Confirmar la transacción
@@ -226,16 +225,16 @@ def sales_collection():
             # Consulta común para listado y detalle
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                       s.sale_date, s.status, s.tipo_pago,
-                       s.total_amount_usd AS total_amount, s.total_amount_ves, 
-                       s.exchange_rate_used, 
-                       u.email as seller_email, u.id as seller_id, 
-                       s.monto_pendiente, s.fecha_vencimiento, s.dias_credito,
-                       json_agg(json_build_object(
+                        s.sale_date, s.status, 
+                        s.total_amount_usd AS total_amount, s.total_amount_ves, 
+                        s.exchange_rate_used, 
+                        u.email as seller_email, u.id as seller_id, 
+                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- CORRECCIÓN #3: Usar balance_due_usd con alias
+                        json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
                             'price', si.price 
-                       )) AS items
+                        )) AS items
                 FROM sales s
                 JOIN customers c ON s.customer_id = c.id
                 JOIN users u ON s.user_id = u.id 
@@ -251,9 +250,9 @@ def sales_collection():
             
             # Agrupación y Ordenamiento
             base_query += """
-                GROUP BY s.id, c.name, c.email, s.sale_date, s.status, s.tipo_pago,
+                GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.monto_pendiente, s.fecha_vencimiento, s.dias_credito
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito -- CORRECCIÓN #4: Usar balance_due_usd en GROUP BY
                 ORDER BY s.sale_date DESC;
             """
             
@@ -285,16 +284,16 @@ def sales_single(sale_id):
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
-                       s.sale_date, s.status, s.tipo_pago,
-                       s.total_amount_usd AS total_amount, 
-                       s.total_amount_ves, s.exchange_rate_used, 
-                       u.email as seller_email, u.id as seller_id,
-                       s.monto_pendiente, s.fecha_vencimiento, s.dias_credito,
-                       json_agg(json_build_object(
+                        s.sale_date, s.status, 
+                        s.total_amount_usd AS total_amount, 
+                        s.total_amount_ves, s.exchange_rate_used, 
+                        u.email as seller_email, u.id as seller_id,
+                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- CORRECCIÓN #5: Usar balance_due_usd con alias
+                        json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
                             'price', si.price
-                       )) AS items
+                        )) AS items
                 FROM sales s
                 JOIN customers c ON s.customer_id = c.id
                 JOIN users u ON s.user_id = u.id
@@ -309,9 +308,9 @@ def sales_single(sale_id):
             
             # GROUP BY
             base_query += """
-                GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.tipo_pago,
+                GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.monto_pendiente, s.fecha_vencimiento, s.dias_credito;
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito; -- CORRECCIÓN #6: Usar balance_due_usd en GROUP BY
             """
 
             with get_db_cursor() as cur:
@@ -335,7 +334,8 @@ def sales_single(sale_id):
                 
                 # 1. Obtener datos clave de la venta y bloquear el cliente (si es a crédito)
                 cur.execute(
-                    "SELECT user_id, customer_id, tipo_pago, monto_pendiente FROM sales WHERE id = %s FOR UPDATE",
+                    # CORRECCIÓN #7: Usar 'status' en lugar de 'tipo_pago' y 'balance_due_usd' en lugar de 'monto_pendiente'
+                    "SELECT user_id, customer_id, status, balance_due_usd FROM sales WHERE id = %s FOR UPDATE",
                     (sale_id_str,)
                 )
                 sale_data = cur.fetchone()
@@ -346,9 +346,9 @@ def sales_single(sale_id):
                 
                 sale_user_id = sale_data['user_id']
                 customer_id = sale_data['customer_id']
-                tipo_pago = sale_data['tipo_pago']
-                monto_pendiente = float(sale_data['monto_pendiente'] or 0.0)
-
+                tipo_pago = sale_data['status'] # Usamos status para la lógica de crédito/contado
+                monto_pendiente = float(sale_data['balance_due_usd'] or 0.0) # Usamos el campo correcto de la tabla
+                
                 # 2. Verificar Permisos (Admin o vendedor creador)
                 if not check_admin_permission(user_role) and str(sale_user_id) != str(current_user_id):
                     cur.connection.rollback()
@@ -429,23 +429,23 @@ def admin_general_reports():
         # Reutilizamos la consulta base
         query = """
             SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                   s.sale_date, s.status, s.tipo_pago,
-                   s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
-                   u.email as seller_email, u.id as seller_id, 
-                   s.monto_pendiente, s.fecha_vencimiento, s.dias_credito,
-                   json_agg(json_build_object(
-                       'product_name', p.name,
-                       'quantity', si.quantity,
-                       'price', si.price 
-                   )) AS items
+                    s.sale_date, s.status, -- CORRECCIÓN #8: Eliminamos s.tipo_pago
+                    s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
+                    u.email as seller_email, u.id as seller_id, 
+                    s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- CORRECCIÓN #9: Usar balance_due_usd con alias
+                    json_agg(json_build_object(
+                        'product_name', p.name,
+                        'quantity', si.quantity,
+                        'price', si.price 
+                    )) AS items
             FROM sales s
             JOIN customers c ON s.customer_id = c.id
             JOIN users u ON s.user_id = u.id 
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
-            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, s.tipo_pago,
+            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
             s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-            s.monto_pendiente, s.fecha_vencimiento, s.dias_credito
+            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito -- CORRECCIÓN #10: Usar balance_due_usd en GROUP BY
             ORDER BY s.sale_date DESC;
         """
         
