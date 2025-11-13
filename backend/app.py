@@ -41,8 +41,11 @@ jwt = JWTManager(app)
 # Configurar CORS (Permisivo para desarrollo)
 CORS(
     app, 
-    origins="*",
-    supports_credentials=True
+    origins="*", # Permite cualquier origen (debería ser suficiente)
+    supports_credentials=True, # Permitir cookies, tokens de autorización, etc.
+    # 💡 Añadir headers que usa tu frontend (Authorization para JWT)
+    allow_headers=["Content-Type", "Authorization"], 
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"] # Permitir todos los métodos
 )
 
 # --- 4. CONFIGURACIÓN Y TAREA PROGRAMADA (SCHEDULER) ---
