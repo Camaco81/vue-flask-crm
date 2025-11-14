@@ -13,10 +13,21 @@ from datetime import datetime, timedelta
 sale_bp = Blueprint('sale', __name__)
 app_logger = logging.getLogger('backend.routes.sale_routes') 
 
+# =========================================================
+# CONSTANTES GLOBALES CORREGIDAS Y AGREGADAS
+# =========================================================
+
 # Umbral de stock bajo para la alerta
 STOCK_THRESHOLD = 10 
 # Roles que pueden realizar ventas (admin/vendedor)
 SALES_ROLES = ['admin', 'vendedor'] 
+# Tolerancia para pagos (para manejar errores de coma flotante)
+# 🟢 CORRECCIÓN: Definición de la constante faltante que causaba el error.
+PAYMENT_TOLERANCE = 0.01 
+
+# =========================================================
+# RUTAS DE VENTA
+# =========================================================
 
 @sale_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
@@ -42,11 +53,39 @@ def sales_collection():
         if error := validate_required_fields(data, required_fields):
             return jsonify({"msg": f"Missing required fields: {error}"}), 400
         
-        # Campos de venta a crédito
-        # 'tipo_pago' viene del frontend para determinar la lógica
-        tipo_pago = data.get('tipo_pago', 'Contado')
-        # CORRECCIÓN: Usamos 0 como default si la venta es a Contado o si el campo no se envía.
-        dias_credito = data.get('dias_credito', 0) 
+        # OBTENCIÓN DE CAMPOS A NIVEL RAÍZ
+        tipo_pago_raw = data.get('tipo_pago')
+        dias_credito_raw = data.get('dias_credito') 
+        usd_paid_raw = data.get('usd_paid', 0)
+        ves_paid_raw = data.get('ves_paid', 0)
+        
+        # CORRECCIÓN ROBUSTA: Garantizar que tipo_pago_raw no sea None
+        if tipo_pago_raw is None:
+            tipo_pago_raw = 'Contado'
+            
+        # Normalizamos el valor para la lógica de crédito
+        tipo_pago_normalized = tipo_pago_raw.lower().replace('é', 'e') 
+        is_credit_sale = tipo_pago_normalized == 'credito'
+        
+        # Conversión de montos pagados a float
+        try:
+            # Usamos 0.0 si el valor es None/ausente
+            usd_paid = float(usd_paid_raw) if usd_paid_raw is not None and usd_paid_raw != '' else 0.0
+            ves_paid = float(ves_paid_raw) if ves_paid_raw is not None and ves_paid_raw != '' else 0.0
+            if usd_paid < 0 or ves_paid < 0:
+                 raise ValueError("Los montos de pago deben ser positivos.")
+        except (ValueError, TypeError) as e:
+            return jsonify({"msg": f"Los montos de pago deben ser números válidos y positivos: {e}"}), 400
+
+        dias_credito = 0 
+        
+        if is_credit_sale:
+            try:
+                # Usar 30 por defecto si no es válido
+                dias_credito = int(dias_credito_raw) if dias_credito_raw is not None and dias_credito_raw != '' else 30
+                if dias_credito <= 0: dias_credito = 30
+            except (ValueError, TypeError):
+                dias_credito = 30 # Usar valor por defecto si es inválido
 
         customer_id = data.get("customer_id")
         items = data.get("items")
@@ -65,14 +104,12 @@ def sales_collection():
         # Bloque de Transacción
         cur = None
         try:
-            # Usamos un bloque with para asegurar el cierre del cursor
             with get_db_cursor(commit=False) as cur: 
                 total_amount_usd = 0.0
                 validated_items = []
 
-                # Paso 1: Verificación de Stock y Cálculo de Totales (LECTURA con SELECT FOR UPDATE)
+                # Paso 1: Verificación de Stock y Cálculo de Totales (SELECT FOR UPDATE)
                 for item in items:
-                    # Validación de items
                     if error := validate_required_fields(item, ['product_id', 'quantity']):
                         cur.connection.rollback()
                         return jsonify({"msg": f"Each item missing field: {error}"}), 400
@@ -88,7 +125,6 @@ def sales_collection():
                         cur.connection.rollback()
                         return jsonify({"msg": f"La cantidad ({quantity_raw}) debe ser un número entero válido y positivo"}), 400
                         
-                    # Consulta de producto con bloqueo forzado (SELECT FOR UPDATE)
                     cur.execute("SELECT name, price, stock FROM products WHERE id = %s FOR UPDATE", (product_id,))
                     product_row = cur.fetchone()
                     
@@ -100,39 +136,47 @@ def sales_collection():
                     product_name = product_row['name']
                     price_usd = float(product_row['price'])
                     
-                    # VERIFICACIÓN DE STOCK CRÍTICA
                     if current_stock < quantity:
                         cur.connection.rollback()
                         return jsonify({"msg": f"Stock insuficiente para {product_name}. Stock actual: {current_stock}"}), 400
                         
-                    # CÁLCULO DE TOTALES
                     subtotal_usd = price_usd * quantity
                     total_amount_usd += subtotal_usd
                     
-                    # Almacenar detalles del ítem para su posterior inserción
                     validated_items.append({
                         'product_id': product_id,
                         'quantity': quantity,
-                        'price': price_usd, # Precio unitario en USD
+                        'price': price_usd, 
                         'current_stock': current_stock
                     })
 
                 total_amount_ves = total_amount_usd * exchange_rate
                 
-                # Paso 2: Validación de Crédito y Asignación de Estado
-                monto_pendiente = 0.0 
-                status = 'Completado' # Default: Contado
+                # Paso 2: Cálculo de Abono y Saldo Pendiente
                 
-                # Inicializamos la fecha de vencimiento a None
+                # Convertir pago en VES a USD
+                usd_from_ves = ves_paid / exchange_rate if exchange_rate > 0 else 0.0
+                total_paid_usd = usd_paid + usd_from_ves
+                
+                # Calcular el Saldo Pendiente de la Venta 
+                saldo_pendiente_venta_usd = max(0.0, round(total_amount_usd - total_paid_usd, 2))
+
+                # Si es una venta Contado/Mixto y hay saldo pendiente, se considera error
+                if not is_credit_sale and saldo_pendiente_venta_usd > PAYMENT_TOLERANCE:
+                    cur.connection.rollback()
+                    return jsonify({"msg": f"Monto pagado insuficiente para venta al contado. Saldo pendiente: ${round(saldo_pendiente_venta_usd, 2)}"}), 400
+
+
+                status = 'Completado' # Default: Contado
+                monto_pendiente = 0.0 
                 fecha_vencimiento_val = None 
                 
-                if tipo_pago == 'Crédito':
-                    # CORRECCIÓN CLAVE: Usamos 'Crédito' como estado inicial
+                if is_credit_sale:
+                    # El estado de la venta es Crédito, independientemente del abono
                     status = 'Crédito' 
-                    monto_pendiente = total_amount_usd # Asumimos que no hay abono inicial en esta lógica
+                    monto_pendiente = saldo_pendiente_venta_usd # Saldo pendiente después del abono
                     
                     # 2.a) Obtener límite y balance del cliente
-                    # Bloqueamos la fila del cliente para la actualización posterior
                     cur.execute(
                         "SELECT credit_limit_usd, balance_pendiente_usd FROM customers WHERE id = %s FOR UPDATE",
                         (customer_id,)
@@ -145,13 +189,15 @@ def sales_collection():
 
                     limite = float(customer['credit_limit_usd'])
                     balance = float(customer['balance_pendiente_usd'])
-                    nuevo_balance = balance + total_amount_usd
+                    
+                    # Actualizar Balance del cliente SOLO por el monto pendiente de la NUEVA VENTA
+                    nuevo_balance = balance + monto_pendiente
                     
                     # 2.b) Verificar Límite de Crédito
                     if nuevo_balance > limite:
                         cur.connection.rollback()
                         return jsonify({
-                            "msg": f"Límite de crédito excedido. Límite: {limite}, Pendiente: {balance}, Venta: {total_amount_usd}. Nuevo Balance: {round(nuevo_balance, 2)}",
+                            "msg": f"Límite de crédito excedido. Límite: ${limite}, Pendiente Actual: ${balance}, Venta con abono (Pendiente): ${round(monto_pendiente, 2)}. Nuevo Balance: ${round(nuevo_balance, 2)}",
                             "code": "CREDIT_LIMIT_EXCEEDED"
                         }), 400
                         
@@ -163,20 +209,23 @@ def sales_collection():
                     
                     # 2.d) Calcular Fecha de Vencimiento
                     fecha_vencimiento_val = datetime.now().date() + timedelta(days=dias_credito)
-
-                # Paso 3: Inserción de Venta (Campos de crédito condicionales)
                 
-                # 3.a) Definición de Campos y Valores
-                fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", "exchange_rate_used", "status"]
-                values = [str(uuid.uuid4()), customer_id, seller_user_id, datetime.now(), total_amount_usd, total_amount_ves, exchange_rate, status]
+                # Paso 3: Inserción de Venta (Campos de pago y crédito)
+                
+                # 3.a) Definición de Campos y Valores (INCLUYE usd_paid, ves_paid, tipo_pago)
+                fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", 
+                            "exchange_rate_used", "status", "tipo_pago", "usd_paid", "ves_paid"] 
+                
+                values = [str(uuid.uuid4()), customer_id, seller_user_id, datetime.now(), total_amount_usd, 
+                            total_amount_ves, exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid]
                 
                 # 3.b) Añadir campos y valores específicos para Crédito
-                if tipo_pago == 'Crédito':
-                    # Aseguramos que los nombres de las columnas en 'sales' sean correctos
+                if is_credit_sale:
+                    # Estos campos se añaden solo si es venta a crédito
                     fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento"])
                     values.extend([dias_credito, monto_pendiente, fecha_vencimiento_val])
 
-                # 3.c) Construir el query
+                # 3.c) Construir el query con placeholders para los valores de datos
                 placeholders = sql.SQL(', ').join(sql.Placeholder() * len(fields))
                 
                 query_insert_sale = sql.SQL(
@@ -186,11 +235,12 @@ def sales_collection():
                     placeholders
                 )
                 
-                # Ejecutar el query
+                # Ejecutar el query usando la lista 'values' como parámetros
                 cur.execute(query_insert_sale, values)
                 new_sale_id = cur.fetchone()['id']
 
                 # Paso 4: Insertar Ítems y Disminuir Stock
+                stock_alerts = []
                 for item in validated_items:
                     # 4.a) Insertar Item
                     cur.execute(
@@ -207,43 +257,55 @@ def sales_collection():
                     # 4.c) Generar Alerta de Stock
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
-                        # NOTA: Si el error de 'stock_actual' persiste, la corrección debe hacerse en 
-                        # la función 'verificar_stock_y_alertar' o en el query SQL que usa.
-                        verificar_stock_y_alertar(item['product_id'])
+                        alert_msg = verificar_stock_y_alertar(item['product_id'], cur) 
+                        if alert_msg:
+                            stock_alerts.append(alert_msg)
                         
                 # Confirmar la transacción
                 cur.connection.commit()
                 
                 response = {
-                    "msg": f"Venta {tipo_pago} registrada exitosamente", 
+                    "msg": f"Venta {tipo_pago_raw} registrada exitosamente", 
                     "sale_id": str(new_sale_id),
                     "total_usd": round(total_amount_usd, 2),
                     "total_ves": round(total_amount_ves, 2),
                     "rate_used": exchange_rate,
-                    "tipo_pago": tipo_pago
+                    "tipo_pago": tipo_pago_raw,
+                    "usd_paid": usd_paid,
+                    "ves_paid": ves_paid,
+                    "balance_due_usd": monto_pendiente,
+                    "stock_alerts": stock_alerts
                 }
                 
                 return jsonify(response), 201
                 
         except Exception as e:
             if cur and cur.connection:
-                cur.connection.rollback() 
-            app_logger.error(f"Error al registrar la venta (ROLLBACK): {e}", exc_info=True)
-            return jsonify({"msg": "Error interno al registrar la venta. La transacción fue cancelada.", "error": str(e)}), 500
+                cur.connection.rollback()
+            
+            error_msg = str(e)
+            status_code = 500
+            
+            # Manejo de la excepción de límite de crédito (opcional, ya manejada arriba)
+            if "CREDIT_LIMIT_EXCEEDED" in error_msg:
+                error_msg = "Límite de crédito del cliente excedido."
+                status_code = 400
+
+            app_logger.error(f"Error al registrar la venta (POST): {error_msg}", exc_info=True)
+            return jsonify({"msg": f"Error al registrar la venta: {error_msg}"}), status_code
             
     elif request.method == "GET":
         # =========================================================
         # LÓGICA DE LISTADO (GET /api/sales) - OPTIMIZADA
         # =========================================================
         try:
-            # La consulta está bien para traer los campos de crédito
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                        s.sale_date, s.status, 
+                        s.sale_date, s.status, s.tipo_pago,
                         s.total_amount_usd AS total_amount, s.total_amount_ves, 
-                        s.exchange_rate_used, 
+                        s.exchange_rate_used, s.usd_paid, s.ves_paid,
                         u.email as seller_email, u.id as seller_id, 
-                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- Usar balance_due_usd
+                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
@@ -264,9 +326,9 @@ def sales_collection():
             
             # Agrupación y Ordenamiento
             base_query += """
-                GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
+                GROUP BY s.id, c.name, c.email, s.sale_date, s.status, s.tipo_pago, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito 
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.usd_paid, s.ves_paid 
                 ORDER BY s.sale_date DESC;
             """
             
@@ -279,6 +341,8 @@ def sales_collection():
         except Exception as e:
             app_logger.error(f"Error al obtener las ventas: {e}", exc_info=True)
             return jsonify({"msg": "Error al obtener las ventas", "error": str(e)}), 500
+
+# ---------------------------------------------------------
 
 @sale_bp.route('/<uuid:sale_id>', methods=["GET", "DELETE"])
 @jwt_required()
@@ -294,11 +358,10 @@ def sales_single(sale_id):
     if request.method == "GET":
         # LÓGICA DE VISTA INDIVIDUAL (GET) - OPTIMIZADA
         try:
-            # La consulta está bien
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
-                        s.sale_date, s.status, 
-                        s.total_amount_usd AS total_amount, 
+                        s.sale_date, s.status, s.tipo_pago,
+                        s.total_amount_usd AS total_amount, s.usd_paid, s.ves_paid,
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id,
                         s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
@@ -321,9 +384,9 @@ def sales_single(sale_id):
             
             # GROUP BY
             base_query += """
-                GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, 
+                GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.tipo_pago, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito;
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.usd_paid, s.ves_paid;
             """
 
             with get_db_cursor() as cur:
@@ -367,7 +430,6 @@ def sales_single(sale_id):
                     return jsonify({"msg": "No autorizado para eliminar esta venta"}), 403
                 
                 # 3. ROLLBACK DE CRÉDITO (Si aplica)
-                # CORRECCIÓN: Usamos 'Crédito' como estado a revertir.
                 if sale_status == 'Crédito' and monto_pendiente > 0:
                     # Bloquear y actualizar balance del cliente
                     cur.execute(
@@ -425,9 +487,9 @@ def sales_single(sale_id):
             return jsonify({"msg": "Error al eliminar la venta", "error": str(e)}), 500
 
 
-# =========================================================
+# ---------------------------------------------------------
 # RUTAS DE REPORTES ADMIN
-# =========================================================
+# ---------------------------------------------------------
 
 @sale_bp.route('/reports', methods=['GET'])
 @jwt_required()
@@ -442,8 +504,9 @@ def admin_general_reports():
     try:
         query = """
             SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                    s.sale_date, s.status, 
+                    s.sale_date, s.status, s.tipo_pago,
                     s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
+                    s.usd_paid, s.ves_paid,
                     u.email as seller_email, u.id as seller_id, 
                     s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                     json_agg(json_build_object(
@@ -456,9 +519,9 @@ def admin_general_reports():
             JOIN users u ON s.user_id = u.id 
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
-            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
+            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, s.tipo_pago, 
             s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito 
+            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.usd_paid, s.ves_paid 
             ORDER BY s.sale_date DESC;
         """
         
