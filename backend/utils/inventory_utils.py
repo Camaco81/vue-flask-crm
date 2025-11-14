@@ -1,6 +1,7 @@
 from backend.db import get_db_cursor
 import uuid
 from datetime import date
+import logging
 
 STOCK_THRESHOLD = 10 
 
