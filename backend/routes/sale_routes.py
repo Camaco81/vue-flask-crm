@@ -22,7 +22,6 @@ STOCK_THRESHOLD = 10
 # Roles que pueden realizar ventas (admin/vendedor)
 SALES_ROLES = ['admin', 'vendedor'] 
 # Tolerancia para pagos (para manejar errores de coma flotante)
-# 🟢 CORRECCIÓN: Definición de la constante faltante que causaba el error.
 PAYMENT_TOLERANCE = 0.01 
 
 # =========================================================
@@ -44,7 +43,7 @@ def sales_collection():
 
     if request.method == "POST":
         # =========================================================
-        # LÓGICA DE CREACIÓN (POST) - VENTA AL CONTADO / CRÉDITO
+        # LÓGICA DE CREACIÓN (POST) - SIN CAMBIOS (Sigue insertando los nuevos campos)
         # =========================================================
         data = request.get_json()
         
@@ -213,6 +212,7 @@ def sales_collection():
                 # Paso 3: Inserción de Venta (Campos de pago y crédito)
                 
                 # 3.a) Definición de Campos y Valores (INCLUYE usd_paid, ves_paid, tipo_pago)
+                # Esta parte NO SE TOCA, ya que la inserción de datos SÍ debe incluir los nuevos campos.
                 fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", 
                             "exchange_rate_used", "status", "tipo_pago", "usd_paid", "ves_paid"] 
                 
@@ -286,7 +286,6 @@ def sales_collection():
             error_msg = str(e)
             status_code = 500
             
-            # Manejo de la excepción de límite de crédito (opcional, ya manejada arriba)
             if "CREDIT_LIMIT_EXCEEDED" in error_msg:
                 error_msg = "Límite de crédito del cliente excedido."
                 status_code = 400
@@ -296,14 +295,16 @@ def sales_collection():
             
     elif request.method == "GET":
         # =========================================================
-        # LÓGICA DE LISTADO (GET /api/sales) - OPTIMIZADA
+        # LÓGICA DE LISTADO (GET /api/sales) - CORREGIDA
         # =========================================================
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                        s.sale_date, s.status, s.tipo_pago,
+                        s.sale_date, s.status,
+                        -- ❌ COMENTADO: s.tipo_pago, 
                         s.total_amount_usd AS total_amount, s.total_amount_ves, 
-                        s.exchange_rate_used, s.usd_paid, s.ves_paid,
+                        s.exchange_rate_used, 
+                        -- ❌ COMENTADO: s.usd_paid, s.ves_paid,
                         u.email as seller_email, u.id as seller_id, 
                         s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                         json_agg(json_build_object(
@@ -326,9 +327,11 @@ def sales_collection():
             
             # Agrupación y Ordenamiento
             base_query += """
-                GROUP BY s.id, c.name, c.email, s.sale_date, s.status, s.tipo_pago, 
+                GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
+                -- ❌ COMENTADO: s.tipo_pago, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.usd_paid, s.ves_paid 
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito
+                -- ❌ COMENTADO: , s.usd_paid, s.ves_paid 
                 ORDER BY s.sale_date DESC;
             """
             
@@ -356,12 +359,14 @@ def sales_single(sale_id):
     sale_id_str = str(sale_id)
 
     if request.method == "GET":
-        # LÓGICA DE VISTA INDIVIDUAL (GET) - OPTIMIZADA
+        # LÓGICA DE VISTA INDIVIDUAL (GET) - CORREGIDA
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
-                        s.sale_date, s.status, s.tipo_pago,
-                        s.total_amount_usd AS total_amount, s.usd_paid, s.ves_paid,
+                        s.sale_date, s.status, 
+                        -- ❌ COMENTADO: s.tipo_pago,
+                        s.total_amount_usd AS total_amount, 
+                        -- ❌ COMENTADO: s.usd_paid, s.ves_paid,
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id,
                         s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
@@ -384,9 +389,11 @@ def sales_single(sale_id):
             
             # GROUP BY
             base_query += """
-                GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, s.tipo_pago, 
+                GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, 
+                -- ❌ COMENTADO: s.tipo_pago, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.usd_paid, s.ves_paid;
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito
+                -- ❌ COMENTADO: , s.usd_paid, s.ves_paid;
             """
 
             with get_db_cursor() as cur:
@@ -402,13 +409,14 @@ def sales_single(sale_id):
 
     elif request.method == "DELETE":
         # =========================================================
-        # LÓGICA DE ELIMINACIÓN (DELETE) - CON ROLLBACK DE CRÉDITO
+        # LÓGICA DE ELIMINACIÓN (DELETE) - SIN CAMBIOS
         # =========================================================
         cur = None
         try:
             with get_db_cursor(commit=False) as cur: 
                 
                 # 1. Obtener datos clave de la venta y bloquear el cliente (si es a crédito)
+                # OJO: balance_due_usd SÍ debe existir para la lógica de crédito
                 cur.execute(
                     "SELECT user_id, customer_id, status, balance_due_usd FROM sales WHERE id = %s FOR UPDATE",
                     (sale_id_str,)
@@ -504,9 +512,10 @@ def admin_general_reports():
     try:
         query = """
             SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                    s.sale_date, s.status, s.tipo_pago,
+                    s.sale_date, s.status, 
+                    -- ❌ COMENTADO: s.tipo_pago,
                     s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
-                    s.usd_paid, s.ves_paid,
+                    -- ❌ COMENTADO: s.usd_paid, s.ves_paid, 
                     u.email as seller_email, u.id as seller_id, 
                     s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                     json_agg(json_build_object(
@@ -519,9 +528,11 @@ def admin_general_reports():
             JOIN users u ON s.user_id = u.id 
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
-            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, s.tipo_pago, 
+            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
+            -- ❌ COMENTADO: s.tipo_pago,
             s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.usd_paid, s.ves_paid 
+            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito 
+            -- ❌ COMENTADO: , s.usd_paid, s.ves_paid
             ORDER BY s.sale_date DESC;
         """
         
