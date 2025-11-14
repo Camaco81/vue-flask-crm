@@ -269,7 +269,8 @@ def sales_collection():
                     # 4.c) Generar Alerta de Stock
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
-                        alert_msg = verificar_stock_y_alertar(item['product_id'], cur) 
+                        # 🟢 CORRECCIÓN DEL TYPE ERROR: Solo se pasa un argumento.
+                        alert_msg = verificar_stock_y_alertar(item['product_id']) 
                         if alert_msg:
                             stock_alerts.append(alert_msg)
                         

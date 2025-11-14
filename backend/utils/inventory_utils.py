@@ -17,45 +17,50 @@ def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id
     except Exception as e:
         print(f"Error al crear notificación: {e}")
 
-def verificar_stock_y_alertar(product_id: str):
-    """
-    Verifica el stock de un producto contra su umbral mínimo y genera una alerta 
-    si es necesario. Se llama después de una transacción de inventario.
-    """
+# =========================================================
+# ARCHIVO: backend/utils/inventory_utils.py
+# =========================================================
+
+from backend.db import get_db_cursor
+import logging
+# ⚠️ IMPORTANTE: Importar la constante definida en el archivo de rutas
+from backend.routes.sale_routes import STOCK_THRESHOLD 
+
+# Configura tu logger si es necesario
+inv_logger = logging.getLogger('backend.utils.inventory_utils')
+
+def verificar_stock_y_alertar(product_id):
+    """Verifica el stock de un producto contra el umbral de alerta."""
+    
     try:
         with get_db_cursor() as cur:
-            # 1. Obtener datos del producto con los nuevos campos
+            # 🟢 CORRECCIÓN DEL UNDEFINED COLUMN: Usar 'stock' en lugar de 'stock_actual'.
+            # Usaremos el STOCK_THRESHOLD como un valor para comparar si no tienes una columna 'stock_minimo'.
             cur.execute(
-                "SELECT name, stock_actual, stock_minimo FROM products WHERE id = %s",
+                "SELECT name, stock FROM products WHERE id = %s", 
                 (product_id,)
             )
             product = cur.fetchone()
-        
-        if not product:
-            return
-
-        stock_actual = product['stock_actual']
-        stock_minimo = product['stock_minimo']
-        product_name = product['name']
-
-        # 2. Aplicar la Regla de Alerta
-        if stock_actual <= stock_minimo:
-            mensaje = (
-                f"🚨 Stock Crítico: El producto '{product_name}' tiene solo "
-                f"{stock_actual} unidades (Mínimo: {stock_minimo}). Reponer pronto."
-            )
             
-            # 3. Generar Notificación (dirigida al almacenista)
-            create_notification(
-                rol_destino='almacenista',
-                mensaje=mensaje,
-                tipo='stock_critico',
-                referencia_id=product_id
-            )
+            if not product:
+                return None # Producto no encontrado
 
+            current_stock = product['stock']
+            product_name = product['name']
+
+            if current_stock <= STOCK_THRESHOLD:
+                return (
+                    f"ALERTA DE STOCK BAJO: El producto '{product_name}' "
+                    f"tiene solo {current_stock} unidades restantes (Umbral: {STOCK_THRESHOLD})."
+                )
+            
+            return None # No se requiere alerta
+            
     except Exception as e:
-        print(f"Error en verificar_stock_y_alertar: {e}")
-
+        # Registra el error para evitar el fallo de la transacción principal
+        inv_logger.error(f"Error en verificar_stock_y_alertar (product_id: {product_id}): {e}", exc_info=True)
+        # ❌ NO se retorna el error en el mensaje de alerta.
+        return None
 # Ejemplo de uso:
 # verificar_stock_y_alertar('id-del-producto-vendido')
 
