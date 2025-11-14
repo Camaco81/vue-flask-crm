@@ -1,16 +1,25 @@
 <template>
   <div class="almacenista-dashboard">
     <div class="welcome-card">
-      <h1 class="title">👋 Bienvenido, Almacenista</h1>
+      <div class="header-content">
+        <h1 class="title">👋 Bienvenido, Almacenista</h1>
+        <NotificationBell class="notification-bell-icon" />
+      </div>
+
       <p class="subtitle">Tu función es mantener el inventario al día.</p>
       
       <div class="action-section">
         <h3>Tu Tarea Principal:</h3>
-        <router-link to="/almacenista/inventory" class="btn-primary">
+        
+        <router-link to="/almacenista/inventory" class="btn-action btn-primary">
           <i class="fas fa-boxes"></i> Gestionar Productos e Inventario
         </router-link>
         
-        <button @click="logout" class="btn-secondary logout-btn">
+        <router-link to="/almacenista/notifications" class="btn-action btn-secondary-action">
+          <i class="fas fa-list-alt"></i> Ver Historial de Alertas
+        </router-link>
+
+        <button @click="logout" class="btn-action btn-warning">
           <i class="fas fa-sign-out-alt"></i> Cerrar Sesión
         </button>
       </div>
@@ -24,16 +33,17 @@
 </template>
 
 <script>
-// Componente de Almacenista Dashboard
+import NotificationBell from './NotificationBell.vue';
+
 export default {
   name: 'AlmacenistaDashboard',
+  components: {
+    NotificationBell
+  },
   methods: {
-    // 🚨 Lógica de Cierre de Sesión 🚨
     logout() {
-      // Limpia los tokens de autenticación
       localStorage.removeItem('access_token');
       localStorage.removeItem('user_info'); 
-      // Redirige al usuario a la página de login
       this.$router.push('/login');
     }
   }
@@ -41,13 +51,13 @@ export default {
 </script>
 
 <style scoped>
-/* Estilos sencillos y limpios */
+/* Estilos existentes */
 .almacenista-dashboard {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 80vh;
-  background-color: #f0f4f8; /* Fondo suave */
+  background-color: #f0f4f8; 
 }
 
 .welcome-card {
@@ -56,85 +66,116 @@ export default {
   padding: 30px 40px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
   text-align: center;
-  max-width: 500px;
+  max-width: 550px; /* Un poco más ancho */
   width: 90%;
+  /* 🟢 Necesario para posicionar la campana si estuviera fuera del flujo, 
+     pero en este caso es solo para contener el flexbox del header. */
 }
 
 .title {
-  color: #38a169; /* Verde (asociado a inventario/stock) */
+  color: #38a169;
   font-size: 2.2rem;
-  margin-bottom: 0.5rem;
   font-weight: 700;
+  margin: 0; /* Asegura que no haya margen */
 }
 
 .subtitle {
   color: #718096;
   font-size: 1.1rem;
-  margin-bottom: 2rem;
+  margin-top: 0.5rem;
+  margin-bottom: 2.5rem; /* Más espacio después del subtítulo */
 }
 
+/* 🟢 AJUSTE ESTÉTICO: CONTENEDOR DE LA CAMPANA */
+.header-content {
+    display: flex;
+    justify-content: space-between; 
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.notification-bell-icon {
+    /* Dar un poco más de relevancia visual a la campana */
+    font-size: 1.5rem; 
+    cursor: pointer;
+    /* Ajusta la alineación vertical con el título */
+    padding-top: 5px; 
+}
+
+
+/* 🟢 AJUSTE ESTÉTICO: BOTONES DE ACCIÓN */
 .action-section {
-  display: flex; /* Para organizar los botones verticalmente */
+  display: flex; 
   flex-direction: column;
-  gap: 15px; /* Espacio entre los botones */
+  gap: 12px; /* Reducido ligeramente el espacio para compactar */
   align-items: center;
 }
 
 .action-section h3 {
   color: #4a5568;
-  margin-bottom: 5px; /* Reducido el margen para acercar a los botones */
+  margin-bottom: 10px; 
   font-size: 1.4rem;
 }
 
-/* Estilo del botón principal (Gestionar Inventario) */
+.btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    padding: 15px 30px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1.1rem;
+    transition: background-color 0.3s, transform 0.1s, box-shadow 0.3s;
+    width: 100%;
+    max-width: 350px; /* Aumentado ligeramente el ancho máximo de los botones */
+    justify-content: center;
+}
+
+/* 1. Botón Principal (Gestionar Inventario) - Verde/Éxito */
 .btn-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  background-color: #38a169;
+  background-color: #38a169; 
   color: white;
-  text-decoration: none;
-  padding: 15px 30px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 1.1rem;
-  transition: background-color 0.3s, transform 0.1s;
   box-shadow: 0 4px 10px rgba(56, 161, 105, 0.3);
-  width: 100%; /* Ocupa el ancho completo de la sección de acción */
-  max-width: 300px; /* Limita el ancho para que no sea gigante */
-  justify-content: center;
 }
 
 .btn-primary:hover {
   background-color: #2f855a;
   transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(56, 161, 105, 0.4);
 }
 
-/* 🚨 Estilo del botón Cerrar Sesión (Secundario) 🚨 */
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+/* 2. Botón Funcional Secundario (Historial de Alertas) - Azul/Informativo */
+.btn-secondary-action {
+  background: none;
+  border: 2px solid #4299e1; /* Borde azul */
+  color: #4299e1; /* Texto azul */
+  padding: 13px 30px; /* Ajuste de padding para compensar el borde */
+}
+
+.btn-secondary-action:hover {
+  background-color: #4299e1;
+  color: white;
+  transform: translateY(-1px);
+}
+
+/* 3. Botón de Advertencia (Cerrar Sesión) - Rojo/Peligro */
+.btn-warning {
   background: none;
   border: 2px solid #e53e3e; /* Borde rojo */
   color: #e53e3e; /* Texto rojo */
-  padding: 12px 30px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 1rem;
+  padding: 13px 30px; /* Ajuste de padding para compensar el borde */
   cursor: pointer;
-  transition: all 0.3s;
-  width: 100%;
-  max-width: 300px; 
-  justify-content: center;
 }
 
-.btn-secondary:hover {
+.btn-warning:hover {
   background-color: #e53e3e;
   color: white;
   transform: translateY(-1px);
 }
 
+
+/* Nota Informativa (Sin cambios) */
 .info-note {
   margin-top: 2rem;
   padding: 15px;

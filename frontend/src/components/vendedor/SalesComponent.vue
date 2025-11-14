@@ -1,165 +1,197 @@
 <template>
- <div class="sales-container">
-  <h1 class="page-title">Gestión de Ventas</h1>
-  <BackButton />
+  <div class="sales-container">
+    <h1 class="page-title">Gestión de Ventas</h1>
+    <BackButton />
 
-  <div class="card create-sale-card">
- <h2>Registrar Nueva Venta</h2>
+    <div class="card create-sale-card">
+      <h2>Registrar Nueva Venta</h2>
 
- <div v-if="localStockAlerts.length > 0" class="alert-box warning-alert">
- <p>⚠️ **Advertencia de Stock Bajo (LOCAL):**</p>
- <ul>
-  <li v-for="(alert, index) in localStockAlerts" :key="'local-alert-' + index">{{ alert }}</li>
- </ul>
- </div>
+      <div v-if="localStockAlerts.length > 0" class="alert-box warning-alert">
+        <p>⚠️ **Advertencia de Stock Bajo (LOCAL):**</p>
+        <ul>
+          <li v-for="(alert, index) in localStockAlerts" :key="'local-alert-' + index">{{ alert }}</li>
+        </ul>
+      </div>
 
- <form @submit.prevent="createSale">
- <div class="form-group">
-  <label for="customer">Seleccionar Cliente:</label>
-  <AutocompleteSearch
-   :items="customers"
-   placeholder="Buscar cliente por nombre o cédula..."    labelKey="fullSearchKey"
-   valueKey="id" 
-   v-model="newSale.customer_id"
-   id="customer"
-   :secondaryLabelKey="null"   />
- </div>
+      <form @submit.prevent="createSale">
+        <div class="form-group">
+          <label for="customer">Seleccionar Cliente:</label>
+          <AutocompleteSearch
+            :items="customers"
+            placeholder="Buscar cliente por nombre o cédula..."
+            labelKey="fullSearchKey"
+            valueKey="id"
+            v-model="newSale.customer_id"
+            id="customer"
+            :secondaryLabelKey="null"
+          />
+        </div>
 
- <h3>Productos</h3>
- <div class="form-group product-item-group" v-for="(item, index) in newSale.items" :key="index">
-  <div class="product-selection">
-   <label :for="'product-' + index">Producto:</label>
-   <AutocompleteSearch
-  :items="products"
-  placeholder="Buscar producto por nombre..."
-  labelKey="name"
-  valueKey="id"
-  secondaryLabelKey="stock"
-  :id="'product-autocomplete-' + index"
-  :modelValue="item.product_id"
-  @update:modelValue="handleProductSelection(item, $event)"
-   />
+        <h3>Productos</h3>
+        <div class="form-group product-item-group" v-for="(item, index) in newSale.items" :key="index">
+          <div class="product-selection">
+            <label :for="'product-' + index">Producto:</label>
+            <AutocompleteSearch
+              :items="products"
+              placeholder="Buscar producto por nombre..."
+              labelKey="name"
+              valueKey="id"
+              secondaryLabelKey="stock"
+              :id="'product-autocomplete-' + index"
+              :modelValue="item.product_id"
+              @update:modelValue="handleProductSelection(item, $event)"
+            />
+          </div>
+
+          <div class="quantity-input">
+            <label :for="'quantity-' + index">Cantidad (Stock: {{ getProductStock(item.product_id) }}):</label>
+            <input
+              type="number"
+              :id="'quantity-' + index"
+              v-model.number="item.quantity"
+              min="1"
+              :max="getProductStock(item.product_id)"
+              @input="checkLocalStockAlert(item)"
+              required
+            >
+            <p v-if="item.quantity && item.quantity > getProductStock(item.product_id)" class="error-message">
+              ⚠️ ¡La cantidad excede el stock disponible!
+            </p>
+          </div>
+          
+          <button type="button" @click="removeItem(index)" class="remove-btn">Quitar</button>
+        </div>
+        <button type="button" @click="addItem" class="add-item-btn">Agregar Producto</button>
+
+        <hr class="separator">
+
+        <h3>Resumen y Pago</h3>
+        <div class="summary-box">
+          <p>Total de Venta (USD): <strong>${{ calculateTotalAmountUSD().toFixed(2) }}</strong></p>
+          <p>Total de Venta (Bs.): <strong>Bs. {{ (calculateTotalAmountUSD() * bcvRate).toFixed(2) }}</strong></p>
+          <p>Tasa BCV actual: <strong>Bs. {{ bcvRate.toFixed(2) }}</strong></p>
+
+          <div v-if="newSale.payment.method === 'CREDIT' && calculateBalanceDue() > 0" class="credit-summary">
+            <p class="credit-warning">
+              **Crédito Otorgado (Saldo Pendiente):** **${{ calculateBalanceDue().toFixed(2) }}**
+            </p>
+          </div>
+          <p v-if="!isPaymentValid()" class="error-message">
+            ⚠️ Monto pagado es insuficiente.
+          </p>
+        </div>
+
+        <div class="form-group">
+          <label for="payment-method">Forma de Pago:</label>
+          <select id="payment-method" v-model="newSale.payment.method" @change="resetPaymentFields">
+            <option value="USD">Dólar (Efectivo/Transferencia)</option>
+            <option value="VES">Bolívares (Transferencia/Punto)</option>
+            <option value="MIXED">Mixto (USD + Bolívares)</option>
+            <option value="CREDIT">Crédito/Fiado (Venta a Crédito)</option>
+          </select>
+        </div>
+
+        <div class="payment-fields-group">
+          <div class="form-group" v-if="newSale.payment.method === 'CREDIT'">
+            <label for="credit-days">Días de Crédito:</label>
+            <input
+              type="number"
+              id="credit-days"
+              v-model.number="newSale.credit_days"
+              min="1"
+              required
+            >
+          </div>
+          
+          <div class="form-group" v-if="newSale.payment.method !== 'VES'">
+            <label for="usd-paid">Monto Pagado en Dólares ($):</label>
+            <input
+              type="number"
+              id="usd-paid"
+              v-model.number="newSale.payment.usd_paid"
+              min="0"
+              step="0.01"
+              :required="newSale.payment.method !== 'VES' && newSale.payment.method !== 'CREDIT'"
+            >
+          </div>
+
+          <div class="form-group" v-if="newSale.payment.method !== 'USD'">
+            <label for="ves-paid">
+              Monto Pagado en Bolívares (Bs):
+              <span v-if="newSale.payment.method === 'MIXED'">
+                (Bs. Req: {{ calculateVesRequired().toFixed(2) }})
+              </span>
+              <span v-else-if="newSale.payment.method === 'CREDIT' && calculateVesRequired() > 0">
+                (Bs. Req para saldo restante: {{ calculateVesRequired().toFixed(2) }})
+              </span>
+            </label>
+            <input
+              type="number"
+              id="ves-paid"
+              v-model.number="newSale.payment.ves_paid"
+              min="0"
+              step="0.01"
+              :required="newSale.payment.method !== 'USD' && newSale.payment.method !== 'CREDIT'"
+            >
+          </div>
+        </div>
+        
+        <button
+          type="submit"
+          :disabled="creating || !newSale.customer_id || newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > getProductStock(i.product_id)) || !isPaymentValid()"
+          class="submit-btn"
+        >
+          {{ creating ? 'Registrando...' : 'Registrar Venta' }}
+        </button>
+      </form>
+    </div>
+    
+    <div class="card sales-list-card">
+      <h2>Ventas Registradas</h2>
+      <div v-if="loading" class="loading-state">Cargando ventas...</div>
+      <div v-else-if="sales.length === 0 && !loading" class="no-sales-state">No hay ventas registradas aún.</div>
+      <ul v-else class="sales-list">
+        <li v-for="sale in sales" :key="sale.id" class="sale-item">
+          <div class="sale-header">
+            <h3>Venta #{{ sale.id.substring(0, 8) }}... a {{ sale.customer_name }}</h3>
+            <span>Total: **${{ sale.total_usd.toFixed(2) }}** (Bs. {{ sale.total_amount_ves.toFixed(2) }})</span>
+          </div>
+          <div class="sale-details">
+            <p>Fecha: {{ formatDate(sale.sale_date) }}</p>
+            <p>
+              Estado:
+              <span class="status-badge" 
+                :class="{'pending': sale.status === 'Pendiente', 'completed': sale.status === 'Completado', 'credit': sale.status === 'Crédito'}"
+              >
+                {{ sale.status }}
+              </span>
+            </p>
+            <p v-if="sale.seller_email">Vendedor: {{ sale.seller_email }}</p>
+            <p>Tasa Utilizada: **Bs. {{ sale.exchange_rate_used.toFixed(2) }}**</p>
+            <p class="payment-info">
+              Pago: **{{ sale.payment_method || 'N/A' }}** (USD Pagado: ${{ sale.usd_paid.toFixed(2) }} / Bs Pagado: Bs. {{ sale.ves_paid.toFixed(2) }})
+            </p>
+            <p v-if="sale.status === 'Crédito' && sale.balance_due_usd > 0">
+              **SALDO PENDIENTE:** **${{ sale.balance_due_usd.toFixed(2) }}**
+            </p>
+          </div>
+          <div class="sale-items">
+            <h4>Elementos de la venta:</h4>
+            <ul>
+              <li v-for="item in sale.items" :key="item.product_name">
+                {{ item.quantity }} x {{ item.product_name }} (${{ item.price_usd.toFixed(2) }})
+              </li>
+            </ul>
+          </div>
+          <div class="sale-actions">
+            <button @click="generateInvoicePdf(sale)" class="pdf-btn">
+              <i class="fas fa-file-pdf"></i> Generar Factura PDF
+            </button>
+          </div>
+        </li>
+      </ul>
+    </div>
   </div>
-
-  <div class="quantity-input">
-   <label :for="'quantity-' + index">Cantidad (Stock: {{ getProductStock(item.product_id) }}):</label>
-   <input
-  type="number"
-  :id="'quantity-' + index"
-  v-model.number="item.quantity"
-  min="1"
-  :max="getProductStock(item.product_id)"
-  @input="checkLocalStockAlert(item)"
-  required>
-   <p v-if="item.quantity && item.quantity > getProductStock(item.product_id)" class="error-message">
-  ⚠️ ¡La cantidad excede el stock disponible!
-   </p>
-  </div>
- 
-  <button type="button" @click="removeItem(index)" class="remove-btn">Quitar</button>
- </div>
- <button type="button" @click="addItem" class="add-item-btn">Agregar Producto</button>
-
- <hr class="separator">
-
- <h3>Resumen y Pago</h3>
- <div class="summary-box">
-   <p>Total de Venta (USD): <strong>${{ calculateTotalAmountUSD().toFixed(2) }}</strong></p>
-   <p>Total de Venta (Bs.): <strong>Bs. {{ (calculateTotalAmountUSD() * bcvRate).toFixed(2) }}</strong></p>
-   <p>Tasa BCV actual: <strong>Bs. {{ bcvRate.toFixed(2) }}</strong></p>
-   <p v-if="!isPaymentValid()" class="error-message">
-  ⚠️ Monto pagado es insuficiente.
-   </p>
- </div>
-
- <div class="form-group">
-   <label for="payment-method">Forma de Pago:</label>
-   <select id="payment-method" v-model="newSale.payment.method" @change="resetPaymentFields">
-  <option value="USD">Dólar (Efectivo/Transferencia)</option>
-  <option value="VES">Bolívares (Transferencia/Punto)</option>
-  <option value="MIXED">Mixto (USD + Bolívares)</option>
-   </select>
- </div>
-
- <div class="payment-fields-group">
-   <div class="form-group" v-if="newSale.payment.method !== 'VES'">
-  <label for="usd-paid">Monto Pagado en Dólares ($):</label>
-  <input
-    type="number"
-    id="usd-paid"
-    v-model.number="newSale.payment.usd_paid"
-    min="0"
-    step="0.01"
-    :required="newSale.payment.method !== 'VES'">
-   </div>
-
-   <div class="form-group" v-if="newSale.payment.method !== 'USD'">
-  <label for="ves-paid">
-    Monto Pagado en Bolívares (Bs):
-    <span v-if="newSale.payment.method === 'MIXED'">
-   (Bs. Req: {{ calculateVesRequired().toFixed(2) }})
-    </span>
-  </label>
-  <input
-    type="number"
-    id="ves-paid"
-    v-model.number="newSale.payment.ves_paid"
-    min="0"
-    step="0.01"
-    :required="newSale.payment.method !== 'USD'">
-   </div>
- </div>
- <button
-  type="submit"
-  :disabled="creating || !newSale.customer_id || newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > getProductStock(i.product_id)) || !isPaymentValid()"
-  class="submit-btn"
- >
-  {{ creating ? 'Registrando...' : 'Registrar Venta' }}
- </button>
- </form>
-  </div>
- 
-  <div class="card sales-list-card">
- <h2>Ventas Registradas</h2>
- <div v-if="loading" class="loading-state">Cargando ventas...</div>
- <div v-else-if="sales.length === 0 && !loading" class="no-sales-state">No hay ventas registradas aún.</div>
- <ul v-else class="sales-list">
- <li v-for="sale in sales" :key="sale.id" class="sale-item">
-  <div class="sale-header">
-   <h3>Venta #{{ sale.id.substring(0, 8) }}... a {{ sale.customer_name }}</h3>
-   <span>Total: **${{ sale.total_usd.toFixed(2) }}** (Bs. {{ sale.total_amount_ves.toFixed(2) }})</span>
-  </div>
-  <div class="sale-details">
-   <p>Fecha: {{ formatDate(sale.sale_date) }}</p>
-   <p>
-  Estado:
-  <span class="status-badge" :class="{'pending': sale.status === 'Pendiente', 'completed': sale.status === 'Completado'}">
-  {{ sale.status }}
-  </span>
-   </p>
-   <p v-if="sale.seller_email">Vendedor: {{ sale.seller_email }}</p>
-   <p>Tasa Utilizada: **Bs. {{ sale.exchange_rate_used.toFixed(2) }}**</p>
-   <p class="payment-info">
-  Pago: **{{ sale.payment_method || 'N/A' }}** (USD Pagado: ${{ sale.usd_paid.toFixed(2) }} / Bs Pagado: Bs. {{ sale.ves_paid.toFixed(2) }})
-   </p>
-  </div>
-  <div class="sale-items">
-   <h4>Elementos de la venta:</h4>
-   <ul>
-  <li v-for="item in sale.items" :key="item.product_name">
-  {{ item.quantity }} x {{ item.product_name }} (${{ item.price_usd.toFixed(2) }})
-  </li>
-   </ul>
-  </div>
-  <div class="sale-actions">
-   <button @click="generateInvoicePdf(sale)" class="pdf-btn">
-  <i class="fas fa-file-pdf"></i> Generar Factura PDF
-   </button>
-  </div>
- </li>
- </ul>
-  </div>
- </div>
 </template>
 
 <script>
@@ -172,499 +204,527 @@ const STOCK_THRESHOLD = 10;
 const PAYMENT_TOLERANCE = 0.02; // 2 centavos de tolerancia para la verificación de pago
 
 export default {
- name: 'SalesComponent',
- components: {
-  BackButton,
-  AutocompleteSearch
- },
- data() {
-  return {
- sales: [],
- customers: [],
- products: [],
- newSale: {
- customer_id: null,
- items: [{ product_id: null, quantity: 1, price: 0 }],
- payment: {
-   method: 'USD',
-   usd_paid: 0,
-   ves_paid: 0,
- }
- },
- loading: false,
- creating: false,
- localStockAlerts: [],
- bcvRate: 0, // 🚨 INICIALIZADO en 0, se llenará con la API
-  };
- },
- async mounted() {
-  await this.fetchData();
- },
- methods: {
-  // 🚨 Función: Obtener la tasa de cambio actual (usando tu endpoint simulado)
-  async fetchBcvRate() {
- try {
-   // Nota: Se asume que /api/exchange-rate devuelve { rate: <number> }
-   const response = await axios.get('/api/exchange-rate');
-   this.bcvRate = parseFloat(response.data.rate);
-   console.log(`Tasa BCV obtenida: Bs. ${this.bcvRate.toFixed(2)}`);
- } catch (error) {
-   console.error("Error fetching BCV rate. Using default rate of 36.5.", error);
-   // Usar una tasa de respaldo si el backend falla
-   this.bcvRate = 36.5;
- }
+  name: 'SalesComponent',
+  components: {
+    BackButton,
+    AutocompleteSearch
   },
-
-  async fetchData() {
- this.loading = true;
- try {
- await this.fetchBcvRate();
-
- const [salesResponse, customersResponse, productsResponse] = await Promise.all([
-  axios.get('/api/sales'),
-  axios.get('/api/customers'),
-  axios.get('/api/products')
- ]);
-
- const customersMap = new Map(customersResponse.data.map(c => [c.id, c]));
-
- this.sales = salesResponse.data.map(sale => {
-  const customer = customersMap.get(sale.customer_id) || { name: 'Cliente Desconocido', email: '', address: '' };
-  return {
-   ...sale,
-   customer_name: customer.name,
-   customer_email: customer.email,
-   customer_address: customer.address,
-   // 🚨 CORRECCIÓN: Mapear nuevos campos del backend
-   total_usd: parseFloat(sale.total_usd), // total_amount_usd mapeado a total_usd
-   total_amount_ves: parseFloat(sale.total_amount_ves),
-   exchange_rate_used: parseFloat(sale.exchange_rate_used || this.bcvRate), // Tasa usada
-   usd_paid: parseFloat(sale.usd_paid || 0),
-   ves_paid: parseFloat(sale.ves_paid || 0),
-   payment_method: sale.payment_method || 'N/A',
-   items: sale.items.map(item => ({
-  ...item,
-  price_usd: parseFloat(item.price_usd || item.price) // El backend devuelve price_usd en la consulta GET
-   }))
-  };
- });
-
- // 💡 AJUSTE CLAVE: Usamos 'cedula' y simplificamos la clave de búsqueda.
- this.customers = customersResponse.data.map(c => ({
-   ...c,
-   cedula: c.cedula || 'N/A', // 💡 Usando 'cedula' según la BD.
-   // Creamos una clave combinada para la búsqueda en AutocompleteSearch
-   // Solo nombre y cedula
-   fullSearchKey: `${c.name} - Cédula: ${c.cedula || 'N/A'}`
- }));
-
- this.products = productsResponse.data.map(p => ({
-   ...p,
-   stock: Number(p.stock),
-   price: Number(p.price) // Precio unitario en USD
- }));
- } catch (error) {
- console.error("Error fetching data:", error);
- alert('Error al cargar ventas o clientes/productos. Verifique la consola.');
- } finally {
- this.loading = false;
- }
+  data() {
+    return {
+      sales: [],
+      customers: [],
+      products: [],
+      newSale: {
+        customer_id: null,
+        items: [{ product_id: null, quantity: 1, price: 0 }],
+        payment: {
+          method: 'USD',
+          usd_paid: 0,
+          ves_paid: 0,
+        },
+        // 🟢 Campo para los días de crédito
+        credit_days: 30, // Valor por defecto
+      },
+      loading: false,
+      creating: false,
+      localStockAlerts: [],
+      bcvRate: 0, 
+    };
   },
- 
-  // Función: Calcula el total de la venta en USD
-  calculateTotalAmountUSD() {
- return this.newSale.items.reduce((total, item) => {
-   const product = this.products.find(p => p.id === item.product_id);
-   const price = product ? Number(product.price) : 0;
-   const quantity = Number(item.quantity) || 0;
-   return total + (price * quantity);
- }, 0);
+  async mounted() {
+    await this.fetchData();
   },
+  methods: {
+    async fetchBcvRate() {
+      try {
+        const response = await axios.get('/api/exchange-rate');
+        this.bcvRate = parseFloat(response.data.rate);
+        console.log(`Tasa BCV obtenida: Bs. ${this.bcvRate.toFixed(2)}`);
+      } catch (error) {
+        console.error("Error fetching BCV rate. Using default rate of 36.5.", error);
+        this.bcvRate = 36.5;
+      }
+    },
 
-  // Función: Calcula la cantidad restante a pagar en VES (para pago mixto)
-  calculateVesRequired() {
- const totalUSD = this.calculateTotalAmountUSD();
- const usdPaid = Number(this.newSale.payment.usd_paid) || 0;
+    async fetchData() {
+      this.loading = true;
+      try {
+        await this.fetchBcvRate();
 
- let remainingUSD = totalUSD - usdPaid;
+        const [salesResponse, customersResponse, productsResponse] = await Promise.all([
+          axios.get('/api/sales'),
+          axios.get('/api/customers'),
+          axios.get('/api/products')
+        ]);
 
- // Si ya pagó de más o completo en USD, no necesita VES
- if (remainingUSD <= PAYMENT_TOLERANCE) {
-   return 0;
- }
+        const customersMap = new Map(customersResponse.data.map(c => [c.id, c]));
 
- return remainingUSD * this.bcvRate;
-  },
+        this.sales = salesResponse.data.map(sale => {
+          const customer = customersMap.get(sale.customer_id) || { name: 'Cliente Desconocido', email: '', address: '' };
+          return {
+            ...sale,
+            customer_name: customer.name,
+            customer_email: customer.email,
+            customer_address: customer.address,
+            // 🚨 Mapear campos de pago y crédito
+            total_usd: parseFloat(sale.total_usd), 
+            total_amount_ves: parseFloat(sale.total_amount_ves),
+            exchange_rate_used: parseFloat(sale.exchange_rate_used || this.bcvRate), 
+            usd_paid: parseFloat(sale.usd_paid || 0),
+            ves_paid: parseFloat(sale.ves_paid || 0),
+            payment_method: sale.payment_method || sale.tipo_pago || 'N/A', // Usar tipo_pago si payment_method es N/A
+            balance_due_usd: parseFloat(sale.balance_due_usd || 0),
+            status: sale.tipo_pago === 'Crédito' && (parseFloat(sale.balance_due_usd || 0) > 0) ? 'Crédito' : sale.status, 
+            items: sale.items.map(item => ({
+              ...item,
+              price_usd: parseFloat(item.price_usd || item.price) 
+            }))
+          };
+        });
 
-  // Función: Validar que el pago cubra el total de la venta
-  isPaymentValid() {
- const totalUSD = this.calculateTotalAmountUSD();
- const usdPaid = Number(this.newSale.payment.usd_paid) || 0;
- const vesPaid = Number(this.newSale.payment.ves_paid) || 0;
+        this.customers = customersResponse.data.map(c => ({
+          ...c,
+          cedula: c.cedula || 'N/A', 
+          fullSearchKey: `${c.name} - Cédula: ${c.cedula || 'N/A'}`
+        }));
 
- // Si la tasa BCV no se ha cargado, evitamos errores y asumimos temporalmente que es válida
- if (this.bcvRate === 0 && totalUSD > 0) return true;
+        this.products = productsResponse.data.map(p => ({
+          ...p,
+          stock: Number(p.stock),
+          price: Number(p.price) 
+        }));
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        alert('Error al cargar ventas o clientes/productos. Verifique la consola.');
+      } finally {
+        this.loading = false;
+      }
+    },
+    
+    calculateTotalAmountUSD() {
+      return this.newSale.items.reduce((total, item) => {
+        const product = this.products.find(p => p.id === item.product_id);
+        const price = product ? Number(product.price) : 0;
+        const quantity = Number(item.quantity) || 0;
+        return total + (price * quantity);
+      }, 0);
+    },
+    
+    calculateBalanceDue() {
+      const totalUSD = this.calculateTotalAmountUSD();
+      const usdPaid = Number(this.newSale.payment.usd_paid) || 0;
+      const vesPaid = Number(this.newSale.payment.ves_paid) || 0;
 
- // Equivalencia del pago en bolívares a USD
- const vesPaidInUSD = vesPaid / this.bcvRate;
+      const vesPaidInUSD = this.bcvRate > 0 ? vesPaid / this.bcvRate : 0;
+      const totalPaidInUSD = usdPaid + vesPaidInUSD;
 
- const totalPaidInUSD = usdPaid + vesPaidInUSD;
+      const balance = totalUSD - totalPaidInUSD;
+      return balance > PAYMENT_TOLERANCE ? balance : 0;
+    },
 
- // Verificar si el pago cubre el total (con tolerancia)
- return totalPaidInUSD >= totalUSD - PAYMENT_TOLERANCE;
-  },
+    calculateVesRequired() {
+      const totalUSD = this.calculateTotalAmountUSD();
+      const usdPaid = Number(this.newSale.payment.usd_paid) || 0;
 
-  // Función: Reinicia los campos de pago al cambiar el método
-  resetPaymentFields() {
- this.newSale.payment.usd_paid = 0;
- this.newSale.payment.ves_paid = 0;
+      let remainingUSD = totalUSD - usdPaid;
 
- const totalUSD = this.calculateTotalAmountUSD();
+      if (remainingUSD <= PAYMENT_TOLERANCE) {
+        return 0;
+      }
 
- // Lógica de autocompletado: Si no hay items, no hacemos nada
- if (totalUSD === 0) return;
+      return remainingUSD * this.bcvRate;
+    },
 
- // Lógica de autocompletado para 'VES'
- if (this.newSale.payment.method === 'VES') {
-   this.newSale.payment.ves_paid = totalUSD * this.bcvRate;
- }
- // Lógica de autocompletado para 'USD'
- else if (this.newSale.payment.method === 'USD') {
-   this.newSale.payment.usd_paid = totalUSD;
- }
-  },
+    isPaymentValid() {
+      // Si es CRÉDITO, se permite que el pago sea parcial (o nulo)
+      if (this.newSale.payment.method === 'CREDIT') {
+        return true; 
+      }
 
-  // ... (Métodos de Stock y Formularios: getProductStock, checkLocalStockAlert, updateLocalAlerts, addItem, removeItem, handleProductSelection)
-  getProductStock(productId) {
- const product = this.products.find(p => p.id === productId);
- return product ? product.stock : 0;
-  },
- 
-  checkLocalStockAlert(item) {
- const product = this.products.find(p => p.id === item.product_id);
- if (!product || item.quantity < 1) return;
+      const totalUSD = this.calculateTotalAmountUSD();
+      const usdPaid = Number(this.newSale.payment.usd_paid) || 0;
+      const vesPaid = Number(this.newSale.payment.ves_paid) || 0;
 
- this.updateLocalAlerts();
+      if (this.bcvRate === 0 && totalUSD > 0) return true;
 
- if (item.quantity > product.stock) {
-   item.quantity = product.stock;
- }
-  },
+      const vesPaidInUSD = vesPaid / this.bcvRate;
+      const totalPaidInUSD = usdPaid + vesPaidInUSD;
 
-  updateLocalAlerts() {
- const alerts = [];
- const validItems = this.newSale.items.filter(i => i.product_id && i.quantity > 0);
+      return totalPaidInUSD >= totalUSD - PAYMENT_TOLERANCE;
+    },
 
- for (const item of validItems) {
-   const product = this.products.find(p => p.id === item.product_id);
-   if (product) {
-  const remaining_stock = product.stock - item.quantity;
- 
-  if (remaining_stock <= STOCK_THRESHOLD) {
-    let alert_msg;
-    if (remaining_stock < 0) {
-   alert_msg = `ERROR: La cantidad excede el stock de ${product.name} (${product.stock}).`;
-    } else if (remaining_stock === 0) {
-   alert_msg = `ADVERTENCIA: El stock de ${product.name} se AGOTARÁ con esta venta.`;
-    } else {
-   alert_msg = `ALERTA: El stock de ${product.name} quedará en ${remaining_stock} (Umbral: ${STOCK_THRESHOLD}).`;
+    resetPaymentFields() {
+      this.newSale.payment.usd_paid = 0;
+      this.newSale.payment.ves_paid = 0;
+
+      const totalUSD = this.calculateTotalAmountUSD();
+
+      if (totalUSD === 0) return;
+
+      if (this.newSale.payment.method === 'CREDIT') {
+        return;
+      }
+
+      if (this.newSale.payment.method === 'VES') {
+        this.newSale.payment.ves_paid = totalUSD * this.bcvRate;
+      }
+      else if (this.newSale.payment.method === 'USD') {
+        this.newSale.payment.usd_paid = totalUSD;
+      }
+    },
+
+    getProductStock(productId) {
+      const product = this.products.find(p => p.id === productId);
+      return product ? product.stock : 0;
+    },
+    
+    checkLocalStockAlert(item) {
+      const product = this.products.find(p => p.id === item.product_id);
+      if (!product || item.quantity < 1) return;
+
+      this.updateLocalAlerts();
+
+      if (item.quantity > product.stock) {
+        item.quantity = product.stock;
+      }
+    },
+
+    updateLocalAlerts() {
+      const alerts = [];
+      const validItems = this.newSale.items.filter(i => i.product_id && i.quantity > 0);
+
+      for (const item of validItems) {
+        const product = this.products.find(p => p.id === item.product_id);
+        if (product) {
+          const remaining_stock = product.stock - item.quantity;
+          
+          if (remaining_stock <= STOCK_THRESHOLD) {
+            let alert_msg;
+            if (remaining_stock < 0) {
+              alert_msg = `ERROR: La cantidad excede el stock de ${product.name} (${product.stock}).`;
+            } else if (remaining_stock === 0) {
+              alert_msg = `ADVERTENCIA: El stock de ${product.name} se AGOTARÁ con esta venta.`;
+            } else {
+              alert_msg = `ALERTA: El stock de ${product.name} quedará en ${remaining_stock} (Umbral: ${STOCK_THRESHOLD}).`;
+            }
+            alerts.push(alert_msg);
+          }
+        }
+      }
+      this.localStockAlerts = [...new Set(alerts)];
+    },
+
+    addItem() {
+      this.newSale.items.push({ product_id: null, quantity: 1, price: 0 });
+      this.updateLocalAlerts();
+      this.resetPaymentFields(); 
+    },
+
+    removeItem(index) {
+      if (this.newSale.items.length > 1) {
+        this.newSale.items.splice(index, 1);
+        this.updateLocalAlerts();
+        this.resetPaymentFields(); 
+      }
+    },
+
+    handleProductSelection(item, productId) {
+      item.product_id = productId;
+
+      if (productId) {
+        const selectedProduct = this.products.find(p => p.id === productId);
+        if (selectedProduct) {
+          item.price = selectedProduct.price;
+          if (item.quantity > selectedProduct.stock) {
+            item.quantity = selectedProduct.stock;
+          }
+          this.checkLocalStockAlert(item);
+          this.resetPaymentFields(); 
+        }
+      } else {
+        item.price = 0;
+        this.updateLocalAlerts();
+        this.resetPaymentFields(); 
+      }
+    },
+
+
+    async createSale() {
+      const validItems = this.newSale.items
+        .filter(i => i.product_id && i.quantity > 0 && i.quantity <= this.getProductStock(i.product_id))
+        .map(item => ({
+          product_id: item.product_id,
+          quantity: Number(item.quantity),
+          price: Number(item.price),
+        }));
+
+      if (this.newSale.payment.method === 'CREDIT' && (this.newSale.credit_days == null || this.newSale.credit_days <= 0)) {
+        alert('Por favor, ingresa un número de Días de Crédito positivo.');
+        return;
+      }
+      
+      if (!this.isPaymentValid()) {
+        alert('El monto pagado es insuficiente para cubrir el total de la venta.');
+        return;
+      }
+
+      if (!this.newSale.customer_id || this.newSale.customer_id.trim() === "") {
+        alert('Por favor, selecciona un cliente válido.');
+        return;
+      }
+      if (validItems.length === 0) {
+        alert('Por favor, añade al menos un producto válido con una cantidad positiva que no exceda el stock.');
+        return;
+      }
+
+      // 1. TRADUCCIÓN DEL TIPO DE PAGO AL FORMATO DEL BACKEND
+      let tipoPagoValue = 'Contado';
+      let creditDaysValue = undefined;
+      
+      if (this.newSale.payment.method === 'CREDIT') {
+        tipoPagoValue = 'Crédito'; 
+        creditDaysValue = Number(this.newSale.credit_days); 
+      } else {
+        tipoPagoValue = 'Contado';
+      }
+      
+      this.creating = true;
+      try {
+        // 🟢 CORRECCIÓN CLAVE: PREPARAR PAYLOAD CON CAMPOS AL NIVEL RAÍZ
+        const salePayload = {
+          customer_id: this.newSale.customer_id,
+          items: validItems,
+          
+          tipo_pago: tipoPagoValue, 
+          dias_credito: creditDaysValue, 
+          
+          // Montos de pago
+          usd_paid: Number(this.newSale.payment.usd_paid),
+          ves_paid: Number(this.newSale.payment.ves_paid),
+        };
+        
+        const response = await axios.post('/api/sales', salePayload);
+        const responseData = response.data;
+
+        let successMessage = `Venta #${responseData.sale_id.substring(0, 8)}... registrada exitosamente!`;
+        if (responseData.stock_alerts && responseData.stock_alerts.length > 0) {
+          successMessage += "\n\n⚠️ **ATENCIÓN INVENTARIO:**\n" + responseData.stock_alerts.join('\n');
+          console.warn("Stock Alerts from Backend:", responseData.stock_alerts);
+        }
+
+        alert(successMessage);
+        
+        // Reiniciar formulario
+        this.newSale = {
+          customer_id: null,
+          items: [{ product_id: null, quantity: 1, price: 0 }],
+          payment: { method: 'USD', usd_paid: 0, ves_paid: 0 },
+          credit_days: 30 
+        };
+        this.localStockAlerts = [];
+        await this.fetchData(); 
+      } catch (error) {
+        console.error('Error al registrar la venta:', error.response ? error.response.data : error.message);
+        let errorMessage = 'Error al registrar la venta. Por favor, inténtalo de nuevo.';
+        if (error.response && error.response.data && error.response.data.msg) {
+          errorMessage += ' Detalles: ' + error.response.data.msg;
+        } else {
+          errorMessage += ' Detalles: ' + error.message;
+        }
+        alert(errorMessage);
+      } finally {
+        this.creating = false;
+      }
+    },
+
+    // ... (rest of utility methods: generateInvoicePdf, formatDate)
+    generateInvoicePdf(sale) {
+      // ... (mantener tu código de jsPDF)
+      const bcvRate = parseFloat(sale.exchange_rate_used);
+      const totalAmountUSD = parseFloat(sale.total_usd);
+      const totalAmountVES = parseFloat(sale.total_amount_ves);
+      
+      const balanceDueUSD = sale.balance_due_usd || 0; 
+      const balanceDueVES = balanceDueUSD * bcvRate; 
+
+      const itemsWithVES = sale.items.map(item => {
+        const priceUSD = parseFloat(item.price_usd);
+        return {
+          ...item,
+          price_ves: priceUSD * bcvRate,
+          total_ves: (priceUSD * item.quantity) * bcvRate,
+          price_usd: priceUSD
+        };
+      });
+
+      const doc = new jsPDF();
+      let y = 10; 
+
+      // === ENCABEZADO ===
+      doc.setFontSize(18);
+      doc.text("Factura de Venta", 105, y, null, null, "center");
+      y += 10;
+      doc.setFontSize(10);
+      doc.text("Empresa XYZ S.A.", 105, y, null, null, "center");
+      y += 5;
+      doc.text("Av. Principal #123, Ciudad - RIF: J-12345678-9", 105, y, null, null, "center");
+      y += 5;
+      doc.text("contacto@empresa.com", 105, y, null, null, "center");
+      y += 15;
+
+      // === DETALLES DE FACTURA ===
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text("Detalles de la Factura", 10, y);
+      doc.setFont(undefined, 'normal');
+      y += 7;
+      doc.text(`Número de Factura: ${sale.id.substring(0, 8).toUpperCase()}`, 10, y);
+      y += 7;
+      doc.text(`Fecha: ${this.formatDate(sale.sale_date)}`, 10, y);
+      y += 7;
+      doc.text(`Tasa de Cambio (VES/USD): Bs. ${bcvRate.toFixed(2)}`, 10, y);
+      y += 7;
+      doc.text(`Estado: ${sale.status}`, 10, y);
+
+      if (sale.seller_email) {
+        y += 7;
+        doc.text(`Vendedor: ${sale.seller_email}`, 10, y);
+      }
+      y += 10;
+
+      // === DETALLES DEL CLIENTE ===
+      doc.setFont(undefined, 'bold');
+      doc.text("Detalles del Cliente", 10, y);
+      doc.setFont(undefined, 'normal');
+      y += 7;
+      doc.text(`Nombre: ${sale.customer_name}`, 10, y);
+      if (sale.customer_email) {
+        y += 7;
+        doc.text(`Email: ${sale.customer_email}`, 10, y);
+      }
+      if (sale.customer_address) {
+        y += 7;
+        doc.text(`Dirección: ${sale.customer_address}`, 10, y);
+      }
+      y += 10;
+
+      // === TABLA DE PRODUCTOS (Encabezado) ===
+      doc.setFontSize(10);
+      doc.setFillColor(230, 230, 230);
+      doc.rect(10, y, 190, 8, 'F');
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'bold');
+
+      // Encabezados de Columna
+      doc.text("Producto", 12, y + 5);
+      doc.text("Cantidad", 70, y + 5, null, null, "right"); 
+      doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
+      doc.text("P. Unitario BS", 140, y + 5, null, null, "right");
+      doc.text("TOTAL BS", 185, y + 5, null, null, "right");
+
+      doc.setFont(undefined, 'normal');
+      y += 8;
+
+      // === TABLA DE PRODUCTOS (Filas) ===
+      doc.setFontSize(10);
+      doc.setTextColor(50, 50, 50);
+
+      itemsWithVES.forEach(item => {
+        doc.text(item.product_name.substring(0, 30), 12, y + 5);
+        doc.text(String(item.quantity), 70, y + 5, null, null, "right"); 
+        doc.text(`$${item.price_usd.toFixed(2)}`, 105, y + 5, null, null, "right");
+        doc.text(`Bs. ${item.price_ves.toFixed(2)}`, 140, y + 5, null, null, "right");
+        doc.text(`Bs. ${item.total_ves.toFixed(2)}`, 185, y + 5, null, null, "right");
+        y += 7;
+
+        if (y > 270) {
+          doc.addPage();
+          y = 10;
+          doc.setFontSize(10);
+          doc.setFillColor(230, 230, 230);
+          doc.rect(10, y, 190, 8, 'F');
+          doc.setTextColor(0, 0, 0);
+          doc.setFont(undefined, 'bold');
+          doc.text("Producto", 12, y + 5);
+          doc.text("Cantidad", 70, y + 5, null, null, "right");
+          doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
+          doc.text("P. Unitario BS", 140, y + 5, null, null, "right");
+          doc.text("TOTAL BS", 185, y + 5, null, null, "right");
+          doc.setFont(undefined, 'normal');
+          y += 8;
+        }
+      });
+
+      y += 10;
+
+      // === TOTALES Y PAGO ===
+      doc.setDrawColor(150, 150, 150);
+      doc.setLineWidth(0.3);
+      doc.line(120, y, 200, y);
+      y += 5;
+
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text("TOTAL VENTA (Bs):", 120, y);
+      doc.text(`Bs. ${totalAmountVES.toFixed(2)}`, 185, y, null, null, "right");
+      y += 7; 
+
+      if (balanceDueUSD > 0) {
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'normal');
+          doc.text(`Pagado en USD: $${sale.usd_paid.toFixed(2)}`, 120, y);
+          y += 5;
+          doc.text(`Pagado en BS: Bs. ${sale.ves_paid.toFixed(2)}`, 120, y);
+          y += 7; 
+          doc.setFontSize(12);
+          doc.setFont(undefined, 'bold');
+          doc.text(`SALDO PENDIENTE (Bs):`, 120, y);
+          doc.text(`Bs. ${balanceDueVES.toFixed(2)}`, 185, y, null, null, "right");
+          y += 7;
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'normal');
+          doc.text(`Saldo Referencial (USD): $${balanceDueUSD.toFixed(2)}`, 120, y);
+      } else {
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        doc.text(`Total Referencial (USD): $${totalAmountUSD.toFixed(2)}`, 120, y);
+        y += 5;
+        doc.text(`Método de Pago: ${sale.payment_method || 'N/A'}`, 120, y);
+        y += 5;
+        doc.text(`Pagado en USD: $${sale.usd_paid.toFixed(2)}`, 120, y);
+        y += 5;
+        doc.text(`Pagado en BS: Bs. ${sale.ves_paid.toFixed(2)}`, 120, y);
+      }
+      
+      y += 10;
+
+
+      // === PIE DE PÁGINA ===
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}`, 10, 290);
+      doc.text("Gracias por su compra!", 105, 290, null, null, "center");
+
+      doc.save(`Factura_Venta_${sale.id.substring(0, 8)}.pdf`);
+    },
+    
+    formatDate(date) {
+      const d = new Date(date);
+      if (isNaN(d)) {
+        return 'Fecha inválida';
+      }
+      return new Intl.DateTimeFormat('es-ES', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(d);
     }
-    alerts.push(alert_msg);
-  }
-   }
- }
- this.localStockAlerts = [...new Set(alerts)];
   },
-
-  addItem() {
- this.newSale.items.push({ product_id: null, quantity: 1, price: 0 });
- this.updateLocalAlerts();
- this.resetPaymentFields(); // Reajustar el pago al agregar/quitar items
-  },
-
-  removeItem(index) {
- if (this.newSale.items.length > 1) {
- this.newSale.items.splice(index, 1);
- this.updateLocalAlerts();
- this.resetPaymentFields(); // Reajustar el pago al agregar/quitar items
- }
-  },
-
-  handleProductSelection(item, productId) {
- item.product_id = productId;
-
- if (productId) {
- const selectedProduct = this.products.find(p => p.id === productId);
- if (selectedProduct) {
-  item.price = selectedProduct.price;
-  if (item.quantity > selectedProduct.stock) {
-   item.quantity = selectedProduct.stock;
-  }
-  this.checkLocalStockAlert(item);
-  this.resetPaymentFields(); // Reajustar el pago al cambiar de producto
- }
- } else {
- item.price = 0;
- this.updateLocalAlerts();
- this.resetPaymentFields(); // Reajustar el pago
- }
-  },
-
-
-  async createSale() {
- const validItems = this.newSale.items
-  .filter(i => i.product_id && i.quantity > 0 && i.quantity <= this.getProductStock(i.product_id))
-  .map(item => ({
-  product_id: item.product_id,
-  quantity: Number(item.quantity),
-  price: Number(item.price),
-  }));
-
- if (!this.isPaymentValid()) {
-  alert('El monto pagado es insuficiente para cubrir el total de la venta.');
-  return;
- }
-
- if (!this.newSale.customer_id || this.newSale.customer_id.trim() === "") {
-  alert('Por favor, selecciona un cliente válido.');
-  return;
- }
- if (validItems.length === 0) {
-  alert('Por favor, añade al menos un producto válido con una cantidad positiva que no exceda el stock.');
-  return;
- }
-
- this.creating = true;
- try {
-  // 🚨 PREPARAR PAYLOAD con datos de pago y la tasa de cambio actual
-  const salePayload = {
-  customer_id: this.newSale.customer_id,
-  items: validItems,
-  payment: {
-   method: this.newSale.payment.method,
-   usd_paid: Number(this.newSale.payment.usd_paid),
-   ves_paid: Number(this.newSale.payment.ves_paid),
-  }
-  };
- 
-  const response = await axios.post('/api/sales', salePayload);
-  const responseData = response.data;
-
-  let successMessage = `Venta #${responseData.sale_id.substring(0, 8)}... registrada exitosamente!`;
-  if (responseData.stock_alerts && responseData.stock_alerts.length > 0) {
-  successMessage += "\n\n⚠️ **ATENCIÓN INVENTARIO:**\n" + responseData.stock_alerts.join('\n');
-  console.warn("Stock Alerts from Backend:", responseData.stock_alerts);
-  }
-
-  alert(successMessage);
- 
-  // 3. **Reiniciar formulario**
-  this.newSale = {
-   customer_id: null,
-   items: [{ product_id: null, quantity: 1, price: 0 }],
-   payment: { method: 'USD', usd_paid: 0, ves_paid: 0 }
-  };
-  this.localStockAlerts = [];
-  await this.fetchData(); // Volver a cargar datos para ver el nuevo stock y las ventas
- } catch (error) {
-  console.error('Error al registrar la venta:', error.response ? error.response.data : error.message);
-  let errorMessage = 'Error al registrar la venta. Por favor, inténtalo de nuevo.';
-  if (error.response && error.response.data && error.response.data.msg) {
-  errorMessage += ' Detalles: ' + error.response.data.msg;
-  } else {
-  errorMessage += ' Detalles: ' + error.message;
-  }
-  alert(errorMessage);
- } finally {
-  this.creating = false;
- }
-  },
-
-  // 🚨 Función: Generar Factura en Bolívares (VES)
- // La función generateInvoicePdf fue corregida en la respuesta anterior
-  generateInvoicePdf(sale) {
- // Usar los montos ya convertidos y la tasa registrada en la DB (sale.exchange_rate_used)
- const bcvRate = parseFloat(sale.exchange_rate_used);
- const totalAmountUSD = parseFloat(sale.total_usd);
- const totalAmountVES = parseFloat(sale.total_amount_ves);
-
- // Preparación de ítems con precio en VES
- const itemsWithVES = sale.items.map(item => {
-  const priceUSD = parseFloat(item.price_usd);
-  return {
-  ...item,
-  price_ves: priceUSD * bcvRate,
-  total_ves: (priceUSD * item.quantity) * bcvRate,
-  price_usd: priceUSD
-  };
- });
-
- const doc = new jsPDF();
- let y = 10; // Posición Y inicial
-
- // === ENCABEZADO ===
- doc.setFontSize(18);
- doc.text("Factura de Venta", 105, y, null, null, "center");
- y += 10;
- doc.setFontSize(10);
- doc.text("Empresa XYZ S.A.", 105, y, null, null, "center");
- y += 5;
- doc.text("Av. Principal #123, Ciudad - RIF: J-12345678-9", 105, y, null, null, "center");
- y += 5;
- doc.text("contacto@empresa.com", 105, y, null, null, "center");
- y += 15;
-
- // === DETALLES DE FACTURA ===
- doc.setFontSize(12);
- doc.setFont(undefined, 'bold');
- doc.text("Detalles de la Factura", 10, y);
- doc.setFont(undefined, 'normal');
- y += 7;
- doc.text(`Número de Factura: ${sale.id.substring(0, 8).toUpperCase()}`, 10, y);
- y += 7;
- doc.text(`Fecha: ${this.formatDate(sale.sale_date)}`, 10, y);
- y += 7;
- doc.text(`Tasa de Cambio (VES/USD): Bs. ${bcvRate.toFixed(2)}`, 10, y);
- y += 7;
- doc.text(`Estado: ${sale.status}`, 10, y);
-
- if (sale.seller_email) {
-  y += 7;
-  doc.text(`Vendedor: ${sale.seller_email}`, 10, y);
- }
- y += 10;
-
- // === DETALLES DEL CLIENTE ===
- doc.setFont(undefined, 'bold');
- doc.text("Detalles del Cliente", 10, y);
- doc.setFont(undefined, 'normal');
- y += 7;
- doc.text(`Nombre: ${sale.customer_name}`, 10, y);
- if (sale.customer_email) {
-  y += 7;
-  doc.text(`Email: ${sale.customer_email}`, 10, y);
- }
- if (sale.customer_address) {
-  y += 7;
-  doc.text(`Dirección: ${sale.customer_address}`, 10, y);
- }
- y += 10;
-
- // === TABLA DE PRODUCTOS (Encabezado) ===
- doc.setFontSize(10);
- doc.setFillColor(230, 230, 230);
- doc.rect(10, y, 190, 8, 'F');
- doc.setTextColor(0, 0, 0);
- doc.setFont(undefined, 'bold');
-
- // Encabezados de Columna
- doc.text("Producto", 12, y + 5);
- doc.text("Cantidad", 70, y + 5, null, null, "right"); // Alineación a la derecha
- doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
- doc.text("P. Unitario BS", 140, y + 5, null, null, "right");
- doc.text("TOTAL BS", 185, y + 5, null, null, "right");
-
- doc.setFont(undefined, 'normal');
- y += 8;
-
- // === TABLA DE PRODUCTOS (Filas) ===
- doc.setFontSize(10);
- doc.setTextColor(50, 50, 50);
-
- itemsWithVES.forEach(item => {
- // Filas de Producto
- doc.text(item.product_name.substring(0, 30), 12, y + 5);
- doc.text(String(item.quantity), 70, y + 5, null, null, "right"); // Alineación a la derecha
- doc.text(`$${item.price_usd.toFixed(2)}`, 105, y + 5, null, null, "right");
- doc.text(`Bs. ${item.price_ves.toFixed(2)}`, 140, y + 5, null, null, "right");
- doc.text(`Bs. ${item.total_ves.toFixed(2)}`, 185, y + 5, null, null, "right");
- y += 7;
-
- // Manejo de Salto de Página (mantenido)
- if (y > 270) {
-   doc.addPage();
-   y = 10;
-   doc.setFontSize(10);
-   doc.setFillColor(230, 230, 230);
-   doc.rect(10, y, 190, 8, 'F');
-   doc.setTextColor(0, 0, 0);
-   doc.setFont(undefined, 'bold');
-   doc.text("Producto", 12, y + 5);
-   doc.text("Cantidad", 70, y + 5, null, null, "right");
-   doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
-   doc.text("P. Unitario BS", 140, y + 5, null, null, "right");
-   doc.text("TOTAL BS", 185, y + 5, null, null, "right");
-   doc.setFont(undefined, 'normal');
-   y += 8;
- }
- });
-
- y += 10;
-
- // === TOTALES Y PAGO ===
-
- // Línea divisoria de totales
- doc.setDrawColor(150, 150, 150);
- doc.setLineWidth(0.3);
- // Ajuste de coordenadas: La línea se dibuja de 120 a 200 para centrarse con los totales.
- doc.line(120, y, 200, y);
- y += 5;
-
- // TOTAL A PAGAR (Bs)
- doc.setFontSize(14);
- doc.setFont(undefined, 'bold');
- // Ajuste de posición (X=120, alineado a la izquierda)
- doc.text("TOTAL A PAGAR (Bs):", 120, y);
- // Ajuste de posición (X=185, alineado a la derecha)
- doc.text(`Bs. ${totalAmountVES.toFixed(2)}`, 185, y, null, null, "right");
-
- y += 7; // Más espacio
-
- // Total en USD como referencia
- doc.setFontSize(10);
- doc.setFont(undefined, 'normal');
- doc.text(`Total Referencial (USD): $${totalAmountUSD.toFixed(2)}`, 120, y);
-
- // Detalles de Pago
- y += 5;
- doc.text(`Método de Pago: ${sale.payment_method || 'N/A'}`, 120, y);
- y += 5;
- doc.text(`Pagado en USD: $${sale.usd_paid.toFixed(2)}`, 120, y);
- y += 5;
- doc.text(`Pagado en BS: Bs. ${sale.ves_paid.toFixed(2)}`, 120, y);
-
- // === PIE DE PÁGINA ===
- doc.setFontSize(8);
- doc.setTextColor(100, 100, 100);
- // Se mantiene 290 para asegurar que esté al fondo
- doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}`, 10, 290);
- doc.text("Gracias por su compra!", 105, 290, null, null, "center");
-
- doc.save(`Factura_Venta_${sale.id.substring(0, 8)}.pdf`);
-  },
- 
-  // ... (rest of methods)
-  formatDate(date) {
- const d = new Date(date);
- if (isNaN(d)) {
- return 'Fecha inválida';
- }
- return new Intl.DateTimeFormat('es-ES', {
- year: 'numeric',
- month: '2-digit',
- day: '2-digit',
- hour: '2-digit',
- minute: '2-digit'
- }).format(d);
-  }
- },
 };
 </script>
 
-<style scoped>
-/* Estilos CSS (sin cambios, omitido para brevedad) */
-/* ... (Se mantiene el <style scoped> original) */
-</style>
 
 <style scoped>
 /* Estilos CSS */
