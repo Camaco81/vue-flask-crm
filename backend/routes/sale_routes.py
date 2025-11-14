@@ -4,7 +4,7 @@ from backend.db import get_db_cursor
 from psycopg2 import sql 
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission
 from backend.utils.bcv_api import get_dolarvzla_rate 
-from backend.utils.inventory_utils import verificar_stock_y_alertar 
+from backend.utils.inventory_utils import verificar_stock_y_alertar, STOCK_THRESHOLD
 import logging
 from decimal import Decimal
 import uuid
@@ -17,8 +17,7 @@ app_logger = logging.getLogger('backend.routes.sale_routes')
 # CONSTANTES GLOBALES CORREGIDAS Y AGREGADAS
 # =========================================================
 
-# Umbral de stock bajo para la alerta
-STOCK_THRESHOLD = 10 
+
 # Roles que pueden realizar ventas (admin/vendedor)
 SALES_ROLES = ['admin', 'vendedor'] 
 # Tolerancia para pagos (para manejar errores de coma flotante)

@@ -1,6 +1,12 @@
 from backend.db import get_db_cursor
 import uuid
 from datetime import date
+
+STOCK_THRESHOLD = 10 
+
+# Configura tu logger si es necesario
+inv_logger = logging.getLogger('backend.utils.inventory_utils')
+
 def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id: str = None):
     """Inserta una nueva notificación en la base de datos."""
     try:
@@ -24,7 +30,7 @@ def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id
 from backend.db import get_db_cursor
 import logging
 # ⚠️ IMPORTANTE: Importar la constante definida en el archivo de rutas
-from backend.routes.sale_routes import STOCK_THRESHOLD 
+
 
 # Configura tu logger si es necesario
 inv_logger = logging.getLogger('backend.utils.inventory_utils')
@@ -34,8 +40,7 @@ def verificar_stock_y_alertar(product_id):
     
     try:
         with get_db_cursor() as cur:
-            # 🟢 CORRECCIÓN DEL UNDEFINED COLUMN: Usar 'stock' en lugar de 'stock_actual'.
-            # Usaremos el STOCK_THRESHOLD como un valor para comparar si no tienes una columna 'stock_minimo'.
+            # Consulta corregida para usar 'stock'
             cur.execute(
                 "SELECT name, stock FROM products WHERE id = %s", 
                 (product_id,)
@@ -43,7 +48,7 @@ def verificar_stock_y_alertar(product_id):
             product = cur.fetchone()
             
             if not product:
-                return None # Producto no encontrado
+                return None 
 
             current_stock = product['stock']
             product_name = product['name']
@@ -54,15 +59,11 @@ def verificar_stock_y_alertar(product_id):
                     f"tiene solo {current_stock} unidades restantes (Umbral: {STOCK_THRESHOLD})."
                 )
             
-            return None # No se requiere alerta
+            return None 
             
     except Exception as e:
-        # Registra el error para evitar el fallo de la transacción principal
         inv_logger.error(f"Error en verificar_stock_y_alertar (product_id: {product_id}): {e}", exc_info=True)
-        # ❌ NO se retorna el error en el mensaje de alerta.
         return None
-# Ejemplo de uso:
-# verificar_stock_y_alertar('id-del-producto-vendido')
 
 ESTACIONALIDAD = [
     {
