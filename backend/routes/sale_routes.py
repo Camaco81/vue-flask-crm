@@ -8,6 +8,7 @@ from backend.utils.inventory_utils import verificar_stock_y_alertar
 import logging
 from decimal import Decimal
 import uuid
+from datetime import datetime, timedelta # Importar timedelta para fecha_vencimiento
 
 sale_bp = Blueprint('sale', __name__)
 app_logger = logging.getLogger('backend.routes.sale_routes') 
@@ -41,8 +42,9 @@ def sales_collection():
         if error := validate_required_fields(data, required_fields):
             return jsonify({"msg": f"Missing required fields: {error}"}), 400
         
-        # Campos de venta a crédito (opcionales para el POST general)
-        tipo_pago = data.get('tipo_pago', 'Contado') # Default: Contado (Usado solo en la lógica temporal)
+        # Campos de venta a crédito
+        # Usamos 'tipo_pago' solo para la lógica interna y determinar el 'status'
+        tipo_pago = data.get('tipo_pago', 'Contado')
         dias_credito = data.get('dias_credito', 30)
 
         customer_id = data.get("customer_id")
@@ -62,11 +64,12 @@ def sales_collection():
         # Bloque de Transacción
         cur = None
         try:
-            with get_db_cursor(commit=False) as cur:
+            # Usamos un bloque with para asegurar el cierre del cursor
+            with get_db_cursor(commit=False) as cur: 
                 total_amount_usd = 0.0
                 validated_items = []
 
-                # Paso 1: Verificación de Stock y Cálculo de Totales (LECTURA)
+                # Paso 1: Verificación de Stock y Cálculo de Totales (LECTURA con SELECT FOR UPDATE)
                 for item in items:
                     # Validación de items
                     if error := validate_required_fields(item, ['product_id', 'quantity']):
@@ -84,7 +87,7 @@ def sales_collection():
                         cur.connection.rollback()
                         return jsonify({"msg": f"La cantidad ({quantity_raw}) debe ser un número entero válido y positivo"}), 400
                         
-                    # Consulta de producto con bloqueo forzado (SELECT FOR UPDATE) para evitar race conditions
+                    # Consulta de producto con bloqueo forzado (SELECT FOR UPDATE)
                     cur.execute("SELECT name, price, stock FROM products WHERE id = %s FOR UPDATE", (product_id,))
                     product_row = cur.fetchone()
                     
@@ -116,15 +119,18 @@ def sales_collection():
                 total_amount_ves = total_amount_usd * exchange_rate
                 
                 # Paso 2: Validación de Crédito (Si aplica)
-                monto_pendiente = 0.0 # Se mantiene esta variable, pero se insertará en el campo 'balance_due_usd'
-                status = 'Completado'
-                fecha_vencimiento = None
+                monto_pendiente = 0.0 
+                status = 'Completado' # Default: Contado
+                
+                # Inicializamos la fecha de vencimiento a None, y la calculamos con Python/datetime
+                fecha_vencimiento_val = None 
                 
                 if tipo_pago == 'Crédito':
                     status = 'Abierto'
                     monto_pendiente = total_amount_usd
                     
                     # 2.a) Obtener límite y balance del cliente
+                    # Bloqueamos la fila del cliente para la actualización posterior
                     cur.execute(
                         "SELECT credit_limit_usd, balance_pendiente_usd FROM customers WHERE id = %s FOR UPDATE",
                         (customer_id,)
@@ -153,29 +159,36 @@ def sales_collection():
                         (nuevo_balance, customer_id)
                     )
                     
-                    # 2.d) Calcular Fecha de Vencimiento
-                    fecha_vencimiento = sql.SQL("CURRENT_DATE + INTERVAL '{} days'").format(sql.Literal(dias_credito))
-                
-                # Paso 3: Inserción de Venta
-                
-                # CORRECCIÓN #1: Eliminar "tipo_pago" de los campos de inserción ya que no existe en la tabla.
-                fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", "exchange_rate_used", "status"]
-                values = [str(uuid.uuid4()), customer_id, seller_user_id, sql.SQL("NOW()"), total_amount_usd, total_amount_ves, exchange_rate, status]
-                
-                if tipo_pago == 'Crédito':
-                    # CORRECCIÓN #2: Usar el nombre de campo correcto en la tabla "sales": "balance_due_usd"
-                    fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento"])
-                    values.extend([dias_credito, monto_pendiente, fecha_vencimiento])
+                    # 2.d) Calcular Fecha de Vencimiento con Python para evitar inyección SQL compleja
+                    fecha_vencimiento_val = datetime.now().date() + timedelta(days=dias_credito)
 
-                # Crear el string SQL para la inserción
+                # Paso 3: Inserción de Venta (CORRECCIÓN CLAVE DEL ERROR)
+                
+                # 3.a) Definición de Campos y Valores (que serán serializados/escapados)
+                fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", "exchange_rate_used", "status"]
+                values = [str(uuid.uuid4()), customer_id, seller_user_id, datetime.now(), total_amount_usd, total_amount_ves, exchange_rate, status]
+                
+                # 3.b) Añadir campos y valores específicos para Crédito
+                if tipo_pago == 'Crédito':
+                    # Usar el nombre de campo correcto en la tabla "sales": "balance_due_usd"
+                    fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento"])
+                    # Los valores de días y monto son datos simples. La fecha de vencimiento ya es un objeto datetime.date
+                    values.extend([dias_credito, monto_pendiente, fecha_vencimiento_val])
+
+                # 3.c) Construir el query con placeholders para los valores de datos
+                # Creamos una cadena de placeholders: (%s, %s, %s, ...)
+                placeholders = sql.SQL(', ').join(sql.Placeholder() * len(fields))
+                
                 query_insert_sale = sql.SQL(
                     "INSERT INTO sales ({}) VALUES ({}) RETURNING id"
                 ).format(
                     sql.SQL(', ').join(map(sql.Identifier, fields)),
-                    sql.SQL(', ').join(map(sql.Literal, values))
+                    placeholders
                 )
                 
-                cur.execute(query_insert_sale)
+                # Ejecutar el query usando la lista 'values' como parámetros
+                # Esto resuelve el 'can't adapt type 'SQL''
+                cur.execute(query_insert_sale, values)
                 new_sale_id = cur.fetchone()['id']
 
                 # Paso 4: Insertar Ítems y Disminuir Stock
@@ -192,11 +205,11 @@ def sales_collection():
                         (item['quantity'], item['product_id'])
                     )
                     
-                    # 4.c) Generar Alerta de Stock (Llamada de función UTILITARIA)
+                    # 4.c) Generar Alerta de Stock
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
                         verificar_stock_y_alertar(item['product_id'])
-                
+                        
                 # Confirmar la transacción
                 cur.connection.commit()
                 
@@ -212,8 +225,10 @@ def sales_collection():
                 return jsonify(response), 201
                 
         except Exception as e:
+            # Este bloque maneja tanto el error de programación como cualquier otro error en la transacción
             if cur and cur.connection:
-                cur.connection.rollback()
+                # El rollback aquí ya no debería dar 'connection already closed' si el error se maneja antes
+                cur.connection.rollback() 
             app_logger.error(f"Error al registrar la venta (ROLLBACK): {e}", exc_info=True)
             return jsonify({"msg": "Error interno al registrar la venta. La transacción fue cancelada.", "error": str(e)}), 500
             
@@ -229,7 +244,7 @@ def sales_collection():
                         s.total_amount_usd AS total_amount, s.total_amount_ves, 
                         s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id, 
-                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- CORRECCIÓN #3: Usar balance_due_usd con alias
+                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- CORRECCIÓN: Usar balance_due_usd
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
@@ -252,7 +267,7 @@ def sales_collection():
             base_query += """
                 GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito -- CORRECCIÓN #4: Usar balance_due_usd en GROUP BY
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito -- CORRECCIÓN: Usar balance_due_usd en GROUP BY
                 ORDER BY s.sale_date DESC;
             """
             
@@ -278,9 +293,7 @@ def sales_single(sale_id):
     sale_id_str = str(sale_id)
 
     if request.method == "GET":
-        # =========================================================
         # LÓGICA DE VISTA INDIVIDUAL (GET) - OPTIMIZADA
-        # =========================================================
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
@@ -288,7 +301,7 @@ def sales_single(sale_id):
                         s.total_amount_usd AS total_amount, 
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id,
-                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- CORRECCIÓN #5: Usar balance_due_usd con alias
+                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
@@ -310,7 +323,7 @@ def sales_single(sale_id):
             base_query += """
                 GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, 
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito; -- CORRECCIÓN #6: Usar balance_due_usd en GROUP BY
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito;
             """
 
             with get_db_cursor() as cur:
@@ -334,7 +347,7 @@ def sales_single(sale_id):
                 
                 # 1. Obtener datos clave de la venta y bloquear el cliente (si es a crédito)
                 cur.execute(
-                    # CORRECCIÓN #7: Usar 'status' en lugar de 'tipo_pago' y 'balance_due_usd' en lugar de 'monto_pendiente'
+                    # CORRECCIÓN: Usar 'status' y 'balance_due_usd'
                     "SELECT user_id, customer_id, status, balance_due_usd FROM sales WHERE id = %s FOR UPDATE",
                     (sale_id_str,)
                 )
@@ -346,8 +359,8 @@ def sales_single(sale_id):
                 
                 sale_user_id = sale_data['user_id']
                 customer_id = sale_data['customer_id']
-                tipo_pago = sale_data['status'] # Usamos status para la lógica de crédito/contado
-                monto_pendiente = float(sale_data['balance_due_usd'] or 0.0) # Usamos el campo correcto de la tabla
+                sale_status = sale_data['status'] 
+                monto_pendiente = float(sale_data['balance_due_usd'] or 0.0) 
                 
                 # 2. Verificar Permisos (Admin o vendedor creador)
                 if not check_admin_permission(user_role) and str(sale_user_id) != str(current_user_id):
@@ -355,7 +368,8 @@ def sales_single(sale_id):
                     return jsonify({"msg": "No autorizado para eliminar esta venta"}), 403
                 
                 # 3. ROLLBACK DE CRÉDITO (Si aplica)
-                if tipo_pago == 'Crédito' and monto_pendiente > 0:
+                # Solo se revierte si la venta está 'Abierto' (Crédito) y tiene saldo pendiente.
+                if sale_status == 'Abierto' and monto_pendiente > 0:
                     # Bloquear y actualizar balance del cliente
                     cur.execute(
                         "SELECT balance_pendiente_usd FROM customers WHERE id = %s FOR UPDATE",
@@ -365,9 +379,9 @@ def sales_single(sale_id):
                     
                     if customer:
                         nuevo_balance = float(customer['balance_pendiente_usd']) - monto_pendiente
-                        # Prevenir balance negativo (aunque no debería pasar si la lógica es correcta)
+                        
                         if nuevo_balance < 0:
-                            app_logger.warning(f"Balance de cliente {customer_id} se vuelve negativo al eliminar venta {sale_id_str}.")
+                            app_logger.warning(f"Balance de cliente {customer_id} se vuelve negativo al eliminar venta {sale_id_str}. Ajustando a 0.")
                             nuevo_balance = 0 
                             
                         cur.execute(
@@ -375,7 +389,7 @@ def sales_single(sale_id):
                             (nuevo_balance, customer_id)
                         )
 
-                # 4. Eliminar venta e ítems (CASCADE DELETE es mejor, pero lo hacemos explícito)
+                # 4. Reponer Stock y Eliminar
                 # 4.a) Obtener los items vendidos para reponer stock
                 cur.execute(
                     "SELECT product_id, quantity FROM sale_items WHERE sale_id = %s",
@@ -383,7 +397,7 @@ def sales_single(sale_id):
                 )
                 items_to_restore = cur.fetchall()
 
-                # 4.b) Eliminar items de venta
+                # 4.b) Eliminar items de venta (si la tabla sales_items no tiene ON DELETE CASCADE)
                 cur.execute("DELETE FROM sale_items WHERE sale_id = %s;", (sale_id_str,))
                 
                 # 4.c) Eliminar venta
@@ -426,13 +440,12 @@ def admin_general_reports():
         return jsonify({"msg": "Acceso denegado: Se requiere rol de Administrador."}), 403
 
     try:
-        # Reutilizamos la consulta base
         query = """
             SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                    s.sale_date, s.status, -- CORRECCIÓN #8: Eliminamos s.tipo_pago
+                    s.sale_date, s.status, 
                     s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
                     u.email as seller_email, u.id as seller_id, 
-                    s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, -- CORRECCIÓN #9: Usar balance_due_usd con alias
+                    s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                     json_agg(json_build_object(
                         'product_name', p.name,
                         'quantity', si.quantity,
@@ -445,7 +458,7 @@ def admin_general_reports():
             JOIN products p ON si.product_id = p.id
             GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
             s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito -- CORRECCIÓN #10: Usar balance_due_usd en GROUP BY
+            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito 
             ORDER BY s.sale_date DESC;
         """
         
