@@ -257,6 +257,18 @@ def sales_collection():
                     # 4.c) Generar Alerta de Stock
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
+                        # 🟢 CORRECCIÓN APLICADA AQUÍ: Se eliminó el argumento 'cur' 
+                        # ya que la función utilitaria solo acepta un argumento.
+                        alert_msg = verificar_stock_y_alertar(item['product_id']) 
+                        if alert_msg:
+                            stock_alerts.append(alert_msg)
+                        
+                # Confirmar la transacción
+                    cur.connection.commit()
+                    
+                    # 4.c) Generar Alerta de Stock
+                    remaining_stock = item['current_stock'] - item['quantity']
+                    if remaining_stock <= STOCK_THRESHOLD:
                         alert_msg = verificar_stock_y_alertar(item['product_id'], cur) 
                         if alert_msg:
                             stock_alerts.append(alert_msg)
