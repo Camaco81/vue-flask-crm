@@ -106,10 +106,7 @@
               <span>Registrar Venta</span>
             </router-link>
             
-            <router-link to="/vendedor/sales" class="quick-action-card">
-              <i class="fas fa-list-alt"></i>
-              <span>Ver Historial de Ventas</span>
-            </router-link>
+            
             
             </div>
         </div>

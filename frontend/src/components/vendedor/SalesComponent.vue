@@ -81,9 +81,10 @@
           </p>
         </div>
 
-        <div class="form-group">
+        
+<div class="form-group">
           <label for="payment-method">Forma de Pago:</label>
-          <select id="payment-method" v-model="newSale.payment.method" @change="resetPaymentFields">
+          <select id="payment-method" v-model="newSale.payment.method" @change="handlePaymentMethodChange">
             <option value="USD">Dólar (Efectivo/Transferencia)</option>
             <option value="VES">Bolívares (Transferencia/Punto)</option>
             <option value="MIXED">Mixto (USD + Bolívares)</option>
@@ -91,8 +92,9 @@
           </select>
         </div>
 
-        <div class="payment-fields-group">
-          <div class="form-group" v-if="newSale.payment.method === 'CREDIT'">
+        <!-- 🟢 NUEVO: Campos específicos para crédito -->
+        <div v-if="newSale.payment.method === 'CREDIT'" class="credit-fields">
+          <div class="form-group">
             <label for="credit-days">Días de Crédito:</label>
             <input
               type="number"
@@ -102,8 +104,38 @@
               required
             >
           </div>
-          
-          <div class="form-group" v-if="newSale.payment.method !== 'VES'">
+
+          <div class="form-group">
+            <label for="customer-pin">
+              🔒 PIN del Cliente (4 dígitos):
+              <span class="pin-info">(El cliente debe recordar este PIN para futuros pagos)</span>
+            </label>
+            <input
+              type="password"
+              id="customer-pin"
+              v-model="newSale.customer_pin"
+              maxlength="4"
+              placeholder="0000"
+              pattern="[0-9]{4}"
+              required
+              @input="validatePin"
+            >
+            <small v-if="pinError" class="error-message">{{ pinError }}</small>
+            <small v-else class="help-text">El cliente usará este PIN para autorizar pagos futuros de esta deuda</small>
+          </div>
+
+          <div class="form-group">
+            <label>Generar Código de Cancelación:</label>
+            <button type="button" @click="openCancellationModal" class="generate-code-btn">
+              🏷️ Generar Código
+            </button>
+            <p v-if="newSale.cancellation_code" class="code-display">
+              Código generado: <strong>{{ newSale.cancellation_code }}</strong>
+            </p>
+          </div>
+        </div>
+        <div class="payment-fields-group">
+          <div class="form-group" v-if="newSale.payment.method !== 'VES' && newSale.payment.method !== 'CREDIT'">
             <label for="usd-paid">Monto Pagado en Dólares ($):</label>
             <input
               type="number"
@@ -111,18 +143,15 @@
               v-model.number="newSale.payment.usd_paid"
               min="0"
               step="0.01"
-              :required="newSale.payment.method !== 'VES' && newSale.payment.method !== 'CREDIT'"
+              :required="newSale.payment.method !== 'VES'"
             >
           </div>
 
-          <div class="form-group" v-if="newSale.payment.method !== 'USD'">
+          <div class="form-group" v-if="newSale.payment.method !== 'USD' && newSale.payment.method !== 'CREDIT'">
             <label for="ves-paid">
               Monto Pagado en Bolívares (Bs):
               <span v-if="newSale.payment.method === 'MIXED'">
                 (Bs. Req: {{ calculateVesRequired().toFixed(2) }})
-              </span>
-              <span v-else-if="newSale.payment.method === 'CREDIT' && calculateVesRequired() > 0">
-                (Bs. Req para saldo restante: {{ calculateVesRequired().toFixed(2) }})
               </span>
             </label>
             <input
@@ -131,20 +160,28 @@
               v-model.number="newSale.payment.ves_paid"
               min="0"
               step="0.01"
-              :required="newSale.payment.method !== 'USD' && newSale.payment.method !== 'CREDIT'"
+              :required="newSale.payment.method !== 'USD'"
             >
           </div>
         </div>
         
         <button
           type="submit"
-          :disabled="creating || !newSale.customer_id || newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > getProductStock(i.product_id)) || !isPaymentValid()"
+          :disabled="creating || !isFormValid()"
           class="submit-btn"
         >
           {{ creating ? 'Registrando...' : 'Registrar Venta' }}
         </button>
       </form>
     </div>
+    
+    <!-- Modal para código de cancelación -->
+    <CodeGeneratorModal 
+      :show="showCancellationModal" 
+      @close="showCancellationModal = false"
+      @codeGenerated="handleCodeGenerated"
+      ref="cancellationModalRef"
+    />
     
     <div class="card sales-list-card">
       <h2>Ventas Registradas</h2>
@@ -174,6 +211,9 @@
             <p v-if="sale.status === 'Crédito' && sale.balance_due_usd > 0">
               **SALDO PENDIENTE:** **${{ sale.balance_due_usd.toFixed(2) }}**
             </p>
+            <p v-if="sale.cancellation_code" class="cancellation-code">
+              **Código Cancelación:** {{ sale.cancellation_code }}
+            </p>
           </div>
           <div class="sale-items">
             <h4>Elementos de la venta:</h4>
@@ -199,21 +239,24 @@ import AutocompleteSearch from './AutocompleteSearch.vue';
 import axios from '../../axios';
 import BackButton from './BackButton.vue';
 import { jsPDF } from 'jspdf';
+import CodeGeneratorModal from './CodeGeneratorModal.vue';
 
 const STOCK_THRESHOLD = 10;
-const PAYMENT_TOLERANCE = 0.02; // 2 centavos de tolerancia para la verificación de pago
+const PAYMENT_TOLERANCE = 0.02;
 
 export default {
   name: 'SalesComponent',
   components: {
     BackButton,
-    AutocompleteSearch
+    AutocompleteSearch,
+    CodeGeneratorModal
   },
   data() {
     return {
       sales: [],
       customers: [],
       products: [],
+      showCancellationModal: false,
       newSale: {
         customer_id: null,
         items: [{ product_id: null, quantity: 1, price: 0 }],
@@ -222,8 +265,9 @@ export default {
           usd_paid: 0,
           ves_paid: 0,
         },
-        // 🟢 Campo para los días de crédito
-        credit_days: 30, // Valor por defecto
+        credit_days: 30,
+        customer_pin: '', // 🟢 NUEVO: Campo para PIN del cliente
+        cancellation_code: '' // 🟢 NUEVO: Campo para código de cancelación
       },
       loading: false,
       creating: false,
@@ -266,15 +310,15 @@ export default {
             customer_name: customer.name,
             customer_email: customer.email,
             customer_address: customer.address,
-            // 🚨 Mapear campos de pago y crédito
             total_usd: parseFloat(sale.total_usd), 
             total_amount_ves: parseFloat(sale.total_amount_ves),
             exchange_rate_used: parseFloat(sale.exchange_rate_used || this.bcvRate), 
             usd_paid: parseFloat(sale.usd_paid || 0),
             ves_paid: parseFloat(sale.ves_paid || 0),
-            payment_method: sale.payment_method || sale.tipo_pago || 'N/A', // Usar tipo_pago si payment_method es N/A
+            payment_method: sale.payment_method || sale.tipo_pago || 'N/A',
             balance_due_usd: parseFloat(sale.balance_due_usd || 0),
-            status: sale.tipo_pago === 'Crédito' && (parseFloat(sale.balance_due_usd || 0) > 0) ? 'Crédito' : sale.status, 
+            status: sale.tipo_pago === 'Crédito' && (parseFloat(sale.balance_due_usd || 0) > 0) ? 'Crédito' : sale.status,
+            cancellation_code: sale.cancellation_code || null,
             items: sale.items.map(item => ({
               ...item,
               price_usd: parseFloat(item.price_usd || item.price) 
@@ -336,7 +380,6 @@ export default {
     },
 
     isPaymentValid() {
-      // Si es CRÉDITO, se permite que el pago sea parcial (o nulo)
       if (this.newSale.payment.method === 'CREDIT') {
         return true; 
       }
@@ -353,17 +396,41 @@ export default {
       return totalPaidInUSD >= totalUSD - PAYMENT_TOLERANCE;
     },
 
-    resetPaymentFields() {
+    // 🟢 NUEVO: Validación completa del formulario
+    isFormValid() {
+      // Validación básica
+      if (!this.newSale.customer_id || 
+          this.newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > this.getProductStock(i.product_id)) ||
+          !this.isPaymentValid()) {
+        return false;
+      }
+
+      // Validación específica para crédito
+      if (this.newSale.payment.method === 'CREDIT') {
+        if (!this.newSale.customer_pin || this.newSale.customer_pin.length !== 4) {
+          return false;
+        }
+        if (!this.newSale.cancellation_code) {
+          return false;
+        }
+        if (!this.newSale.credit_days || this.newSale.credit_days < 1) {
+          return false;
+        }
+      }
+
+      return true;
+    },
+
+    // 🟢 NUEVO: Manejar cambio de método de pago
+    handlePaymentMethodChange() {
       this.newSale.payment.usd_paid = 0;
       this.newSale.payment.ves_paid = 0;
+      this.newSale.customer_pin = '';
+      this.newSale.cancellation_code = '';
 
       const totalUSD = this.calculateTotalAmountUSD();
 
       if (totalUSD === 0) return;
-
-      if (this.newSale.payment.method === 'CREDIT') {
-        return;
-      }
 
       if (this.newSale.payment.method === 'VES') {
         this.newSale.payment.ves_paid = totalUSD * this.bcvRate;
@@ -417,14 +484,14 @@ export default {
     addItem() {
       this.newSale.items.push({ product_id: null, quantity: 1, price: 0 });
       this.updateLocalAlerts();
-      this.resetPaymentFields(); 
+      this.handlePaymentMethodChange();
     },
 
     removeItem(index) {
       if (this.newSale.items.length > 1) {
         this.newSale.items.splice(index, 1);
         this.updateLocalAlerts();
-        this.resetPaymentFields(); 
+        this.handlePaymentMethodChange();
       }
     },
 
@@ -439,90 +506,86 @@ export default {
             item.quantity = selectedProduct.stock;
           }
           this.checkLocalStockAlert(item);
-          this.resetPaymentFields(); 
+          this.handlePaymentMethodChange();
         }
       } else {
         item.price = 0;
         this.updateLocalAlerts();
-        this.resetPaymentFields(); 
+        this.handlePaymentMethodChange();
       }
     },
 
+    // 🟢 NUEVO: Abrir modal para generar código
+    openCancellationModal() {
+      this.showCancellationModal = true;
+      this.$nextTick(() => {
+        if (this.$refs.cancellationModalRef) {
+          this.$refs.cancellationModalRef.generateInitialCode();
+        }
+      });
+    },
+
+    // 🟢 NUEVO: Manejar código generado desde el modal
+    handleCodeGenerated(generatedCode) {
+      this.newSale.cancellation_code = generatedCode;
+      this.showCancellationModal = false;
+    },
 
     async createSale() {
-      const validItems = this.newSale.items
-        .filter(i => i.product_id && i.quantity > 0 && i.quantity <= this.getProductStock(i.product_id))
-        .map(item => ({
-          product_id: item.product_id,
-          quantity: Number(item.quantity),
-          price: Number(item.price),
-        }));
-
-      if (this.newSale.payment.method === 'CREDIT' && (this.newSale.credit_days == null || this.newSale.credit_days <= 0)) {
-        alert('Por favor, ingresa un número de Días de Crédito positivo.');
-        return;
-      }
-      
-      if (!this.isPaymentValid()) {
-        alert('El monto pagado es insuficiente para cubrir el total de la venta.');
+      if (!this.isFormValid()) {
+        alert('Por favor, complete todos los campos requeridos correctamente.');
         return;
       }
 
-      if (!this.newSale.customer_id || this.newSale.customer_id.trim() === "") {
-        alert('Por favor, selecciona un cliente válido.');
-        return;
-      }
-      if (validItems.length === 0) {
-        alert('Por favor, añade al menos un producto válido con una cantidad positiva que no exceda el stock.');
-        return;
-      }
-
-      // 1. TRADUCCIÓN DEL TIPO DE PAGO AL FORMATO DEL BACKEND
-      let tipoPagoValue = 'Contado';
-      let creditDaysValue = undefined;
-      
-      if (this.newSale.payment.method === 'CREDIT') {
-        tipoPagoValue = 'Crédito'; 
-        creditDaysValue = Number(this.newSale.credit_days); 
-      } else {
-        tipoPagoValue = 'Contado';
-      }
-      
       this.creating = true;
       try {
-        // 🟢 CORRECCIÓN CLAVE: PREPARAR PAYLOAD CON CAMPOS AL NIVEL RAÍZ
+        const validItems = this.newSale.items
+          .filter(i => i.product_id && i.quantity > 0 && i.quantity <= this.getProductStock(i.product_id))
+          .map(item => ({
+            product_id: item.product_id,
+            quantity: Number(item.quantity),
+            price: Number(item.price),
+          }));
+
+        let tipoPagoValue = 'Contado';
+        let creditDaysValue = undefined;
+        
+        if (this.newSale.payment.method === 'CREDIT') {
+          tipoPagoValue = 'Crédito'; 
+          creditDaysValue = Number(this.newSale.credit_days); 
+        }
+        
         const salePayload = {
           customer_id: this.newSale.customer_id,
           items: validItems,
-          
           tipo_pago: tipoPagoValue, 
           dias_credito: creditDaysValue, 
-          
-          // Montos de pago
           usd_paid: Number(this.newSale.payment.usd_paid),
           ves_paid: Number(this.newSale.payment.ves_paid),
+          customer_pin: this.newSale.customer_pin, // 🟢 INCLUIR PIN
+          cancellation_code: this.newSale.cancellation_code // 🟢 INCLUIR CÓDIGO
         };
         
         const response = await axios.post('/api/sales', salePayload);
         const responseData = response.data;
 
         let successMessage = `Venta #${responseData.sale_id.substring(0, 8)}... registrada exitosamente!`;
+        
+        // Mensaje especial para ventas a crédito
+        if (this.newSale.payment.method === 'CREDIT') {
+          successMessage += `\n\n🔐 **VENTA A CRÉDITO REGISTRADA**\nCódigo de Cancelación: ${this.newSale.cancellation_code}\nGuarde este código para futuras cancelaciones.`;
+        }
+        
         if (responseData.stock_alerts && responseData.stock_alerts.length > 0) {
           successMessage += "\n\n⚠️ **ATENCIÓN INVENTARIO:**\n" + responseData.stock_alerts.join('\n');
-          console.warn("Stock Alerts from Backend:", responseData.stock_alerts);
         }
 
         alert(successMessage);
         
         // Reiniciar formulario
-        this.newSale = {
-          customer_id: null,
-          items: [{ product_id: null, quantity: 1, price: 0 }],
-          payment: { method: 'USD', usd_paid: 0, ves_paid: 0 },
-          credit_days: 30 
-        };
-        this.localStockAlerts = [];
-        await this.fetchData(); 
+        this.resetForm();
+        await this.fetchData();
+        
       } catch (error) {
         console.error('Error al registrar la venta:', error.response ? error.response.data : error.message);
         let errorMessage = 'Error al registrar la venta. Por favor, inténtalo de nuevo.';
@@ -534,12 +597,28 @@ export default {
         alert(errorMessage);
       } finally {
         this.creating = false;
+        this.showCancellationModal = false;
       }
     },
 
-    // ... (rest of utility methods: generateInvoicePdf, formatDate)
+    // 🟢 NUEVO: Reiniciar formulario
+    resetForm() {
+      this.newSale = {
+        customer_id: null,
+        items: [{ product_id: null, quantity: 1, price: 0 }],
+        payment: { 
+          method: 'USD', 
+          usd_paid: 0, 
+          ves_paid: 0 
+        },
+        credit_days: 30,
+        customer_pin: '',
+        cancellation_code: ''
+      };
+      this.localStockAlerts = [];
+    },
+
     generateInvoicePdf(sale) {
-      // ... (mantener tu código de jsPDF)
       const bcvRate = parseFloat(sale.exchange_rate_used);
       const totalAmountUSD = parseFloat(sale.total_usd);
       const totalAmountVES = parseFloat(sale.total_amount_ves);
@@ -560,7 +639,6 @@ export default {
       const doc = new jsPDF();
       let y = 10; 
 
-      // === ENCABEZADO ===
       doc.setFontSize(18);
       doc.text("Factura de Venta", 105, y, null, null, "center");
       y += 10;
@@ -572,7 +650,6 @@ export default {
       doc.text("contacto@empresa.com", 105, y, null, null, "center");
       y += 15;
 
-      // === DETALLES DE FACTURA ===
       doc.setFontSize(12);
       doc.setFont(undefined, 'bold');
       doc.text("Detalles de la Factura", 10, y);
@@ -586,13 +663,17 @@ export default {
       y += 7;
       doc.text(`Estado: ${sale.status}`, 10, y);
 
+      if (sale.cancellation_code) {
+        y += 7;
+        doc.text(`Código Cancelación: ${sale.cancellation_code}`, 10, y);
+      }
+
       if (sale.seller_email) {
         y += 7;
         doc.text(`Vendedor: ${sale.seller_email}`, 10, y);
       }
       y += 10;
 
-      // === DETALLES DEL CLIENTE ===
       doc.setFont(undefined, 'bold');
       doc.text("Detalles del Cliente", 10, y);
       doc.setFont(undefined, 'normal');
@@ -608,14 +689,12 @@ export default {
       }
       y += 10;
 
-      // === TABLA DE PRODUCTOS (Encabezado) ===
       doc.setFontSize(10);
       doc.setFillColor(230, 230, 230);
       doc.rect(10, y, 190, 8, 'F');
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, 'bold');
 
-      // Encabezados de Columna
       doc.text("Producto", 12, y + 5);
       doc.text("Cantidad", 70, y + 5, null, null, "right"); 
       doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
@@ -625,7 +704,6 @@ export default {
       doc.setFont(undefined, 'normal');
       y += 8;
 
-      // === TABLA DE PRODUCTOS (Filas) ===
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
 
@@ -657,7 +735,6 @@ export default {
 
       y += 10;
 
-      // === TOTALES Y PAGO ===
       doc.setDrawColor(150, 150, 150);
       doc.setLineWidth(0.3);
       doc.line(120, y, 200, y);
@@ -698,8 +775,6 @@ export default {
       
       y += 10;
 
-
-      // === PIE DE PÁGINA ===
       doc.setFontSize(8);
       doc.setTextColor(100, 100, 100);
       doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}`, 10, 290);
@@ -724,6 +799,7 @@ export default {
   },
 };
 </script>
+
 
 
 <style scoped>

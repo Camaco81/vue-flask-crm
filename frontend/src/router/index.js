@@ -24,6 +24,7 @@ import VendedorUserProfile from '@/components/vendedor/UserProfile.vue';
 import AlmacenistaDashboard from '@/components/inventory/AlmacenistaDashboard.vue'; // Nuevo Dashboard de Almacenista
 import InventoryManagement from '@/components/inventory/ProductsComponent.vue'; // Gestión de productos/inventario
 import NotificationBell from '@/components/inventory/NotificationBell.vue';
+import CodeGeneratorModal from '@/components/vendedor/CodeGeneratorModal.vue';
 const routes = [
  { path: '/', name: 'LandingPage', component: LandingPage },
  { path: '/home', name: 'Home', component: HomeView },
@@ -61,6 +62,12 @@ const routes = [
   path: '/vendedor/customers',
   name: 'VendedorCustomers',
   component: VendedorCustomersComponent,
+  meta: { requiresAuth: true, requiredRole: 2 }
+ },
+  {
+  path: '/vendedor/codegenerator',
+  name: 'CodeGenerator',
+  component: CodeGeneratorModal,
   meta: { requiresAuth: true, requiredRole: 2 }
  },
  {
