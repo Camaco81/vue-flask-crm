@@ -92,31 +92,47 @@ def sales_collection():
         # =========================================================
         # 🎯 VERIFICACIÓN DE PIN Y CÓDIGO PARA VENTAS A CRÉDITO
         # =========================================================
-        if is_credit_sale:
-            # Verificar PIN
-            if not pin_raw:
-                return jsonify({"msg": "Se requiere el PIN de transacción (customer_pin) para ventas a crédito."}), 400
-            
-            # 🆕 NUEVO: Verificar código de cancelación
-            if not cancellation_code:
-                return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
-            
-            try:
-                with get_db_cursor(commit=False) as pin_cur:
-                    pin_cur.execute("SELECT pin_hash FROM customers WHERE id = %s", (customer_id,))
-                    customer_pin_record = pin_cur.fetchone()
+    if is_credit_sale:
+        if not pin_raw:
+            return jsonify({"msg": "Se requiere el PIN de transacción (customer_pin) para ventas a crédito."}), 400
+        
+        if not cancellation_code:
+            return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
+        
+        # Validar formato del PIN
+        if len(pin_raw) != 4 or not pin_raw.isdigit():
+            return jsonify({"msg": "El PIN debe ser de exactamente 4 dígitos numéricos."}), 400
+        
+        try:
+            with get_db_cursor(commit=False) as pin_cur:
+                # 🟢 VERIFICAR SI EL CLIENTE YA TIENE UN PIN CONFIGURADO
+                pin_cur.execute("SELECT pin_hash FROM customers WHERE id = %s", (customer_id,))
+                customer_pin_record = pin_cur.fetchone()
 
-                    if not customer_pin_record or not customer_pin_record.get('pin_hash'):
-                        return jsonify({"msg": "Cliente no encontrado o PIN de crédito no configurado."}), 404
+                if not customer_pin_record:
+                    return jsonify({"msg": "Cliente no encontrado."}), 404
 
-                    stored_hash = customer_pin_record['pin_hash'].encode('utf-8')
+                stored_hash = customer_pin_record.get('pin_hash')
+                
+                if stored_hash:
+                    # 🟢 CLIENTE EXISTENTE: VERIFICAR PIN
+                    stored_hash = stored_hash.encode('utf-8')
                     
                     if not bcrypt.checkpw(pin_raw.encode('utf-8'), stored_hash):
                         return jsonify({"msg": "PIN de transacción incorrecto. Venta a crédito denegada."}), 401
-                        
-            except Exception as e:
-                app_logger.error(f"Error durante la verificación de PIN del cliente {customer_id}: {e}", exc_info=True)
-                return jsonify({"msg": "Error interno en el sistema de seguridad de PIN."}), 500
+                else:
+                    # 🟢 NUEVO CLIENTE O SIN PIN: CREAR NUEVO PIN
+                    pin_hash = bcrypt.hashpw(pin_raw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    pin_cur.execute(
+                        "UPDATE customers SET pin_hash = %s WHERE id = %s",
+                        (pin_hash, customer_id)
+                    )
+                    pin_cur.connection.commit()
+                    app_logger.info(f"PIN configurado para cliente {customer_id}")
+                    
+        except Exception as e:
+            app_logger.error(f"Error durante la gestión de PIN del cliente {customer_id}: {e}", exc_info=True)
+            return jsonify({"msg": "Error interno en el sistema de seguridad de PIN."}), 500
 
         # Bloque de Transacción
         cur = None
