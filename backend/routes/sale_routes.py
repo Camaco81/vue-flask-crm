@@ -46,13 +46,14 @@ def sales_collection():
             return jsonify({"msg": f"Missing required fields: {error}"}), 400
         
         # OBTENCIÓN Y NORMALIZACIÓN DE CAMPOS A NIVEL RAÍZ
-        tipo_pago_raw = data.get('tipo_pago', 'Contado') # Default a 'Contado' si no está presente
+        tipo_pago_raw = data.get('tipo_pago', 'Contado')
         dias_credito_raw = data.get('dias_credito') 
         usd_paid_raw = data.get('usd_paid', 0)
         ves_paid_raw = data.get('ves_paid', 0)
         
-        # 🎯 NUEVO: Capturar el PIN ingresado por el cliente
+        # 🎯 NUEVO: Capturar el PIN y código de cancelación
         pin_raw = data.get("customer_pin") 
+        cancellation_code = data.get("cancellation_code")  # 🆕 NUEVO CAMPO
             
         tipo_pago_normalized = tipo_pago_raw.lower().replace('é', 'e') 
         is_credit_sale = tipo_pago_normalized == 'credito'
@@ -88,19 +89,20 @@ def sales_collection():
             app_logger.error(f"FATAL: No se pudo obtener la tasa de cambio para la venta: {e}", exc_info=True)
             return jsonify({"msg": "Error interno: No se pudo obtener la tasa de cambio del sistema"}), 500
         
-        
         # =========================================================
-        # 🎯 VERIFICACIÓN DE PIN REQUERIDA SOLO PARA VENTAS A CRÉDITO
+        # 🎯 VERIFICACIÓN DE PIN Y CÓDIGO PARA VENTAS A CRÉDITO
         # =========================================================
         if is_credit_sale:
+            # Verificar PIN
             if not pin_raw:
                 return jsonify({"msg": "Se requiere el PIN de transacción (customer_pin) para ventas a crédito."}), 400
             
-            # Usamos un cursor fuera del bloque principal de transacción para la verificación inicial
-            # Esto nos permite fallar rápidamente sin bloquear recursos.
+            # 🆕 NUEVO: Verificar código de cancelación
+            if not cancellation_code:
+                return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
+            
             try:
                 with get_db_cursor(commit=False) as pin_cur:
-                    # 1. Obtener el hash del PIN del cliente desde la tabla 'customers'
                     pin_cur.execute("SELECT pin_hash FROM customers WHERE id = %s", (customer_id,))
                     customer_pin_record = pin_cur.fetchone()
 
@@ -109,20 +111,12 @@ def sales_collection():
 
                     stored_hash = customer_pin_record['pin_hash'].encode('utf-8')
                     
-                    # 2. Verificar el PIN ingresado (pin_raw) contra el hash almacenado (stored_hash)
                     if not bcrypt.checkpw(pin_raw.encode('utf-8'), stored_hash):
-                        # Nota: No hay rollback aquí porque aún no hemos iniciado la transacción principal.
                         return jsonify({"msg": "PIN de transacción incorrecto. Venta a crédito denegada."}), 401
                         
             except Exception as e:
-                # Capturar errores de base de datos o de bcrypt
                 app_logger.error(f"Error durante la verificación de PIN del cliente {customer_id}: {e}", exc_info=True)
                 return jsonify({"msg": "Error interno en el sistema de seguridad de PIN."}), 500
-                
-        # =========================================================
-        # FIN DE VERIFICACIÓN DE PIN
-        # =========================================================
-
 
         # Bloque de Transacción
         cur = None
@@ -176,13 +170,10 @@ def sales_collection():
                 total_amount_ves = total_amount_usd * exchange_rate
                 
                 # Paso 2: Cálculo de Abono y Saldo Pendiente
-                
                 usd_from_ves = ves_paid / exchange_rate if exchange_rate > 0 else 0.0
                 total_paid_usd = usd_paid + usd_from_ves
-                
                 saldo_pendiente_venta_usd = max(0.0, round(total_amount_usd - total_paid_usd, 2))
 
-                # Si es una venta Contado/Mixto y hay saldo pendiente, se considera error
                 if not is_credit_sale and saldo_pendiente_venta_usd > PAYMENT_TOLERANCE:
                     cur.connection.rollback()
                     return jsonify({"msg": f"Monto pagado insuficiente para venta al contado. Saldo pendiente: ${round(saldo_pendiente_venta_usd, 2)}"}), 400
@@ -219,7 +210,7 @@ def sales_collection():
                             "code": "CREDIT_LIMIT_EXCEEDED"
                         }), 400
                         
-                    # 2.c) Actualizar Balance Pendiente del Cliente (dentro de la transacción)
+                    # 2.c) Actualizar Balance Pendiente del Cliente
                     cur.execute(
                         "UPDATE customers SET balance_pendiente_usd = %s WHERE id = %s",
                         (nuevo_balance, customer_id)
@@ -228,7 +219,7 @@ def sales_collection():
                     # 2.d) Calcular Fecha de Vencimiento
                     fecha_vencimiento_val = datetime.now().date() + timedelta(days=dias_credito)
                 
-                # Paso 3: Inserción de Venta
+                # Paso 3: Inserción de Venta - 🆕 AGREGAR CÓDIGO DE CANCELACIÓN
                 fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", 
                             "exchange_rate_used", "status", "tipo_pago", "usd_paid", "ves_paid"] 
                 
@@ -236,12 +227,9 @@ def sales_collection():
                             total_amount_ves, exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid]
                 
                 if is_credit_sale:
-                    fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento"])
-                    values.extend([dias_credito, monto_pendiente, fecha_vencimiento_val])
+                    fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento", "cancellation_code"])  # 🆕 AGREGADO
+                    values.extend([dias_credito, monto_pendiente, fecha_vencimiento_val, cancellation_code])  # 🆕 AGREGADO
 
-                # 🎯 Eliminamos el PIN del log para evitar guardarlo en la tabla 'sales'
-                # La verificación se hizo, pero el valor original del PIN no debe persistir.
-                
                 placeholders = sql.SQL(', ').join(sql.Placeholder() * len(fields))
                 
                 query_insert_sale = sql.SQL(
@@ -257,27 +245,22 @@ def sales_collection():
                 # Paso 4: Insertar Ítems y Disminuir Stock
                 stock_alerts = []
                 for item in validated_items:
-                    # 4.a) Insertar Item
                     cur.execute(
                         "INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
                         (new_sale_id, item['product_id'], item['quantity'], item['price'])
                     )
                     
-                    # 4.b) Disminuir Stock
                     cur.execute(
                         "UPDATE products SET stock = stock - %s WHERE id = %s;",
                         (item['quantity'], item['product_id'])
                     )
                     
-                    # 4.c) Generar Alerta de Stock (Lógica corregida)
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
-                        # La función utilitaria debe manejar la obtención del cursor por sí misma.
                         alert_msg = verificar_stock_y_alertar(item['product_id']) 
                         if alert_msg:
                             stock_alerts.append(alert_msg)
                         
-                # Confirmar la transacción (movido fuera del bucle de items)
                 cur.connection.commit()
                 
                 response = {
@@ -293,6 +276,10 @@ def sales_collection():
                     "stock_alerts": stock_alerts
                 }
                 
+                # 🆕 NUEVO: Incluir código de cancelación en la respuesta si es crédito
+                if is_credit_sale:
+                    response["cancellation_code"] = cancellation_code
+                
                 return jsonify(response), 201
                 
         except Exception as e:
@@ -303,12 +290,13 @@ def sales_collection():
             status_code = 500
             
             if "CREDIT_LIMIT_EXCEEDED" in error_msg or "Monto pagado insuficiente" in error_msg:
-                # 🟢 CORRECCIÓN: Asegurar 400 para errores de validación de crédito/pago.
                 error_msg = "Límite de crédito del cliente excedido." if "CREDIT_LIMIT_EXCEEDED" in error_msg else error_msg
                 status_code = 400
 
             app_logger.error(f"Error al registrar la venta (POST): {error_msg}", exc_info=True)
             return jsonify({"msg": f"Error al registrar la venta: {error_msg}"}), status_code
+            
+
             
     elif request.method == "GET":
         # LÓGICA DE LISTADO (GET /api/sales) - CORREGIDA CON CAMPOS DE PAGO/CRÉDITO
