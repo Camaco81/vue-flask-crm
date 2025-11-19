@@ -9,18 +9,16 @@ import logging
 from decimal import Decimal
 import uuid
 from datetime import datetime, timedelta
+import bcrypt # 🎯 NUEVO: Importamos bcrypt para la verificación segura del PIN
 
-sale_bp = Blueprint('sale', __name__)
+sale_bp = Blueprint('sale', __name__, url_prefix='/api/sales')
 app_logger = logging.getLogger('backend.routes.sale_routes') 
 
 # =========================================================
-# CONSTANTES GLOBALES CORREGIDAS Y AGREGADAS
+# CONSTANTES GLOBALES
 # =========================================================
 
-
-# Roles que pueden realizar ventas (admin/vendedor)
 SALES_ROLES = ['admin', 'vendedor'] 
-# Tolerancia para pagos (para manejar errores de coma flotante)
 PAYMENT_TOLERANCE = 0.01 
 
 # =========================================================
@@ -36,42 +34,35 @@ def sales_collection():
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
     
-    # 1. Verificar Permiso General (Admin o Vendedor)
     if not check_seller_permission(user_role):
         return jsonify({"msg": "Acceso denegado: solo personal de ventas y administradores pueden acceder a ventas"}), 403
 
     if request.method == "POST":
-        # =========================================================
-        # LÓGICA DE CREACIÓN (POST) - SIN CAMBIOS (Sigue insertando los nuevos campos)
-        # =========================================================
         data = request.get_json()
         
-        # Validación de campos principales
+        # 'pin' es ahora un campo opcional, requerido solo para ventas a crédito.
         required_fields = ['customer_id', 'items']
         if error := validate_required_fields(data, required_fields):
             return jsonify({"msg": f"Missing required fields: {error}"}), 400
         
-        # OBTENCIÓN DE CAMPOS A NIVEL RAÍZ
-        tipo_pago_raw = data.get('tipo_pago')
+        # OBTENCIÓN Y NORMALIZACIÓN DE CAMPOS A NIVEL RAÍZ
+        tipo_pago_raw = data.get('tipo_pago', 'Contado') # Default a 'Contado' si no está presente
         dias_credito_raw = data.get('dias_credito') 
         usd_paid_raw = data.get('usd_paid', 0)
         ves_paid_raw = data.get('ves_paid', 0)
         
-        # CORRECCIÓN ROBUSTA: Garantizar que tipo_pago_raw no sea None
-        if tipo_pago_raw is None:
-            tipo_pago_raw = 'Contado'
+        # 🎯 NUEVO: Capturar el PIN ingresado por el cliente
+        pin_raw = data.get("customer_pin") 
             
-        # Normalizamos el valor para la lógica de crédito
         tipo_pago_normalized = tipo_pago_raw.lower().replace('é', 'e') 
         is_credit_sale = tipo_pago_normalized == 'credito'
         
         # Conversión de montos pagados a float
         try:
-            # Usamos 0.0 si el valor es None/ausente
             usd_paid = float(usd_paid_raw) if usd_paid_raw is not None and usd_paid_raw != '' else 0.0
             ves_paid = float(ves_paid_raw) if ves_paid_raw is not None and ves_paid_raw != '' else 0.0
             if usd_paid < 0 or ves_paid < 0:
-                 raise ValueError("Los montos de pago deben ser positivos.")
+                raise ValueError("Los montos de pago deben ser positivos.")
         except (ValueError, TypeError) as e:
             return jsonify({"msg": f"Los montos de pago deben ser números válidos y positivos: {e}"}), 400
 
@@ -79,11 +70,10 @@ def sales_collection():
         
         if is_credit_sale:
             try:
-                # Usar 30 por defecto si no es válido
                 dias_credito = int(dias_credito_raw) if dias_credito_raw is not None and dias_credito_raw != '' else 30
                 if dias_credito <= 0: dias_credito = 30
             except (ValueError, TypeError):
-                dias_credito = 30 # Usar valor por defecto si es inválido
+                dias_credito = 30 
 
         customer_id = data.get("customer_id")
         items = data.get("items")
@@ -92,12 +82,47 @@ def sales_collection():
         if not isinstance(items, list) or len(items) == 0:
             return jsonify({"msg": "Items must be a non-empty list of products"}), 400
 
-        # Obtener la tasa de cambio antes de la transacción
         try:
             exchange_rate = get_dolarvzla_rate()
         except Exception as e:
             app_logger.error(f"FATAL: No se pudo obtener la tasa de cambio para la venta: {e}", exc_info=True)
             return jsonify({"msg": "Error interno: No se pudo obtener la tasa de cambio del sistema"}), 500
+        
+        
+        # =========================================================
+        # 🎯 VERIFICACIÓN DE PIN REQUERIDA SOLO PARA VENTAS A CRÉDITO
+        # =========================================================
+        if is_credit_sale:
+            if not pin_raw:
+                return jsonify({"msg": "Se requiere el PIN de transacción (customer_pin) para ventas a crédito."}), 400
+            
+            # Usamos un cursor fuera del bloque principal de transacción para la verificación inicial
+            # Esto nos permite fallar rápidamente sin bloquear recursos.
+            try:
+                with get_db_cursor(commit=False) as pin_cur:
+                    # 1. Obtener el hash del PIN del cliente desde la tabla 'customers'
+                    pin_cur.execute("SELECT pin_hash FROM customers WHERE id = %s", (customer_id,))
+                    customer_pin_record = pin_cur.fetchone()
+
+                    if not customer_pin_record or not customer_pin_record.get('pin_hash'):
+                        return jsonify({"msg": "Cliente no encontrado o PIN de crédito no configurado."}), 404
+
+                    stored_hash = customer_pin_record['pin_hash'].encode('utf-8')
+                    
+                    # 2. Verificar el PIN ingresado (pin_raw) contra el hash almacenado (stored_hash)
+                    if not bcrypt.checkpw(pin_raw.encode('utf-8'), stored_hash):
+                        # Nota: No hay rollback aquí porque aún no hemos iniciado la transacción principal.
+                        return jsonify({"msg": "PIN de transacción incorrecto. Venta a crédito denegada."}), 401
+                        
+            except Exception as e:
+                # Capturar errores de base de datos o de bcrypt
+                app_logger.error(f"Error durante la verificación de PIN del cliente {customer_id}: {e}", exc_info=True)
+                return jsonify({"msg": "Error interno en el sistema de seguridad de PIN."}), 500
+                
+        # =========================================================
+        # FIN DE VERIFICACIÓN DE PIN
+        # =========================================================
+
 
         # Bloque de Transacción
         cur = None
@@ -152,11 +177,9 @@ def sales_collection():
                 
                 # Paso 2: Cálculo de Abono y Saldo Pendiente
                 
-                # Convertir pago en VES a USD
                 usd_from_ves = ves_paid / exchange_rate if exchange_rate > 0 else 0.0
                 total_paid_usd = usd_paid + usd_from_ves
                 
-                # Calcular el Saldo Pendiente de la Venta 
                 saldo_pendiente_venta_usd = max(0.0, round(total_amount_usd - total_paid_usd, 2))
 
                 # Si es una venta Contado/Mixto y hay saldo pendiente, se considera error
@@ -164,15 +187,13 @@ def sales_collection():
                     cur.connection.rollback()
                     return jsonify({"msg": f"Monto pagado insuficiente para venta al contado. Saldo pendiente: ${round(saldo_pendiente_venta_usd, 2)}"}), 400
 
-
-                status = 'Completado' # Default: Contado
+                status = 'Completado' 
                 monto_pendiente = 0.0 
                 fecha_vencimiento_val = None 
                 
                 if is_credit_sale:
-                    # El estado de la venta es Crédito, independientemente del abono
                     status = 'Crédito' 
-                    monto_pendiente = saldo_pendiente_venta_usd # Saldo pendiente después del abono
+                    monto_pendiente = saldo_pendiente_venta_usd 
                     
                     # 2.a) Obtener límite y balance del cliente
                     cur.execute(
@@ -188,7 +209,6 @@ def sales_collection():
                     limite = float(customer['credit_limit_usd'])
                     balance = float(customer['balance_pendiente_usd'])
                     
-                    # Actualizar Balance del cliente SOLO por el monto pendiente de la NUEVA VENTA
                     nuevo_balance = balance + monto_pendiente
                     
                     # 2.b) Verificar Límite de Crédito
@@ -208,23 +228,20 @@ def sales_collection():
                     # 2.d) Calcular Fecha de Vencimiento
                     fecha_vencimiento_val = datetime.now().date() + timedelta(days=dias_credito)
                 
-                # Paso 3: Inserción de Venta (Campos de pago y crédito)
-                
-                # 3.a) Definición de Campos y Valores (INCLUYE usd_paid, ves_paid, tipo_pago)
-                # Esta parte NO SE TOCA, ya que la inserción de datos SÍ debe incluir los nuevos campos.
+                # Paso 3: Inserción de Venta
                 fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", 
                             "exchange_rate_used", "status", "tipo_pago", "usd_paid", "ves_paid"] 
                 
                 values = [str(uuid.uuid4()), customer_id, seller_user_id, datetime.now(), total_amount_usd, 
                             total_amount_ves, exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid]
                 
-                # 3.b) Añadir campos y valores específicos para Crédito
                 if is_credit_sale:
-                    # Estos campos se añaden solo si es venta a crédito
                     fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento"])
                     values.extend([dias_credito, monto_pendiente, fecha_vencimiento_val])
 
-                # 3.c) Construir el query con placeholders para los valores de datos
+                # 🎯 Eliminamos el PIN del log para evitar guardarlo en la tabla 'sales'
+                # La verificación se hizo, pero el valor original del PIN no debe persistir.
+                
                 placeholders = sql.SQL(', ').join(sql.Placeholder() * len(fields))
                 
                 query_insert_sale = sql.SQL(
@@ -234,7 +251,6 @@ def sales_collection():
                     placeholders
                 )
                 
-                # Ejecutar el query usando la lista 'values' como parámetros
                 cur.execute(query_insert_sale, values)
                 new_sale_id = cur.fetchone()['id']
 
@@ -253,27 +269,15 @@ def sales_collection():
                         (item['quantity'], item['product_id'])
                     )
                     
-                    # 4.c) Generar Alerta de Stock
+                    # 4.c) Generar Alerta de Stock (Lógica corregida)
                     remaining_stock = item['current_stock'] - item['quantity']
                     if remaining_stock <= STOCK_THRESHOLD:
-                        # 🟢 CORRECCIÓN APLICADA AQUÍ: Se eliminó el argumento 'cur' 
-                        # ya que la función utilitaria solo acepta un argumento.
+                        # La función utilitaria debe manejar la obtención del cursor por sí misma.
                         alert_msg = verificar_stock_y_alertar(item['product_id']) 
                         if alert_msg:
                             stock_alerts.append(alert_msg)
                         
-                # Confirmar la transacción
-                    cur.connection.commit()
-                    
-                    # 4.c) Generar Alerta de Stock
-                    remaining_stock = item['current_stock'] - item['quantity']
-                    if remaining_stock <= STOCK_THRESHOLD:
-                        # 🟢 CORRECCIÓN DEL TYPE ERROR: Solo se pasa un argumento.
-                        alert_msg = verificar_stock_y_alertar(item['product_id']) 
-                        if alert_msg:
-                            stock_alerts.append(alert_msg)
-                        
-                # Confirmar la transacción
+                # Confirmar la transacción (movido fuera del bucle de items)
                 cur.connection.commit()
                 
                 response = {
@@ -298,25 +302,24 @@ def sales_collection():
             error_msg = str(e)
             status_code = 500
             
-            if "CREDIT_LIMIT_EXCEEDED" in error_msg:
-                error_msg = "Límite de crédito del cliente excedido."
+            if "CREDIT_LIMIT_EXCEEDED" in error_msg or "Monto pagado insuficiente" in error_msg:
+                # 🟢 CORRECCIÓN: Asegurar 400 para errores de validación de crédito/pago.
+                error_msg = "Límite de crédito del cliente excedido." if "CREDIT_LIMIT_EXCEEDED" in error_msg else error_msg
                 status_code = 400
 
             app_logger.error(f"Error al registrar la venta (POST): {error_msg}", exc_info=True)
             return jsonify({"msg": f"Error al registrar la venta: {error_msg}"}), status_code
             
     elif request.method == "GET":
-        # =========================================================
-        # LÓGICA DE LISTADO (GET /api/sales) - CORREGIDA
-        # =========================================================
+        # LÓGICA DE LISTADO (GET /api/sales) - CORREGIDA CON CAMPOS DE PAGO/CRÉDITO
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
                         s.sale_date, s.status,
-                        -- ❌ COMENTADO: s.tipo_pago, 
+                        s.tipo_pago, -- 🟢 CAMBIO: Incluido
+                        s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos
                         s.total_amount_usd AS total_amount, s.total_amount_ves, 
                         s.exchange_rate_used, 
-                        -- ❌ COMENTADO: s.usd_paid, s.ves_paid,
                         u.email as seller_email, u.id as seller_id, 
                         s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                         json_agg(json_build_object(
@@ -340,10 +343,9 @@ def sales_collection():
             # Agrupación y Ordenamiento
             base_query += """
                 GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
-                -- ❌ COMENTADO: s.tipo_pago, 
+                s.tipo_pago, s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos en GROUP BY
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
                 s.balance_due_usd, s.fecha_vencimiento, s.dias_credito
-                -- ❌ COMENTADO: , s.usd_paid, s.ves_paid 
                 ORDER BY s.sale_date DESC;
             """
             
@@ -371,14 +373,14 @@ def sales_single(sale_id):
     sale_id_str = str(sale_id)
 
     if request.method == "GET":
-        # LÓGICA DE VISTA INDIVIDUAL (GET) - CORREGIDA
+        # LÓGICA DE VISTA INDIVIDUAL (GET) - CORREGIDA CON CAMPOS DE PAGO/CRÉDITO
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
                         s.sale_date, s.status, 
-                        -- ❌ COMENTADO: s.tipo_pago,
+                        s.tipo_pago, -- 🟢 CAMBIO: Incluido
+                        s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos
                         s.total_amount_usd AS total_amount, 
-                        -- ❌ COMENTADO: s.usd_paid, s.ves_paid,
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id,
                         s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
@@ -402,10 +404,9 @@ def sales_single(sale_id):
             # GROUP BY
             base_query += """
                 GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, 
-                -- ❌ COMENTADO: s.tipo_pago, 
+                s.tipo_pago, s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos en GROUP BY
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito
-                -- ❌ COMENTADO: , s.usd_paid, s.ves_paid;
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito;
             """
 
             with get_db_cursor() as cur:
@@ -420,15 +421,12 @@ def sales_single(sale_id):
             return jsonify({"msg": "Error al obtener la venta", "error": str(e)}), 500
 
     elif request.method == "DELETE":
-        # =========================================================
         # LÓGICA DE ELIMINACIÓN (DELETE) - SIN CAMBIOS
-        # =========================================================
         cur = None
         try:
             with get_db_cursor(commit=False) as cur: 
                 
                 # 1. Obtener datos clave de la venta y bloquear el cliente (si es a crédito)
-                # OJO: balance_due_usd SÍ debe existir para la lógica de crédito
                 cur.execute(
                     "SELECT user_id, customer_id, status, balance_due_usd FROM sales WHERE id = %s FOR UPDATE",
                     (sale_id_str,)
@@ -451,7 +449,6 @@ def sales_single(sale_id):
                 
                 # 3. ROLLBACK DE CRÉDITO (Si aplica)
                 if sale_status == 'Crédito' and monto_pendiente > 0:
-                    # Bloquear y actualizar balance del cliente
                     cur.execute(
                         "SELECT balance_pendiente_usd FROM customers WHERE id = %s FOR UPDATE",
                         (customer_id,)
@@ -461,7 +458,6 @@ def sales_single(sale_id):
                     if customer:
                         nuevo_balance = float(customer['balance_pendiente_usd']) - monto_pendiente
                         
-                        # Evitar balance negativo
                         if nuevo_balance < 0:
                             app_logger.warning(f"Balance de cliente {customer_id} se vuelve negativo al eliminar venta {sale_id_str}. Ajustando a 0.")
                             nuevo_balance = 0 
@@ -472,21 +468,16 @@ def sales_single(sale_id):
                         )
 
                 # 4. Reponer Stock y Eliminar
-                # 4.a) Obtener los items vendidos para reponer stock
                 cur.execute(
                     "SELECT product_id, quantity FROM sale_items WHERE sale_id = %s",
                     (sale_id_str,)
                 )
                 items_to_restore = cur.fetchall()
 
-                # 4.b) Eliminar items de venta (si la tabla sales_items no tiene ON DELETE CASCADE)
                 cur.execute("DELETE FROM sale_items WHERE sale_id = %s;", (sale_id_str,))
-                
-                # 4.c) Eliminar venta
                 cur.execute("DELETE FROM sales WHERE id = %s;", (sale_id_str,))
                 deleted_rows = cur.rowcount
 
-                # 4.d) Reponer Stock
                 for item in items_to_restore:
                     cur.execute(
                         "UPDATE products SET stock = stock + %s WHERE id = %s;",
@@ -525,9 +516,9 @@ def admin_general_reports():
         query = """
             SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
                     s.sale_date, s.status, 
-                    -- ❌ COMENTADO: s.tipo_pago,
+                    s.tipo_pago, -- 🟢 CAMBIO: Incluido
+                    s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos
                     s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
-                    -- ❌ COMENTADO: s.usd_paid, s.ves_paid, 
                     u.email as seller_email, u.id as seller_id, 
                     s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
                     json_agg(json_build_object(
@@ -541,10 +532,9 @@ def admin_general_reports():
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
             GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
-            -- ❌ COMENTADO: s.tipo_pago,
+            s.tipo_pago, s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos en GROUP BY
             s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
             s.balance_due_usd, s.fecha_vencimiento, s.dias_credito 
-            -- ❌ COMENTADO: , s.usd_paid, s.ves_paid
             ORDER BY s.sale_date DESC;
         """
         

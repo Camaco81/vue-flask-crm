@@ -3,7 +3,7 @@ from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields
 customer_bp = Blueprint('customer', __name__, url_prefix='/api/customers')
-
+CUSTOMER_REGISTRATION_ROLES = ['admin', 'vendedor']
 @customer_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def customers_collection():
@@ -12,8 +12,9 @@ def customers_collection():
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
 
     if request.method == 'POST':
-        if not check_admin_permission(user_role):
-            return jsonify({"msg": "Acceso denegado: solo administradores pueden crear clientes"}), 403
+        if user_role not in CUSTOMER_REGISTRATION_ROLES:
+            return jsonify({"msg": "Acceso denegado: solo administradores y vendedores pueden crear clientes"}), 403
+
         
         data = request.get_json()
         # 🚨 CAMBIO 1: 'cedula' es ahora un campo requerido para el POST
