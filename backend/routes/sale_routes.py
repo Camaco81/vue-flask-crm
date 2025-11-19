@@ -9,7 +9,7 @@ import logging
 from decimal import Decimal
 import uuid
 from datetime import datetime, timedelta
-import bcrypt # 🎯 NUEVO: Importamos bcrypt para la verificación segura del PIN
+import bcrypt
 
 sale_bp = Blueprint('sale', __name__, url_prefix='/api/sales')
 app_logger = logging.getLogger('backend.routes.sale_routes') 
@@ -40,7 +40,6 @@ def sales_collection():
     if request.method == "POST":
         data = request.get_json()
         
-        # 'pin' es ahora un campo opcional, requerido solo para ventas a crédito.
         required_fields = ['customer_id', 'items']
         if error := validate_required_fields(data, required_fields):
             return jsonify({"msg": f"Missing required fields: {error}"}), 400
@@ -51,9 +50,9 @@ def sales_collection():
         usd_paid_raw = data.get('usd_paid', 0)
         ves_paid_raw = data.get('ves_paid', 0)
         
-        # 🎯 NUEVO: Capturar el PIN y código de cancelación
+        # Capturar el PIN y código de cancelación
         pin_raw = data.get("customer_pin") 
-        cancellation_code = data.get("cancellation_code")  # 🆕 NUEVO CAMPO
+        cancellation_code = data.get("cancellation_code")
             
         tipo_pago_normalized = tipo_pago_raw.lower().replace('é', 'e') 
         is_credit_sale = tipo_pago_normalized == 'credito'
@@ -90,49 +89,49 @@ def sales_collection():
             return jsonify({"msg": "Error interno: No se pudo obtener la tasa de cambio del sistema"}), 500
         
         # =========================================================
-        # 🎯 VERIFICACIÓN DE PIN Y CÓDIGO PARA VENTAS A CRÉDITO
+        # VERIFICACIÓN DE PIN Y CÓDIGO PARA VENTAS A CRÉDITO
         # =========================================================
-    if is_credit_sale:
-        if not pin_raw:
-            return jsonify({"msg": "Se requiere el PIN de transacción (customer_pin) para ventas a crédito."}), 400
-        
-        if not cancellation_code:
-            return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
-        
-        # Validar formato del PIN
-        if len(pin_raw) != 4 or not pin_raw.isdigit():
-            return jsonify({"msg": "El PIN debe ser de exactamente 4 dígitos numéricos."}), 400
-        
-        try:
-            with get_db_cursor(commit=False) as pin_cur:
-                # 🟢 VERIFICAR SI EL CLIENTE YA TIENE UN PIN CONFIGURADO
-                pin_cur.execute("SELECT pin_hash FROM customers WHERE id = %s", (customer_id,))
-                customer_pin_record = pin_cur.fetchone()
+        if is_credit_sale:
+            if not pin_raw:
+                return jsonify({"msg": "Se requiere el PIN de transacción (customer_pin) para ventas a crédito."}), 400
+            
+            if not cancellation_code:
+                return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
+            
+            # Validar formato del PIN
+            if len(pin_raw) != 4 or not pin_raw.isdigit():
+                return jsonify({"msg": "El PIN debe ser de exactamente 4 dígitos numéricos."}), 400
+            
+            try:
+                with get_db_cursor(commit=False) as pin_cur:
+                    # VERIFICAR SI EL CLIENTE YA TIENE UN PIN CONFIGURADO
+                    pin_cur.execute("SELECT pin_hash FROM customers WHERE id = %s", (customer_id,))
+                    customer_pin_record = pin_cur.fetchone()
 
-                if not customer_pin_record:
-                    return jsonify({"msg": "Cliente no encontrado."}), 404
+                    if not customer_pin_record:
+                        return jsonify({"msg": "Cliente no encontrado."}), 404
 
-                stored_hash = customer_pin_record.get('pin_hash')
-                
-                if stored_hash:
-                    # 🟢 CLIENTE EXISTENTE: VERIFICAR PIN
-                    stored_hash = stored_hash.encode('utf-8')
+                    stored_hash = customer_pin_record.get('pin_hash')
                     
-                    if not bcrypt.checkpw(pin_raw.encode('utf-8'), stored_hash):
-                        return jsonify({"msg": "PIN de transacción incorrecto. Venta a crédito denegada."}), 401
-                else:
-                    # 🟢 NUEVO CLIENTE O SIN PIN: CREAR NUEVO PIN
-                    pin_hash = bcrypt.hashpw(pin_raw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                    pin_cur.execute(
-                        "UPDATE customers SET pin_hash = %s WHERE id = %s",
-                        (pin_hash, customer_id)
-                    )
-                    pin_cur.connection.commit()
-                    app_logger.info(f"PIN configurado para cliente {customer_id}")
-                    
-        except Exception as e:
-            app_logger.error(f"Error durante la gestión de PIN del cliente {customer_id}: {e}", exc_info=True)
-            return jsonify({"msg": "Error interno en el sistema de seguridad de PIN."}), 500
+                    if stored_hash:
+                        # CLIENTE EXISTENTE: VERIFICAR PIN
+                        stored_hash = stored_hash.encode('utf-8')
+                        
+                        if not bcrypt.checkpw(pin_raw.encode('utf-8'), stored_hash):
+                            return jsonify({"msg": "PIN de transacción incorrecto. Venta a crédito denegada."}), 401
+                    else:
+                        # NUEVO CLIENTE O SIN PIN: CREAR NUEVO PIN
+                        pin_hash = bcrypt.hashpw(pin_raw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                        pin_cur.execute(
+                            "UPDATE customers SET pin_hash = %s WHERE id = %s",
+                            (pin_hash, customer_id)
+                        )
+                        pin_cur.connection.commit()
+                        app_logger.info(f"PIN configurado para cliente {customer_id}")
+                        
+            except Exception as e:
+                app_logger.error(f"Error durante la gestión de PIN del cliente {customer_id}: {e}", exc_info=True)
+                return jsonify({"msg": "Error interno en el sistema de seguridad de PIN."}), 500
 
         # Bloque de Transacción
         cur = None
@@ -235,7 +234,7 @@ def sales_collection():
                     # 2.d) Calcular Fecha de Vencimiento
                     fecha_vencimiento_val = datetime.now().date() + timedelta(days=dias_credito)
                 
-                # Paso 3: Inserción de Venta - 🆕 AGREGAR CÓDIGO DE CANCELACIÓN
+                # Paso 3: Inserción de Venta - AGREGAR CÓDIGO DE CANCELACIÓN
                 fields = ["id", "customer_id", "user_id", "sale_date", "total_amount_usd", "total_amount_ves", 
                             "exchange_rate_used", "status", "tipo_pago", "usd_paid", "ves_paid"] 
                 
@@ -243,8 +242,8 @@ def sales_collection():
                             total_amount_ves, exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid]
                 
                 if is_credit_sale:
-                    fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento", "cancellation_code"])  # 🆕 AGREGADO
-                    values.extend([dias_credito, monto_pendiente, fecha_vencimiento_val, cancellation_code])  # 🆕 AGREGADO
+                    fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento", "cancellation_code"])
+                    values.extend([dias_credito, monto_pendiente, fecha_vencimiento_val, cancellation_code])
 
                 placeholders = sql.SQL(', ').join(sql.Placeholder() * len(fields))
                 
@@ -292,7 +291,7 @@ def sales_collection():
                     "stock_alerts": stock_alerts
                 }
                 
-                # 🆕 NUEVO: Incluir código de cancelación en la respuesta si es crédito
+                # Incluir código de cancelación en la respuesta si es crédito
                 if is_credit_sale:
                     response["cancellation_code"] = cancellation_code
                 
@@ -312,20 +311,19 @@ def sales_collection():
             app_logger.error(f"Error al registrar la venta (POST): {error_msg}", exc_info=True)
             return jsonify({"msg": f"Error al registrar la venta: {error_msg}"}), status_code
             
-
-            
     elif request.method == "GET":
-        # LÓGICA DE LISTADO (GET /api/sales) - CORREGIDA CON CAMPOS DE PAGO/CRÉDITO
+        # LÓGICA DE LISTADO (GET /api/sales)
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
                         s.sale_date, s.status,
-                        s.tipo_pago, -- 🟢 CAMBIO: Incluido
-                        s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos
+                        s.tipo_pago,
+                        s.usd_paid, s.ves_paid,
                         s.total_amount_usd AS total_amount, s.total_amount_ves, 
                         s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id, 
-                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
+                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito,
+                        s.cancellation_code,
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
@@ -347,9 +345,9 @@ def sales_collection():
             # Agrupación y Ordenamiento
             base_query += """
                 GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
-                s.tipo_pago, s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos en GROUP BY
+                s.tipo_pago, s.usd_paid, s.ves_paid,
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.cancellation_code
                 ORDER BY s.sale_date DESC;
             """
             
@@ -377,17 +375,18 @@ def sales_single(sale_id):
     sale_id_str = str(sale_id)
 
     if request.method == "GET":
-        # LÓGICA DE VISTA INDIVIDUAL (GET) - CORREGIDA CON CAMPOS DE PAGO/CRÉDITO
+        # LÓGICA DE VISTA INDIVIDUAL (GET)
         try:
             base_query = """
                 SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email, c.address as customer_address,
                         s.sale_date, s.status, 
-                        s.tipo_pago, -- 🟢 CAMBIO: Incluido
-                        s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos
+                        s.tipo_pago,
+                        s.usd_paid, s.ves_paid,
                         s.total_amount_usd AS total_amount, 
                         s.total_amount_ves, s.exchange_rate_used, 
                         u.email as seller_email, u.id as seller_id,
-                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
+                        s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito,
+                        s.cancellation_code,
                         json_agg(json_build_object(
                             'product_name', p.name,
                             'quantity', si.quantity,
@@ -408,9 +407,9 @@ def sales_single(sale_id):
             # GROUP BY
             base_query += """
                 GROUP BY s.id, s.customer_id, c.name, c.email, c.address, s.sale_date, s.status, 
-                s.tipo_pago, s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos en GROUP BY
+                s.tipo_pago, s.usd_paid, s.ves_paid,
                 s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito;
+                s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.cancellation_code;
             """
 
             with get_db_cursor() as cur:
@@ -425,7 +424,7 @@ def sales_single(sale_id):
             return jsonify({"msg": "Error al obtener la venta", "error": str(e)}), 500
 
     elif request.method == "DELETE":
-        # LÓGICA DE ELIMINACIÓN (DELETE) - SIN CAMBIOS
+        # LÓGICA DE ELIMINACIÓN (DELETE)
         cur = None
         try:
             with get_db_cursor(commit=False) as cur: 
@@ -520,11 +519,12 @@ def admin_general_reports():
         query = """
             SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
                     s.sale_date, s.status, 
-                    s.tipo_pago, -- 🟢 CAMBIO: Incluido
-                    s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos
+                    s.tipo_pago,
+                    s.usd_paid, s.ves_paid,
                     s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
                     u.email as seller_email, u.id as seller_id, 
-                    s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito, 
+                    s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito,
+                    s.cancellation_code,
                     json_agg(json_build_object(
                         'product_name', p.name,
                         'quantity', si.quantity,
@@ -536,9 +536,9 @@ def admin_general_reports():
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
             GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
-            s.tipo_pago, s.usd_paid, s.ves_paid, -- 🟢 CAMBIO: Incluidos en GROUP BY
+            s.tipo_pago, s.usd_paid, s.ves_paid,
             s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito 
+            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.cancellation_code
             ORDER BY s.sale_date DESC;
         """
         
