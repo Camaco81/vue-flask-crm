@@ -44,7 +44,7 @@ def check_admin_permission(user_role_id):
     """
     Verifica si el role_id del usuario es de administrador (ADMIN_ROLE_ID).
     """
-    return user_role_id == ADMIN_ROLE_ID
+    return user_role_id == ADMIN_ROLE_ID or user_role_id == SELLER_ROLE_ID
 
 def check_seller_permission(user_role_id):
     """
