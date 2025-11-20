@@ -590,7 +590,6 @@ def pay_credit():
         return jsonify({'msg': error}), 400
 
     sale_id = data['sale_id']
-    # Usar Decimal para manejo preciso de moneda
     raw_payment_amount = Decimal(str(data['payment_amount'])) 
     payment_currency = data['payment_currency'].upper()
     cancellation_code_input = data['cancellation_code'].strip()
@@ -602,13 +601,14 @@ def pay_credit():
     if payment_currency == 'VES' and exchange_rate <= 0:
         return jsonify({'msg': 'Se requiere una tasa de cambio válida para pagos en VES.'}), 400
     
-    # Definir tolerancia global (ajusta si es necesario)
+    # Asegúrate de que PAYMENT_TOLERANCE esté definido globalmente al inicio del archivo (ej: 0.01)
+    # Lo he incluido en el código para que sea funcional si no lo tienes globalmente
     PAYMENT_TOLERANCE = Decimal('0.02') 
 
     # 2. Conectar y obtener datos de la venta
     try:
         with get_db_cursor() as cur:
-            # Obtener datos de la venta y bloquear la fila para evitar concurrencia (FOR UPDATE)
+            # Bloquear la fila de la venta para evitar concurrencia (FOR UPDATE)
             cur.execute("""
                 SELECT 
                     s.balance_due_usd, s.total_amount_usd, s.paid_amount_usd, s.status, s.cancellation_code, 
@@ -636,9 +636,7 @@ def pay_credit():
             
             # CORRECCIÓN 1: Convertir de VES a USD si aplica
             if payment_currency == 'VES':
-                # Convertir el monto de VES a USD usando la tasa proporcionada
                 amount_paid_usd = raw_payment_amount / exchange_rate 
-            # (El ELSE mantiene amount_paid_usd = raw_payment_amount si es USD)
 
             # Validar que el monto en USD no exceda el saldo pendiente (con tolerancia)
             if amount_paid_usd > balance_due + PAYMENT_TOLERANCE:
@@ -657,21 +655,18 @@ def pay_credit():
             if new_balance_due.quantize(Decimal('0.01')) <= Decimal('0.00'):
                 new_status = 'Pagado'
                 new_balance_due = Decimal('0.00') # Asegurar que el saldo quede en cero
+
             
             # 4. Actualizar la Venta en la Base de Datos
-            
-            # CORRECCIÓN 3: Actualizar todos los campos necesarios
             query = sql.SQL("""
                 UPDATE sales
                 SET 
                     balance_due_usd = %s, 
                     paid_amount_usd = %s,
                     status = %s,
-                    -- Acumular pagos en las divisas originales para reporte
                     ves_paid = ves_paid + CASE WHEN %s = 'VES' THEN %s ELSE 0 END,
                     usd_paid = usd_paid + CASE WHEN %s = 'USD' THEN %s ELSE 0 END,
                     exchange_rate_used = CASE WHEN %s = 'VES' THEN %s ELSE exchange_rate_used END,
-                    -- Actualizar fecha de pago si es la cancelación final
                     fecha_pago_final = CASE WHEN %s = 'Pagado' THEN NOW() ELSE fecha_pago_final END
                 WHERE id = %s
                 RETURNING *;
@@ -681,15 +676,13 @@ def pay_credit():
                 new_balance_due, 
                 new_paid_usd, 
                 new_status,
-                payment_currency, raw_payment_amount, # Para ves_paid
-                payment_currency, raw_payment_amount, # Para usd_paid
-                payment_currency, exchange_rate, # Para exchange_rate_used
-                new_status, # Para fecha_pago_final
+                payment_currency, raw_payment_amount, 
+                payment_currency, raw_payment_amount, 
+                payment_currency, exchange_rate, 
+                new_status, 
                 sale_id
             ))
             
-            # COMMIT IMPLÍCITO: Asumiendo que get_db_cursor() maneja el commit si no hay excepción
-
             # 5. Éxito
             return jsonify({
                 'msg': f'Pago de $ {amount_paid_usd.quantize(Decimal("0.01"))} USD registrado con éxito. Estado: {new_status}',
@@ -698,12 +691,6 @@ def pay_credit():
             }), 200
 
     except Exception as e:
-        # Asegúrate de que app_logger y sql estén importados
-        # from psycopg2 import sql
-        # import logging
-        # app_logger = logging.getLogger(__name__) 
-        
-        # En caso de error, la transacción se deshace (ROLLBACK)
         app_logger.error(f"Error al procesar pago de crédito para venta {sale_id}: {e}", exc_info=True)
         return jsonify({'msg': 'Error interno del servidor al procesar el pago.'}), 500
 # ---------------------------------------------------------
