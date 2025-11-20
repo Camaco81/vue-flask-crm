@@ -236,9 +236,7 @@
   <p v-if="sale.fecha_vencimiento">
     <strong>Vencimiento:</strong> {{ formatDate(sale.fecha_vencimiento) }}
   </p>
-  <p v-if="sale.cancellation_code" class="cancellation-code">
-    <small><strong>Código Cancelación:</strong> {{ sale.cancellation_code }}</small>
-  </p>
+ 
 </div>
           <div class="sale-items">
             <h4>Elementos de la venta:</h4>
@@ -252,13 +250,7 @@
             <button @click="generateInvoicePdf(sale)" class="pdf-btn">
               <i class="fas fa-file-pdf"></i> Generar Factura PDF
             </button>
-            <button 
-              v-if="sale.payment_method === 'Crédito' && sale.balance_due_usd > 0"
-              @click="openCreditPayment(sale)"
-              class="pay-credit-btn"
-            >
-              💳 {{ sale.paid_amount_usd > 0 ? 'Continuar Pago' : 'Pagar Crédito' }}
-            </button>
+            
             <span 
               v-if="sale.payment_method === 'Crédito' && sale.balance_due_usd <= 0" 
               class="fully-paid-badge"

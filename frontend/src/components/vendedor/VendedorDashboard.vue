@@ -1,27 +1,29 @@
 <template>
-  <div class="dashboard-container">
+  <div class="dashboard-container" :class="{ 'sidebar-open': isSidebarOpen }">
+    <div v-if="isSidebarOpen" class="sidebar-overlay" @click="toggleSidebar"></div>
+
     <aside class="sidebar">
       <nav class="navigation">
         <ul class="nav-list">
-          <li class="nav-item">
+          <li class="nav-item" @click="isSidebarOpen = false"> 
             <router-link to="/vendedor/customers" class="nav-link">
-              <div class="nav-icon"><i class="fas fa-users"></i></div>
+              <div class="nav-icon"><font-awesome-icon icon="users" /></div>
               <span class="nav-text">Clientes</span>
               <div class="nav-indicator"></div>
             </router-link>
           </li>
           
-          <li class="nav-item">
+          <li class="nav-item" @click="isSidebarOpen = false">
             <router-link to="/vendedor/sales" class="nav-link">
-              <div class="nav-icon"><i class="fas fa-shopping-cart"></i></div>
+              <div class="nav-icon"><font-awesome-icon icon="shopping-cart" /></div>
               <span class="nav-text">Ventas</span>
               <div class="nav-indicator"></div>
             </router-link>
           </li>
           
-          <li class="nav-item">
+          <li class="nav-item" @click="isSidebarOpen = false">
             <router-link to="/vendedor/profile" class="nav-link">
-              <div class="nav-icon"><i class="fas fa-user"></i></div>
+              <div class="nav-icon"><font-awesome-icon icon="user" /></div>
               <span class="nav-text">Perfil</span>
               <div class="nav-indicator"></div>
             </router-link>
@@ -32,7 +34,7 @@
       <div class="user-section">
         <div class="user-info">
           <div class="user-avatar">
-            <i class="fas fa-user-circle"></i>
+            <font-awesome-icon icon="user-circle" />
           </div>
           <div class="user-details">
             <span class="user-name">Usuario</span>
@@ -40,7 +42,7 @@
           </div>
         </div>
         <button @click="logout" class="logout-btn" title="Cerrar Sesión">
-          <i class="fas fa-sign-out-alt"></i>
+          <font-awesome-icon icon="sign-out-alt" />
           <span>Cerrar Sesión</span>
         </button>
       </div>
@@ -49,15 +51,19 @@
     <main class="main-content">
       <header class="content-header">
         <div class="header-content">
+          <button class="menu-toggle-btn" @click="toggleSidebar">
+            <font-awesome-icon :icon="isSidebarOpen ? 'times' : 'bars'" />
+          </button>
+          
           <h1 class="welcome-title">¡Bienvenido!</h1>
           <p class="welcome-subtitle">Tu centro de operaciones de ventas.</p>
         </div>
         <div class="header-actions">
           <button class="action-btn">
-            <i class="fas fa-bell"></i>
+            <font-awesome-icon icon="bell" />
           </button>
           <button class="action-btn">
-            <i class="fas fa-cog"></i>
+            <font-awesome-icon icon="cog" />
           </button>
         </div>
       </header>
@@ -66,7 +72,7 @@
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-icon customers">
-              <i class="fas fa-users"></i>
+              <font-awesome-icon icon="users" />
             </div>
             <div class="stat-content">
               <h3 class="stat-number">
@@ -76,19 +82,6 @@
               <p class="stat-label">Clientes Totales</p>
             </div>
           </div>
-
-          <div class="stat-card">
-            <div class="stat-icon revenue">
-              <i class="fas fa-dollar-sign"></i>
-            </div>
-            <div class="stat-content">
-              <h3 class="stat-number">
-                <span v-if="loading.totalRevenue" class="spinner-small"></span>
-                <span v-else>${{ metrics.totalRevenue }}</span>
-              </h3>
-              <p class="stat-label">Ingresos Totales</p>
-            </div>
-          </div>
           
           </div>
 
@@ -96,61 +89,58 @@
           <h2 class="section-title">Enfoque Rápido</h2>
           <div class="actions-grid">
             
-            <router-link to="/vendedor/customers" class="quick-action-card">
-              <i class="fas fa-user-plus"></i>
+            <router-link to="/vendedor/customers" class="quick-action-card" @click="isSidebarOpen = false">
+              <font-awesome-icon icon="user-plus" />
               <span>Agregar Cliente</span>
             </router-link>
             
-            <router-link to="/vendedor/sales" class="quick-action-card primary-action"> 
-              <i class="fas fa-cash-register"></i> 
+            <router-link to="/vendedor/sales" class="quick-action-card primary-action" @click="isSidebarOpen = false"> 
+              <font-awesome-icon icon="cash-register" /> 
               <span>Registrar Venta</span>
             </router-link>
             
-            
-            
-            </div>
+          </div>
         </div>
       </div>
     </main>
   </div>
 </template>
-
 <script>
 import apiClient from '../../axios';
 
 export default {
-    name: 'VendedorDashboard', // Renombrado de HomeDashboard para ser específico
+    name: 'VendedorDashboard',
     data() {
         return {
+            // Nuevo estado para el menú lateral en móvil
+            isSidebarOpen: false, 
             metrics: {
                 customers: 0,
-                // Eliminamos 'products'
-                totalRevenue: 0, 
+                // totalRevenue ELIMINADO
             },
             loading: {
                 customers: true,
-                // Eliminamos 'products'
-                totalRevenue: true, 
+                // totalRevenue ELIMINADO
             },
             errors: {
                 customers: null,
-                // Eliminamos 'products'
-                totalRevenue: null,
+                // totalRevenue ELIMINADO
             }
         };
     },
     methods: {
+        // Nuevo método para alternar el estado del sidebar
+        toggleSidebar() {
+            this.isSidebarOpen = !this.isSidebarOpen;
+        },
         logout() {
-            // Usar localStorage o sessionStorage consistentemente. Asumo localStorage por el router/index.js
             localStorage.removeItem('access_token');
             localStorage.removeItem('user_info'); 
             this.$router.push('/login');
         },
         
-        // Función para obtener la lista completa de Clientes
         async fetchCustomers() {
             try {
-                // Asumimos que esta ruta devuelve una lista completa de clientes que el vendedor puede ver
                 const response = await apiClient.get('/api/customers');
                 this.metrics.customers = response.data.length;
             } catch (error) {
@@ -161,38 +151,11 @@ export default {
             }
         },
         
-        // Eliminamos fetchProducts()
-        
-        // Lógica CONSOLIDADA para Ventas e Ingresos
-        async fetchSalesMetrics() {
-            try {
-                this.loading.totalRevenue = true;
-                this.metrics.totalRevenue = 0;
-
-                // Asumimos que esta ruta devuelve SÓLO las ventas del vendedor autenticado
-                const response = await apiClient.get('/api/sales');
-                const sales = response.data; // Lista de todas las ventas del vendedor
-
-                // Calcular Ingresos Totales
-                const totalRevenue = sales.reduce((sum, sale) => {
-                    const amount = parseFloat(sale.total_amount) || 0; 
-                    return sum + amount;
-                }, 0);
-                
-                this.metrics.totalRevenue = totalRevenue.toFixed(2);
-
-            } catch (error) {
-                console.error("Error al cargar métricas de ventas:", error);
-                this.errors.totalRevenue = "Error al cargar ingresos";
-            } finally {
-                this.loading.totalRevenue = false;
-            }
-        },
+        // fetchSalesMetrics() ELIMINADO
         
         fetchDashboardData() {
             this.fetchCustomers();
-            // Eliminamos this.fetchProducts();
-            this.fetchSalesMetrics(); 
+            // Ya no se llama a fetchSalesMetrics
         }
     },
     mounted() {
@@ -200,6 +163,7 @@ export default {
     }
 };
 </script>
+
 
 
 
@@ -665,5 +629,115 @@ export default {
        pero se deja para no romper si otros componentes lo usan.
        En este componente, la métrica ya fue eliminada. */
     display: none; 
+}
+/* ... [TODOS LOS ESTILOS ANTERIORES SE MANTIENEN] ... */
+
+/* Estilos para el nuevo botón de menú (invisible en desktop) */
+.menu-toggle-btn {
+    display: none;
+    z-index: 10;
+}
+
+/* Overlay para el menú en móvil */
+.sidebar-overlay {
+    display: none; /* Oculto por defecto */
+}
+
+/* Ocultar el ícono de productos que ya no usamos en el HTML */
+.stat-icon.products {
+    display: none; 
+}
+
+/* ===== RESPONSIVE (ACTUALIZADO: Sidebar Drawer) ===== */
+@media (max-width: 768px) {
+    /* 1. Control del SCROLL: Ocultar el scroll cuando el menú está abierto */
+    .dashboard-container.sidebar-open {
+        overflow: hidden;
+        height: 100vh;
+    }
+
+    /* 2. SIDEBAR como Drawer (oculto por defecto) */
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 1000;
+        width: 280px;
+        transform: translateX(-100%); /* Oculto por defecto */
+        transition: transform 0.3s ease-in-out;
+        box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+    }
+    
+    /* Mostrar la barra lateral cuando la clase 'sidebar-open' está activa */
+    .dashboard-container.sidebar-open .sidebar {
+        transform: translateX(0);
+    }
+    
+    /* 3. OVERLAY para cerrar el menú al tocar fuera */
+    .sidebar-overlay {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+    }
+
+    /* 4. BOTÓN DE MENÚ (Visible en móvil) */
+    .menu-toggle-btn {
+        display: flex; /* Mostrar el botón de hamburguesa */
+        width: 44px;
+        height: 44px;
+        border: none;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border-radius: 12px;
+        cursor: pointer;
+        align-items: center;
+        justify-content: center;
+        margin-right: 15px;
+        font-size: 18px;
+    }
+
+    /* 5. AJUSTES DEL HEADER Y CONTENIDO */
+    .content-header {
+        padding: 20px;
+        flex-direction: row; 
+        align-items: center;
+        gap: 15px;
+        position: sticky; /* Fija el header arriba */
+        top: 0;
+        z-index: 100;
+    }
+    
+    .header-content {
+        display: flex;
+        align-items: center;
+    }
+
+    .welcome-subtitle {
+        display: none; /* Ocultar el subtítulo para ahorrar espacio */
+    }
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .actions-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+
+    /* Resetear estilos de sidebar horizontal que ya no se usan */
+    .nav-list {
+        display: block;
+    }
+    
+    .nav-link {
+        margin-right: 0;
+        border-radius: 0;
+    }
 }
 </style>
