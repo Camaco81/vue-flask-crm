@@ -347,9 +347,9 @@ def process_sale_items_and_stock(cur, sale_id, validated_items):
     stock_alerts = []
     
     for item in validated_items:
-        # Insertar item de venta
+        # Insertar item de venta - USANDO LA COLUMNA CORRECTA 'price'
         cur.execute(
-            "INSERT INTO sale_items (sale_id, product_id, quantity, price_usd) VALUES (%s, %s, %s, %s);",
+            "INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
             (sale_id, item['product_id'], item['quantity'], item['price'])
         )
         
@@ -420,7 +420,7 @@ def handle_sales_listing(current_user_id, user_role):
                     'product_id', p.id,
                     'product_name', p.name,
                     'quantity', si.quantity,
-                    'price_usd', si.price_usd
+                    'price_usd', si.price  -- CORREGIDO: usar 'price' en lugar de 'price_usd'
                 )) AS items
             FROM sales s
             JOIN customers c ON s.customer_id = c.id
@@ -760,7 +760,7 @@ def admin_general_reports():
                     'product_id', p.id,
                     'product_name', p.name,
                     'quantity', si.quantity,
-                    'price_usd', si.price_usd
+                    'price_usd', si.price  -- CORREGIDO: usar 'price' en lugar de 'price_usd'
                 )) AS items
             FROM sales s
             JOIN customers c ON s.customer_id = c.id
