@@ -579,34 +579,37 @@ def get_customer_credit_sales(customer_id):
 
 @sale_bp.route('/pay-credit', methods=['POST'])
 @jwt_required()
-@check_seller_permission # ¡Sin paréntesis! Ahora es una función decoradora.
+@check_seller_permission
 def pay_credit():
     """Registra un abono o pago completo a una venta a crédito."""
+    
+    # Asegúrate de que Decimal esté importado de 'decimal' y sql de 'psycopg2'
+    from decimal import Decimal
+    from psycopg2 import sql 
     
     # 1. Obtener datos y validar
     data = request.get_json()
     required = ['sale_id', 'payment_amount', 'payment_currency', 'cancellation_code']
+    # La variable global PAYMENT_TOLERANCE DEBE ESTAR DEFINIDA al inicio del archivo
+    PAYMENT_TOLERANCE = Decimal('0.01') 
+
     if error := validate_required_fields(data, required):
-        return jsonify({'msg': error}), 400
+        return jsonify({'msg': f'Campo requerido faltante: {error}'}), 400
 
-    sale_id = data['sale_id']
-    raw_payment_amount = Decimal(str(data['payment_amount'])) 
-    payment_currency = data['payment_currency'].upper()
-    cancellation_code_input = data['cancellation_code'].strip()
-    exchange_rate = Decimal(str(data.get('exchange_rate', 1)))
-
-    if raw_payment_amount <= 0:
-        return jsonify({'msg': 'El monto de pago debe ser positivo.'}), 400
-
-    if payment_currency == 'VES' and exchange_rate <= 0:
-        return jsonify({'msg': 'Se requiere una tasa de cambio válida para pagos en VES.'}), 400
-    
-    # Asegúrate de que PAYMENT_TOLERANCE esté definido globalmente al inicio del archivo (ej: 0.01)
-    # Lo he incluido en el código para que sea funcional si no lo tienes globalmente
-    PAYMENT_TOLERANCE = Decimal('0.02') 
-
-    # 2. Conectar y obtener datos de la venta
     try:
+        sale_id = data['sale_id']
+        raw_payment_amount = Decimal(str(data['payment_amount'])) 
+        payment_currency = data['payment_currency'].upper()
+        cancellation_code_input = data['cancellation_code'].strip()
+        exchange_rate = Decimal(str(data.get('exchange_rate', 1)))
+
+        if raw_payment_amount <= 0:
+            return jsonify({'msg': 'El monto de pago debe ser positivo.'}), 400
+
+        if payment_currency == 'VES' and exchange_rate <= 0:
+            return jsonify({'msg': 'Se requiere una tasa de cambio válida para pagos en VES.'}), 400
+        
+        # 2. Conectar y obtener datos de la venta
         with get_db_cursor() as cur:
             # Bloquear la fila de la venta para evitar concurrencia (FOR UPDATE)
             cur.execute("""
@@ -621,10 +624,12 @@ def pay_credit():
             sale_record = cur.fetchone()
             
             if not sale_record:
+                # Si no se encuentra, puede ser que ya esté pagada o ID incorrecto.
                 return jsonify({'msg': 'Venta a crédito no encontrada o ya está pagada.'}), 404
             
             balance_due = sale_record['balance_due_usd']
             current_paid_usd = sale_record['paid_amount_usd']
+            customer_id = sale_record['customer_id']
             
             # Validar Código de Cancelación
             if cancellation_code_input != sale_record['cancellation_code']:
@@ -634,12 +639,13 @@ def pay_credit():
             
             amount_paid_usd = raw_payment_amount
             
-            # CORRECCIÓN 1: Convertir de VES a USD si aplica
+            # Convertir de VES a USD si aplica
             if payment_currency == 'VES':
                 amount_paid_usd = raw_payment_amount / exchange_rate 
 
             # Validar que el monto en USD no exceda el saldo pendiente (con tolerancia)
             if amount_paid_usd > balance_due + PAYMENT_TOLERANCE:
+                # Si excede por mucho, es un error
                 return jsonify({'msg': f"El pago excede el saldo pendiente ($ {balance_due.quantize(Decimal('0.01'))})."}), 400
             
             # Forzar el monto a ser exactamente el saldo si se paga de más (dentro de la tolerancia)
@@ -651,13 +657,22 @@ def pay_credit():
             new_paid_usd = current_paid_usd + amount_paid_usd
             
             new_status = 'Abonado'
-            # CORRECCIÓN 2: Usar tolerancia para determinar estado "Pagado"
+            # Usar tolerancia para determinar estado "Pagado"
             if new_balance_due.quantize(Decimal('0.01')) <= Decimal('0.00'):
                 new_status = 'Pagado'
                 new_balance_due = Decimal('0.00') # Asegurar que el saldo quede en cero
 
-            
             # 4. Actualizar la Venta en la Base de Datos
+            
+            # Definir la sentencia para fecha_pago_final condicionalmente
+            if new_status == 'Pagado':
+                # Si el estado es Pagado, se pone la fecha actual.
+                fecha_pago_final_update = sql.SQL("fecha_pago_final = NOW()")
+            else:
+                # Si no es Pagado, se mantiene el valor actual (NULL por defecto)
+                fecha_pago_final_update = sql.SQL("fecha_pago_final = fecha_pago_final")
+
+            # La consulta principal
             query = sql.SQL("""
                 UPDATE sales
                 SET 
@@ -667,11 +682,13 @@ def pay_credit():
                     ves_paid = ves_paid + CASE WHEN %s = 'VES' THEN %s ELSE 0 END,
                     usd_paid = usd_paid + CASE WHEN %s = 'USD' THEN %s ELSE 0 END,
                     exchange_rate_used = CASE WHEN %s = 'VES' THEN %s ELSE exchange_rate_used END,
-                    fecha_pago_final = CASE WHEN %s = 'Pagado' THEN NOW() ELSE fecha_pago_final END
+                    updated_at = NOW(),
+                    {fecha_final_set}
                 WHERE id = %s
-                RETURNING *;
-            """)
+                RETURNING balance_due_usd, status;
+            """).format(fecha_final_set=fecha_pago_final_update)
             
+            # Parámetros (ordenados por %s en el query)
             cur.execute(query, (
                 new_balance_due, 
                 new_paid_usd, 
@@ -679,20 +696,44 @@ def pay_credit():
                 payment_currency, raw_payment_amount, 
                 payment_currency, raw_payment_amount, 
                 payment_currency, exchange_rate, 
-                new_status, 
                 sale_id
             ))
             
-            # 5. Exito
+            # El fetchone es necesario si usas RETURNING
+            updated_sale = cur.fetchone() 
+            
+            # 5. Actualizar el saldo global del cliente (si es necesario)
+            # Esto es clave para que el estado se refleje correctamente
+            
+            # Calcular el cambio en el saldo pendiente (si es un abono real)
+            amount_reduced_from_credit = balance_due - new_balance_due
+            
+            if amount_reduced_from_credit > Decimal('0.00'):
+                 cur.execute("""
+                    UPDATE customers
+                    SET current_credit_balance = current_credit_balance - %s,
+                        updated_at = NOW()
+                    WHERE id = %s;
+                """, (amount_reduced_from_credit, customer_id))
+            
+            # Asegurar la transacción
+            cur.connection.commit()
+            
+            # 6. Exito
             return jsonify({
                 'msg': f'Pago de $ {amount_paid_usd.quantize(Decimal("0.01"))} USD registrado con éxito. Estado: {new_status}',
-                'new_status': new_status,
-                'new_balance': new_balance_due.quantize(Decimal('0.01'))
+                'new_status': updated_sale['status'], # Usamos el valor retornado por la DB para confirmar
+                'new_balance': updated_sale['balance_due_usd'].quantize(Decimal('0.01'))
             }), 200
 
     except Exception as e:
+        # 7. Manejo de Errores y Rollback
+        # El rollback solo debe ocurrir si la transacción falló
+        if 'cur' in locals() and cur and cur.connection:
+             cur.connection.rollback()
+             
         app_logger.error(f"Error al procesar pago de crédito para venta {sale_id}: {e}", exc_info=True)
-        return jsonify({'msg': 'Error interno del servidor al procesar el pago.'}), 500
+        return jsonify({'msg': 'Error interno del servidor al procesar el pago. Por favor, revisa los logs.'}), 500
 # ---------------------------------------------------------
 # RUTAS DE REPORTES ADMIN
 # ---------------------------------------------------------
