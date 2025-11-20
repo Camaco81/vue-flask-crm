@@ -437,26 +437,35 @@ def get_customers_with_credit():
     try:
         search_term = request.args.get('search', '').strip()
         
-        # Consulta más simple y robusta
+        # Versión más robusta con CAST explícito
         base_query = """
             SELECT 
                 id,
                 name,
                 cedula,
                 email,
-                balance_pendiente_usd as saldo_pendiente
-            FROM customers 
-            WHERE balance_pendiente_usd > 0
+                balance_pendiente_usd as saldo_pendiente,
+                COUNT(s.id) as ventas_credito_activas,
+                MAX(s.fecha_vencimiento) as ultima_fecha_vencimiento
+            FROM customers c
+            LEFT JOIN sales s ON c.id = s.customer_id 
+                AND s.status = 'Crédito' 
+                AND s.balance_due_usd > 0
+            WHERE c.balance_pendiente_usd > 0
         """
         
         params = []
         
         if search_term:
-            base_query += " AND (cedula ILIKE %s OR name ILIKE %s)"
+            # Usar CAST explícito para convertir integer a text
+            base_query += " AND (CAST(cedula AS TEXT) ILIKE %s OR name ILIKE %s)"
             search_pattern = f"%{search_term}%"
             params.extend([search_pattern, search_pattern])
         
-        base_query += " ORDER BY balance_pendiente_usd DESC, name"
+        base_query += """
+            GROUP BY c.id, c.name, c.cedula, c.email, c.balance_pendiente_usd
+            ORDER BY c.balance_pendiente_usd DESC, c.name
+        """
         
         with get_db_cursor() as cur:
             cur.execute(base_query, tuple(params))
@@ -466,11 +475,11 @@ def get_customers_with_credit():
                 customer_data = {
                     'id': record['id'],
                     'name': record['name'],
-                    'cedula': record['cedula'] or 'N/A',
+                    'cedula': str(record['cedula']) if record['cedula'] else 'N/A',  # Convertir a string
                     'email': record['email'] or '',
                     'saldo_pendiente': float(record['saldo_pendiente'] or 0),
-                    'ventas_credito_activas': 0,  # Valor por defecto
-                    'ultima_fecha_vencimiento': None  # Valor por defecto
+                    'ventas_credito_activas': record['ventas_credito_activas'] or 0,
+                    'ultima_fecha_vencimiento': record['ultima_fecha_vencimiento']
                 }
                 customers.append(customer_data)
             
@@ -479,7 +488,6 @@ def get_customers_with_credit():
     except Exception as e:
         app_logger.error(f"Error al obtener clientes con crédito: {e}", exc_info=True)
         return jsonify({"msg": "Error interno del servidor al buscar clientes"}), 500
-        
 
 @sale_bp.route('/pay-credit', methods=['POST'])
 @jwt_required()
