@@ -28,6 +28,8 @@ DEFAULT_CREDIT_DAYS = 30
 
 def normalize_payment_type(tipo_pago_raw):
     """Normaliza el tipo de pago a formato consistente"""
+    if not tipo_pago_raw:
+        return 'contado'
     return tipo_pago_raw.lower().replace('é', 'e').strip()
 
 def validate_payment_amounts(usd_paid_raw, ves_paid_raw):
@@ -59,14 +61,10 @@ def calculate_payment_totals(total_amount_usd, usd_paid, ves_paid, exchange_rate
     
     return total_paid_usd, saldo_pendiente
 
-def handle_credit_sale_validation(customer_id, pin_raw, cancellation_code):
+def handle_credit_sale_validation(cancellation_code):
     """Maneja la validación para ventas a crédito"""
     if not cancellation_code:
         return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
-    
-    # 🟢 ELIMINADO: Validación de PIN ya no es requerida
-    # Solo código de cancelación es suficiente
-    
     return None  # No hay error
 
 def build_sale_insert_query(is_credit_sale, fields, values, dias_credito, monto_pendiente, fecha_vencimiento, cancellation_code):
@@ -81,6 +79,18 @@ def build_sale_insert_query(is_credit_sale, fields, values, dias_credito, monto_
         sql.SQL(', ').join(map(sql.Identifier, fields)),
         placeholders
     )
+
+def determine_sale_status(is_credit_sale, balance_due, paid_amount):
+    """Determina el estado correcto de la venta"""
+    if not is_credit_sale:
+        return 'Completado'
+    
+    if balance_due <= PAYMENT_TOLERANCE:
+        return 'Pagado'
+    elif paid_amount > 0:
+        return 'Abonado'
+    else:
+        return 'Crédito'
 
 # =========================================================
 # RUTAS DE VENTA
@@ -134,7 +144,7 @@ def handle_sale_creation(current_user_id, user_role):
         
         # Validación para crédito
         if is_credit_sale:
-            error_response = handle_credit_sale_validation(customer_id, None, cancellation_code)
+            error_response = handle_credit_sale_validation(cancellation_code)
             if error_response:
                 return error_response
 
@@ -182,17 +192,20 @@ def process_sale_transaction(customer_id, items, tipo_pago_raw, is_credit_sale,
                     "msg": f"Monto pagado insuficiente para venta al contado. Saldo pendiente: ${saldo_pendiente:.2f}"
                 }), 400
 
+            # Determinar estado inicial
+            initial_status = determine_sale_status(is_credit_sale, saldo_pendiente, usd_paid)
+            
             # Procesar crédito si aplica
-            status, monto_pendiente, fecha_vencimiento = process_credit_sale(
-                cur, is_credit_sale, customer_id, saldo_pendiente, dias_credito
+            monto_pendiente, fecha_vencimiento = process_credit_sale(
+                cur, is_credit_sale, customer_id, saldo_pendiente, dias_credito, initial_status
             )
-            if isinstance(status, tuple):  # Error ocurrió
-                return status
+            if isinstance(monto_pendiente, tuple):  # Error ocurrió
+                return monto_pendiente
 
             # Insertar venta
             new_sale_id = insert_sale_record(
                 cur, customer_id, seller_user_id, total_amount_usd, total_amount_ves,
-                exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid,
+                exchange_rate, initial_status, tipo_pago_raw, usd_paid, ves_paid,
                 is_credit_sale, dias_credito, monto_pendiente, fecha_vencimiento, cancellation_code
             )
 
@@ -205,7 +218,7 @@ def process_sale_transaction(customer_id, items, tipo_pago_raw, is_credit_sale,
             return build_success_response(
                 new_sale_id, tipo_pago_raw, total_amount_usd, total_amount_ves,
                 exchange_rate, usd_paid, ves_paid, monto_pendiente, stock_alerts,
-                is_credit_sale, cancellation_code
+                is_credit_sale, cancellation_code, initial_status
             )
                 
     except Exception as e:
@@ -263,14 +276,12 @@ def validate_stock_and_calculate_totals(cur, items):
 
     return total_amount_usd, validated_items
 
-def process_credit_sale(cur, is_credit_sale, customer_id, saldo_pendiente, dias_credito):
+def process_credit_sale(cur, is_credit_sale, customer_id, saldo_pendiente, dias_credito, initial_status):
     """Procesa lógica específica para ventas a crédito"""
-    status = 'Completado'
     monto_pendiente = 0.0
     fecha_vencimiento = None
     
     if is_credit_sale:
-        status = 'Crédito'
         monto_pendiente = saldo_pendiente
         
         # Verificar límite de crédito del cliente
@@ -295,16 +306,17 @@ def process_credit_sale(cur, is_credit_sale, customer_id, saldo_pendiente, dias_
                 "code": "CREDIT_LIMIT_EXCEEDED"
             }), 400
             
-        # Actualizar balance del cliente
-        cur.execute(
-            "UPDATE customers SET balance_pendiente_usd = %s WHERE id = %s",
-            (nuevo_balance, customer_id)
-        )
+        # Actualizar balance del cliente SOLO si es crédito pendiente
+        if initial_status in ['Crédito', 'Abonado']:
+            cur.execute(
+                "UPDATE customers SET balance_pendiente_usd = %s WHERE id = %s",
+                (nuevo_balance, customer_id)
+            )
         
         # Calcular fecha de vencimiento
         fecha_vencimiento = datetime.now().date() + timedelta(days=dias_credito)
     
-    return status, monto_pendiente, fecha_vencimiento
+    return monto_pendiente, fecha_vencimiento
 
 def insert_sale_record(cur, customer_id, seller_user_id, total_amount_usd, total_amount_ves,
                       exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid,
@@ -313,13 +325,13 @@ def insert_sale_record(cur, customer_id, seller_user_id, total_amount_usd, total
     fields = [
         "id", "customer_id", "user_id", "sale_date", "total_amount_usd", 
         "total_amount_ves", "exchange_rate_used", "status", "tipo_pago", 
-        "usd_paid", "ves_paid"
+        "usd_paid", "ves_paid", "paid_amount_usd"
     ]
     
     values = [
         str(uuid.uuid4()), customer_id, seller_user_id, datetime.now(), 
         total_amount_usd, total_amount_ves, exchange_rate, status, 
-        tipo_pago_raw, usd_paid, ves_paid
+        tipo_pago_raw, usd_paid, ves_paid, usd_paid  # paid_amount_usd inicial = usd_paid
     ]
     
     query = build_sale_insert_query(
@@ -337,7 +349,7 @@ def process_sale_items_and_stock(cur, sale_id, validated_items):
     for item in validated_items:
         # Insertar item de venta
         cur.execute(
-            "INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES (%s, %s, %s, %s);",
+            "INSERT INTO sale_items (sale_id, product_id, quantity, price_usd) VALUES (%s, %s, %s, %s);",
             (sale_id, item['product_id'], item['quantity'], item['price'])
         )
         
@@ -358,7 +370,7 @@ def process_sale_items_and_stock(cur, sale_id, validated_items):
 
 def build_success_response(new_sale_id, tipo_pago_raw, total_amount_usd, total_amount_ves,
                           exchange_rate, usd_paid, ves_paid, monto_pendiente, stock_alerts,
-                          is_credit_sale, cancellation_code):
+                          is_credit_sale, cancellation_code, status):
     """Construye la respuesta de éxito"""
     response = {
         "msg": f"Venta {tipo_pago_raw} registrada exitosamente", 
@@ -370,6 +382,7 @@ def build_success_response(new_sale_id, tipo_pago_raw, total_amount_usd, total_a
         "usd_paid": usd_paid,
         "ves_paid": ves_paid,
         "balance_due_usd": monto_pendiente,
+        "status": status,
         "stock_alerts": stock_alerts
     }
     
@@ -382,17 +395,33 @@ def handle_sales_listing(current_user_id, user_role):
     """Maneja el listado de ventas"""
     try:
         base_query = """
-            SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                    s.sale_date, s.status, s.tipo_pago, s.usd_paid, s.ves_paid,
-                    s.total_amount_usd AS total_amount, s.total_amount_ves, 
-                    s.exchange_rate_used, u.email as seller_email, u.id as seller_id, 
-                    s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito,
-                    s.cancellation_code,
-                    json_agg(json_build_object(
-                        'product_name', p.name,
-                        'quantity', si.quantity,
-                        'price', si.price 
-                    )) AS items
+            SELECT 
+                s.id,
+                s.customer_id,
+                c.name as customer_name,
+                c.email as customer_email,
+                c.cedula as customer_cedula,
+                s.sale_date,
+                s.status,
+                s.tipo_pago,
+                s.usd_paid,
+                s.ves_paid,
+                s.total_amount_usd,
+                s.total_amount_ves,
+                s.exchange_rate_used,
+                u.email as seller_email,
+                u.id as seller_id,
+                s.balance_due_usd,
+                s.paid_amount_usd,
+                s.fecha_vencimiento,
+                s.dias_credito,
+                s.cancellation_code,
+                json_agg(json_build_object(
+                    'product_id', p.id,
+                    'product_name', p.name,
+                    'quantity', si.quantity,
+                    'price_usd', si.price_usd
+                )) AS items
             FROM sales s
             JOIN customers c ON s.customer_id = c.id
             JOIN users u ON s.user_id = u.id 
@@ -408,10 +437,10 @@ def handle_sales_listing(current_user_id, user_role):
         
         # Agrupación y ordenamiento
         base_query += """
-            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
-            s.tipo_pago, s.usd_paid, s.ves_paid,
-            s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.cancellation_code
+            GROUP BY s.id, c.name, c.email, c.cedula, s.sale_date, s.status, 
+            s.tipo_pago, s.usd_paid, s.ves_paid, s.total_amount_usd, s.total_amount_ves, 
+            s.exchange_rate_used, u.email, u.id, s.balance_due_usd, s.paid_amount_usd,
+            s.fecha_vencimiento, s.dias_credito, s.cancellation_code
             ORDER BY s.sale_date DESC;
         """
         
@@ -468,7 +497,7 @@ def get_customers_with_credit():
                     SELECT COUNT(*) as count
                     FROM sales 
                     WHERE customer_id = %s 
-                    AND status = 'Crédito' 
+                    AND status IN ('Crédito', 'Abonado')
                     AND balance_due_usd > 0
                 """, (record['id'],))
                 
@@ -508,20 +537,21 @@ def get_customer_credit_sales(customer_id):
             if not customer:
                 return jsonify({"msg": "Cliente no encontrado"}), 404
             
-            # Obtener ventas a crédito pendientes
+            # Obtener ventas a crédito pendientes y abonadas
             cur.execute("""
                 SELECT 
                     id,
                     sale_date,
                     total_amount_usd,
                     balance_due_usd,
+                    paid_amount_usd,
                     dias_credito,
                     fecha_vencimiento,
                     cancellation_code,
                     status
                 FROM sales 
                 WHERE customer_id = %s 
-                AND status = 'Crédito' 
+                AND status IN ('Crédito', 'Abonado')
                 AND balance_due_usd > 0
                 ORDER BY sale_date DESC
             """, (customer_id,))
@@ -533,6 +563,7 @@ def get_customer_credit_sales(customer_id):
                     'sale_date': record['sale_date'].isoformat() if record['sale_date'] else None,
                     'total_amount_usd': float(record['total_amount_usd'] or 0),
                     'balance_due_usd': float(record['balance_due_usd'] or 0),
+                    'paid_amount_usd': float(record['paid_amount_usd'] or 0),
                     'dias_credito': record['dias_credito'] or 0,
                     'fecha_vencimiento': record['fecha_vencimiento'].isoformat() if record['fecha_vencimiento'] else None,
                     'cancellation_code': record['cancellation_code'],
@@ -567,9 +598,9 @@ def pay_credit():
     customer_id = data.get('customer_id')
     sale_id = data.get('sale_id')
     payment_amount = float(data.get('payment_amount', 0))
-    payment_currency = data.get('payment_currency')  # 'USD' o 'VES'
+    payment_currency = data.get('payment_currency')
     cancellation_code = data.get('cancellation_code')
-    exchange_rate = data.get('exchange_rate', 1.0)  # Tasa para pagos en bolívares
+    exchange_rate = data.get('exchange_rate', 1.0)
     
     if payment_amount <= 0:
         return jsonify({"msg": "El monto de pago debe ser mayor a 0"}), 400
@@ -583,9 +614,10 @@ def pay_credit():
             # Verificar que la venta existe y pertenece al cliente
             cur.execute("""
                 SELECT s.id, s.balance_due_usd, s.cancellation_code, s.total_amount_usd,
-                       s.dias_credito, s.fecha_vencimiento, s.status, s.paid_amount_usd
+                       s.dias_credito, s.fecha_vencimiento, s.status, s.paid_amount_usd,
+                       s.tipo_pago
                 FROM sales s 
-                WHERE s.id = %s AND s.customer_id = %s AND s.status IN ('Crédito', 'Abonado')
+                WHERE s.id = %s AND s.customer_id = %s AND s.tipo_pago = 'Crédito'
                 FOR UPDATE
             """, (sale_id, customer_id))
             
@@ -602,6 +634,7 @@ def pay_credit():
             
             balance_due = float(sale['balance_due_usd'])
             paid_amount = float(sale['paid_amount_usd'] or 0)
+            total_amount = float(sale['total_amount_usd'])
             
             # Calcular monto en USD
             if payment_currency == 'VES':
@@ -619,20 +652,9 @@ def pay_credit():
             # Calcular nuevo saldo y nuevo monto pagado
             new_balance = max(0.0, balance_due - payment_amount_usd)
             new_paid_amount = paid_amount + payment_amount_usd
-            total_amount = float(sale['total_amount_usd'])
             
             # Determinar el nuevo estado
-            if new_balance <= PAYMENT_TOLERANCE:
-                # Crédito completamente pagado
-                new_status = 'Pagado'
-                new_balance = 0.0  # Asegurar que sea cero
-                new_paid_amount = total_amount  # Asegurar que coincida con el total
-            elif new_paid_amount > 0 and new_balance > 0:
-                # Tiene abonos pero aún debe
-                new_status = 'Abonado'
-            else:
-                # No debería ocurrir, pero por seguridad
-                new_status = 'Crédito'
+            new_status = determine_sale_status(True, new_balance, new_paid_amount)
             
             # Actualizar la venta con nuevo saldo, monto pagado y estado
             cur.execute("""
@@ -644,11 +666,12 @@ def pay_credit():
                 WHERE id = %s
             """, (new_balance, new_paid_amount, new_status, sale_id))
             
-            # Actualizar balance del cliente
-            cur.execute(
-                "UPDATE customers SET balance_pendiente_usd = balance_pendiente_usd - %s WHERE id = %s",
-                (payment_amount_usd, customer_id)
-            )
+            # Actualizar balance del cliente SOLO si hay cambio en el saldo pendiente
+            if new_balance < balance_due:
+                cur.execute(
+                    "UPDATE customers SET balance_pendiente_usd = balance_pendiente_usd - %s WHERE id = %s",
+                    (balance_due - new_balance, customer_id)
+                )
             
             # Registrar el pago en la tabla de pagos
             try:
@@ -695,7 +718,6 @@ def pay_credit():
             cur.connection.rollback()
         app_logger.error(f"Error al registrar pago de crédito: {e}", exc_info=True)
         return jsonify({"msg": "Error interno al registrar pago"}), 500
-    
 
 # ---------------------------------------------------------
 # RUTAS DE REPORTES ADMIN
@@ -713,28 +735,42 @@ def admin_general_reports():
 
     try:
         query = """
-            SELECT s.id, s.customer_id, c.name as customer_name, c.email as customer_email,
-                    s.sale_date, s.status, 
-                    s.tipo_pago,
-                    s.usd_paid, s.ves_paid,
-                    s.total_amount_usd AS total_amount, s.total_amount_ves, s.exchange_rate_used, 
-                    u.email as seller_email, u.id as seller_id, 
-                    s.balance_due_usd AS monto_pendiente, s.fecha_vencimiento, s.dias_credito,
-                    s.cancellation_code,
-                    json_agg(json_build_object(
-                        'product_name', p.name,
-                        'quantity', si.quantity,
-                        'price', si.price 
-                    )) AS items
+            SELECT 
+                s.id,
+                s.customer_id,
+                c.name as customer_name,
+                c.email as customer_email,
+                c.cedula as customer_cedula,
+                s.sale_date,
+                s.status,
+                s.tipo_pago,
+                s.usd_paid,
+                s.ves_paid,
+                s.total_amount_usd,
+                s.total_amount_ves,
+                s.exchange_rate_used,
+                u.email as seller_email,
+                u.id as seller_id,
+                s.balance_due_usd,
+                s.paid_amount_usd,
+                s.fecha_vencimiento,
+                s.dias_credito,
+                s.cancellation_code,
+                json_agg(json_build_object(
+                    'product_id', p.id,
+                    'product_name', p.name,
+                    'quantity', si.quantity,
+                    'price_usd', si.price_usd
+                )) AS items
             FROM sales s
             JOIN customers c ON s.customer_id = c.id
             JOIN users u ON s.user_id = u.id 
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
-            GROUP BY s.id, c.name, c.email, s.sale_date, s.status, 
-            s.tipo_pago, s.usd_paid, s.ves_paid,
-            s.total_amount_usd, s.total_amount_ves, s.exchange_rate_used, u.email, u.id,
-            s.balance_due_usd, s.fecha_vencimiento, s.dias_credito, s.cancellation_code
+            GROUP BY s.id, c.name, c.email, c.cedula, s.sale_date, s.status, 
+            s.tipo_pago, s.usd_paid, s.ves_paid, s.total_amount_usd, s.total_amount_ves, 
+            s.exchange_rate_used, u.email, u.id, s.balance_due_usd, s.paid_amount_usd,
+            s.fecha_vencimiento, s.dias_credito, s.cancellation_code
             ORDER BY s.sale_date DESC;
         """
         
