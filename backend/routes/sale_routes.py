@@ -437,49 +437,50 @@ def get_customers_with_credit():
     try:
         search_term = request.args.get('search', '').strip()
         
-        # Versión más robusta con CAST explícito
         base_query = """
             SELECT 
                 id,
                 name,
                 cedula,
                 email,
-                balance_pendiente_usd as saldo_pendiente,
-                COUNT(s.id) as ventas_credito_activas,
-                MAX(s.fecha_vencimiento) as ultima_fecha_vencimiento
-            FROM customers c
-            LEFT JOIN sales s ON c.id = s.customer_id 
-                AND s.status = 'Crédito' 
-                AND s.balance_due_usd > 0
-            WHERE c.balance_pendiente_usd > 0
+                balance_pendiente_usd as saldo_pendiente
+            FROM customers 
+            WHERE balance_pendiente_usd > 0
         """
         
         params = []
         
         if search_term:
-            # Usar CAST explícito para convertir integer a text
-            base_query += " AND (CAST(cedula AS TEXT) ILIKE %s OR name ILIKE %s)"
+            base_query += " AND cedula::text LIKE %s"
             search_pattern = f"%{search_term}%"
-            params.extend([search_pattern, search_pattern])
+            params.append(search_pattern)
         
-        base_query += """
-            GROUP BY c.id, c.name, c.cedula, c.email, c.balance_pendiente_usd
-            ORDER BY c.balance_pendiente_usd DESC, c.name
-        """
+        base_query += " ORDER BY balance_pendiente_usd DESC, name"
         
         with get_db_cursor() as cur:
             cur.execute(base_query, tuple(params))
             customers = []
             
             for record in cur.fetchall():
+                # Obtener ventas activas de crédito para este cliente
+                cur.execute("""
+                    SELECT COUNT(*) as count, MAX(fecha_vencimiento) as ultima_fecha
+                    FROM sales 
+                    WHERE customer_id = %s 
+                    AND status = 'Crédito' 
+                    AND balance_due_usd > 0
+                """, (record['id'],))
+                
+                ventas_info = cur.fetchone()
+                
                 customer_data = {
                     'id': record['id'],
                     'name': record['name'],
-                    'cedula': str(record['cedula']) if record['cedula'] else 'N/A',  # Convertir a string
+                    'cedula': str(record['cedula']) if record['cedula'] else 'N/A',
                     'email': record['email'] or '',
                     'saldo_pendiente': float(record['saldo_pendiente'] or 0),
-                    'ventas_credito_activas': record['ventas_credito_activas'] or 0,
-                    'ultima_fecha_vencimiento': record['ultima_fecha_vencimiento']
+                    'ventas_credito_activas': ventas_info['count'] or 0,
+                    'ultima_fecha_vencimiento': ventas_info['ultima_fecha']
                 }
                 customers.append(customer_data)
             
