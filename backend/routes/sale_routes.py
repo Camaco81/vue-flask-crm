@@ -696,69 +696,6 @@ def pay_credit():
         app_logger.error(f"Error al registrar pago de crédito: {e}", exc_info=True)
         return jsonify({"msg": "Error interno al registrar pago"}), 500
     
-@sale_bp.route('/customer/<customer_id>/credit-sales', methods=['GET'])
-@jwt_required()
-def get_customer_credit_sales(customer_id):
-    """Obtiene las ventas a crédito pendientes de un cliente específico"""
-    current_user_id, user_role = get_user_and_role()
-    
-    if not current_user_id:
-        return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
-    
-    try:
-        with get_db_cursor() as cur:
-            # Verificar que el cliente existe
-            cur.execute("SELECT id, name FROM customers WHERE id = %s", (customer_id,))
-            customer = cur.fetchone()
-            
-            if not customer:
-                return jsonify({"msg": "Cliente no encontrado"}), 404
-            
-            # Obtener ventas a crédito pendientes y abonadas (excluyendo las completamente pagadas)
-            cur.execute("""
-                SELECT 
-                    id,
-                    sale_date,
-                    total_amount_usd,
-                    balance_due_usd,
-                    paid_amount_usd,
-                    dias_credito,
-                    fecha_vencimiento,
-                    cancellation_code,
-                    status
-                FROM sales 
-                WHERE customer_id = %s 
-                AND status IN ('Crédito', 'Abonado')
-                AND balance_due_usd > 0
-                ORDER BY 
-                    CASE status 
-                        WHEN 'Abonado' THEN 1
-                        WHEN 'Crédito' THEN 2
-                        ELSE 3
-                    END,
-                    sale_date DESC
-            """, (customer_id,))
-            
-            sales = []
-            for record in cur.fetchall():
-                sale_data = {
-                    'id': record['id'],
-                    'sale_date': record['sale_date'].isoformat() if record['sale_date'] else None,
-                    'total_amount_usd': float(record['total_amount_usd'] or 0),
-                    'balance_due_usd': float(record['balance_due_usd'] or 0),
-                    'paid_amount_usd': float(record['paid_amount_usd'] or 0),
-                    'dias_credito': record['dias_credito'] or 0,
-                    'fecha_vencimiento': record['fecha_vencimiento'].isoformat() if record['fecha_vencimiento'] else None,
-                    'cancellation_code': record['cancellation_code'],
-                    'status': record['status']
-                }
-                sales.append(sale_data)
-            
-            return jsonify(sales), 200
-            
-    except Exception as e:
-        app_logger.error(f"Error al obtener ventas a crédito del cliente: {e}", exc_info=True)
-        return jsonify({"msg": "Error al cargar las ventas del cliente"}), 500
 
 # ---------------------------------------------------------
 # RUTAS DE REPORTES ADMIN
