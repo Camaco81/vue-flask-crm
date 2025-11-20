@@ -583,15 +583,16 @@ def get_customer_credit_sales(customer_id):
 def pay_credit():
     """Registra un abono o pago completo a una venta a crédito."""
     
-    # Asegúrate de que Decimal esté importado de 'decimal' y sql de 'psycopg2'
+    # Asegúrate de que Decimal y sql estén importados
     from decimal import Decimal
     from psycopg2 import sql 
     
+    # La variable global PAYMENT_TOLERANCE DEBE ESTAR DEFINIDA al inicio del archivo
+    PAYMENT_TOLERANCE = Decimal('0.01') 
+
     # 1. Obtener datos y validar
     data = request.get_json()
     required = ['sale_id', 'payment_amount', 'payment_currency', 'cancellation_code']
-    # La variable global PAYMENT_TOLERANCE DEBE ESTAR DEFINIDA al inicio del archivo
-    PAYMENT_TOLERANCE = Decimal('0.01') 
 
     if error := validate_required_fields(data, required):
         return jsonify({'msg': f'Campo requerido faltante: {error}'}), 400
@@ -602,6 +603,9 @@ def pay_credit():
         payment_currency = data['payment_currency'].upper()
         cancellation_code_input = data['cancellation_code'].strip()
         exchange_rate = Decimal(str(data.get('exchange_rate', 1)))
+        # NUEVO: Obtener el método de pago (ej: 'transferencia', 'punto', 'efectivo')
+        payment_method_input = data.get('payment_method', payment_currency).strip()
+
 
         if raw_payment_amount <= 0:
             return jsonify({'msg': 'El monto de pago debe ser positivo.'}), 400
@@ -614,7 +618,7 @@ def pay_credit():
             # Bloquear la fila de la venta para evitar concurrencia (FOR UPDATE)
             cur.execute("""
                 SELECT 
-                    s.balance_due_usd, s.total_amount_usd, s.paid_amount_usd, s.status, s.cancellation_code, 
+                    s.balance_due_usd, s.paid_amount_usd, s.cancellation_code, 
                     s.customer_id
                 FROM sales s
                 WHERE s.id = %s AND s.status != 'Pagado'
@@ -624,31 +628,24 @@ def pay_credit():
             sale_record = cur.fetchone()
             
             if not sale_record:
-                # Si no se encuentra, puede ser que ya esté pagada o ID incorrecto.
                 return jsonify({'msg': 'Venta a crédito no encontrada o ya está pagada.'}), 404
             
             balance_due = sale_record['balance_due_usd']
             current_paid_usd = sale_record['paid_amount_usd']
             customer_id = sale_record['customer_id']
             
-            # Validar Código de Cancelación
             if cancellation_code_input != sale_record['cancellation_code']:
                 return jsonify({'msg': 'Código de cancelación incorrecto. Pago no autorizado.'}), 401
             
             # 3. Lógica de Conversión y Cálculo del Pago
-            
             amount_paid_usd = raw_payment_amount
             
-            # Convertir de VES a USD si aplica
             if payment_currency == 'VES':
                 amount_paid_usd = raw_payment_amount / exchange_rate 
 
-            # Validar que el monto en USD no exceda el saldo pendiente (con tolerancia)
             if amount_paid_usd > balance_due + PAYMENT_TOLERANCE:
-                # Si excede por mucho, es un error
                 return jsonify({'msg': f"El pago excede el saldo pendiente ($ {balance_due.quantize(Decimal('0.01'))})."}), 400
             
-            # Forzar el monto a ser exactamente el saldo si se paga de más (dentro de la tolerancia)
             if amount_paid_usd > balance_due:
                 amount_paid_usd = balance_due
             
@@ -657,22 +654,17 @@ def pay_credit():
             new_paid_usd = current_paid_usd + amount_paid_usd
             
             new_status = 'Abonado'
-            # Usar tolerancia para determinar estado "Pagado"
             if new_balance_due.quantize(Decimal('0.01')) <= Decimal('0.00'):
                 new_status = 'Pagado'
                 new_balance_due = Decimal('0.00') # Asegurar que el saldo quede en cero
 
             # 4. Actualizar la Venta en la Base de Datos
             
-            # Definir la sentencia para fecha_pago_final condicionalmente
             if new_status == 'Pagado':
-                # Si el estado es Pagado, se pone la fecha actual.
                 fecha_pago_final_update = sql.SQL("fecha_pago_final = NOW()")
             else:
-                # Si no es Pagado, se mantiene el valor actual (NULL por defecto)
                 fecha_pago_final_update = sql.SQL("fecha_pago_final = fecha_pago_final")
 
-            # La consulta principal
             query = sql.SQL("""
                 UPDATE sales
                 SET 
@@ -688,7 +680,6 @@ def pay_credit():
                 RETURNING balance_due_usd, status;
             """).format(fecha_final_set=fecha_pago_final_update)
             
-            # Parámetros (ordenados por %s en el query)
             cur.execute(query, (
                 new_balance_due, 
                 new_paid_usd, 
@@ -699,13 +690,23 @@ def pay_credit():
                 sale_id
             ))
             
-            # El fetchone es necesario si usas RETURNING
             updated_sale = cur.fetchone() 
             
-            # 5. Actualizar el saldo global del cliente (si es necesario)
-            # Esto es clave para que el estado se refleje correctamente
-            
-            # Calcular el cambio en el saldo pendiente (si es un abono real)
+            # 5. REGISTRAR ABONO EN LA TABLA credit_payments
+            cur.execute("""
+                INSERT INTO credit_payments (
+                    sale_id, customer_id, amount_usd, amount_ves, exchange_rate, payment_method, payment_date
+                ) VALUES (%s, %s, %s, %s, %s, %s, NOW());
+            """, (
+                sale_id,
+                customer_id,
+                amount_paid_usd,
+                raw_payment_amount if payment_currency == 'VES' else Decimal('0.00'),
+                exchange_rate if payment_currency == 'VES' else Decimal('1.00'),
+                payment_method_input
+            ))
+
+            # 6. Actualizar el saldo global del cliente (SOLO SI SE HIZO LA MIGRACIÓN)
             amount_reduced_from_credit = balance_due - new_balance_due
             
             if amount_reduced_from_credit > Decimal('0.00'):
@@ -716,19 +717,18 @@ def pay_credit():
                     WHERE id = %s;
                 """, (amount_reduced_from_credit, customer_id))
             
-            # Asegurar la transacción
+            # 7. Asegurar la transacción
             cur.connection.commit()
             
-            # 6. Exito
+            # 8. Exito
             return jsonify({
                 'msg': f'Pago de $ {amount_paid_usd.quantize(Decimal("0.01"))} USD registrado con éxito. Estado: {new_status}',
-                'new_status': updated_sale['status'], # Usamos el valor retornado por la DB para confirmar
+                'new_status': updated_sale['status'], 
                 'new_balance': updated_sale['balance_due_usd'].quantize(Decimal('0.01'))
             }), 200
 
     except Exception as e:
-        # 7. Manejo de Errores y Rollback
-        # El rollback solo debe ocurrir si la transacción falló
+        # 9. Manejo de Errores y Rollback
         if 'cur' in locals() and cur and cur.connection:
              cur.connection.rollback()
              
