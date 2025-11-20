@@ -579,7 +579,7 @@ def get_customer_credit_sales(customer_id):
 
 @sale_bp.route('/pay-credit', methods=['POST'])
 @jwt_required()
-@check_seller_permission
+@check_seller_permission # ¡Sin paréntesis! Ahora es una función decoradora.
 def pay_credit():
     """Registra un abono o pago completo a una venta a crédito."""
     
