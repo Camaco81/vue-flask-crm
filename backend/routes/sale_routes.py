@@ -537,7 +537,7 @@ def get_customer_credit_sales(customer_id):
             if not customer:
                 return jsonify({"msg": "Cliente no encontrado"}), 404
             
-            # Obtener ventas a crédito pendientes y abonadas
+            # Obtener ventas a crédito pendientes y abonadas para mejoes practicas
             cur.execute("""
                 SELECT 
                     id,

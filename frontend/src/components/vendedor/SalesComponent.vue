@@ -1,6 +1,6 @@
 <template>
   <div class="sales-container">
-    <h1 class="page-title">Gestión de Ventas</h1>
+    <h1 class="page-title text-white">Gestión de Ventas</h1>
     <BackButton />
 
     <div class="card create-sale-card">
@@ -81,8 +81,7 @@
           </p>
         </div>
 
-        
-<div class="form-group">
+        <div class="form-group">
           <label for="payment-method">Forma de Pago:</label>
           <select id="payment-method" v-model="newSale.payment.method" @change="handlePaymentMethodChange">
             <option value="USD">Dólar (Efectivo/Transferencia)</option>
@@ -92,7 +91,7 @@
           </select>
         </div>
 
-        <!-- 🟢 NUEVO: Campos específicos para crédito -->
+        <!-- Campos específicos para crédito -->
         <div v-if="newSale.payment.method === 'CREDIT'" class="credit-fields">
           <div class="form-group">
             <label for="credit-days">Días de Crédito:</label>
@@ -106,25 +105,6 @@
           </div>
 
           <div class="form-group">
-            <label for="customer-pin">
-              🔒 PIN del Cliente (4 dígitos):
-              <span class="pin-info">(El cliente debe recordar este PIN para futuros pagos)</span>
-            </label>
-            <input
-              type="password"
-              id="customer-pin"
-              v-model="newSale.customer_pin"
-              maxlength="4"
-              placeholder="0000"
-              pattern="[0-9]{4}"
-              required
-              @input="validatePin"
-            >
-            <small v-if="pinError" class="error-message">{{ pinError }}</small>
-            <small v-else class="help-text">El cliente usará este PIN para autorizar pagos futuros de esta deuda</small>
-          </div>
-
-          <div class="form-group">
             <label>Generar Código de Cancelación:</label>
             <button type="button" @click="openCancellationModal" class="generate-code-btn">
               🏷️ Generar Código
@@ -134,6 +114,7 @@
             </p>
           </div>
         </div>
+
         <div class="payment-fields-group">
           <div class="form-group" v-if="newSale.payment.method !== 'VES' && newSale.payment.method !== 'CREDIT'">
             <label for="usd-paid">Monto Pagado en Dólares ($):</label>
@@ -182,6 +163,14 @@
       @codeGenerated="handleCodeGenerated"
       ref="cancellationModalRef"
     />
+
+    <!-- Modal para pago de crédito -->
+    <CreditPayment 
+      :show="showCreditPaymentModal"
+      :sale="selectedSaleForPayment"
+      @close="showCreditPaymentModal = false"
+      @paymentSuccess="handlePaymentSuccess"
+    />
     
     <div class="card sales-list-card">
       <h2>Ventas Registradas</h2>
@@ -194,27 +183,63 @@
             <span>Total: **${{ sale.total_usd.toFixed(2) }}** (Bs. {{ sale.total_amount_ves.toFixed(2) }})</span>
           </div>
           <div class="sale-details">
-            <p>Fecha: {{ formatDate(sale.sale_date) }}</p>
-            <p>
-              Estado:
-              <span class="status-badge" 
-                :class="{'pending': sale.status === 'Pendiente', 'completed': sale.status === 'Completado', 'credit': sale.status === 'Crédito'}"
-              >
-                {{ sale.status }}
-              </span>
-            </p>
-            <p v-if="sale.seller_email">Vendedor: {{ sale.seller_email }}</p>
-            <p>Tasa Utilizada: **Bs. {{ sale.exchange_rate_used.toFixed(2) }}**</p>
-            <p class="payment-info">
-              Pago: **{{ sale.payment_method || 'N/A' }}** (USD Pagado: ${{ sale.usd_paid.toFixed(2) }} / Bs Pagado: Bs. {{ sale.ves_paid.toFixed(2) }})
-            </p>
-            <p v-if="sale.status === 'Crédito' && sale.balance_due_usd > 0">
-              **SALDO PENDIENTE:** **${{ sale.balance_due_usd.toFixed(2) }}**
-            </p>
-            <p v-if="sale.cancellation_code" class="cancellation-code">
-              **Código Cancelación:** {{ sale.cancellation_code }}
-            </p>
-          </div>
+  <p>Fecha: {{ formatDate(sale.sale_date) }}</p>
+  <p>
+    Estado:
+    <span class="status-badge" 
+      :class="{
+        'pending': sale.status === 'Pendiente', 
+        'completed': sale.status === 'Completado', 
+        'credit': sale.status === 'Crédito',
+        'abonado': sale.status === 'Abonado',
+        'pagado': sale.status === 'Pagado'
+      }"
+    >
+      {{ sale.status }}
+    </span>
+  </p>
+  <p v-if="sale.seller_email">Vendedor: {{ sale.seller_email }}</p>
+  <p>Tasa Utilizada: **Bs. {{ sale.exchange_rate_used.toFixed(2) }}**</p>
+  <p class="payment-info">
+    Pago: **{{ sale.payment_method || 'N/A' }}** 
+    <span v-if="sale.payment_method !== 'Crédito'">
+      (USD Pagado: ${{ sale.usd_paid.toFixed(2) }} / Bs Pagado: Bs. {{ sale.ves_paid.toFixed(2) }})
+    </span>
+  </p>
+  
+  <!-- Información de crédito mejorada - LÓGICA CORREGIDA -->
+  <div v-if="sale.payment_method === 'Crédito'" class="credit-info">
+    <p><strong>Total Venta:</strong> ${{ sale.total_usd.toFixed(2) }}</p>
+    <p v-if="sale.paid_amount_usd > 0">
+      <strong>Abonado:</strong> ${{ sale.paid_amount_usd.toFixed(2) }}
+    </p>
+    <p>
+      <strong>Saldo Pendiente:</strong> 
+      <span :class="{'balance-due': sale.balance_due_usd > 0, 'balance-paid': sale.balance_due_usd <= 0}">
+        ${{ sale.balance_due_usd.toFixed(2) }}
+      </span>
+    </p>
+    <p v-if="sale.balance_due_usd <= 0" class="fully-paid">
+      ✅ <strong>Crédito Completamente Pagado</strong>
+    </p>
+    <p v-else-if="sale.paid_amount_usd > 0" class="partial-paid">
+      ⚠️ <strong>Crédito Parcialmente Pagado</strong>
+    </p>
+    <p v-else class="not-paid">
+      ⏳ <strong>Crédito Pendiente de Pago</strong>
+    </p>
+  </div>
+  
+  <p v-if="sale.dias_credito">
+    <strong>Días de Crédito:</strong> {{ sale.dias_credito }} días
+  </p>
+  <p v-if="sale.fecha_vencimiento">
+    <strong>Vencimiento:</strong> {{ formatDate(sale.fecha_vencimiento) }}
+  </p>
+  <p v-if="sale.cancellation_code" class="cancellation-code">
+    <small><strong>Código Cancelación:</strong> {{ sale.cancellation_code }}</small>
+  </p>
+</div>
           <div class="sale-items">
             <h4>Elementos de la venta:</h4>
             <ul>
@@ -227,11 +252,25 @@
             <button @click="generateInvoicePdf(sale)" class="pdf-btn">
               <i class="fas fa-file-pdf"></i> Generar Factura PDF
             </button>
+            <button 
+              v-if="sale.payment_method === 'Crédito' && sale.balance_due_usd > 0"
+              @click="openCreditPayment(sale)"
+              class="pay-credit-btn"
+            >
+              💳 {{ sale.paid_amount_usd > 0 ? 'Continuar Pago' : 'Pagar Crédito' }}
+            </button>
+            <span 
+              v-if="sale.payment_method === 'Crédito' && sale.balance_due_usd <= 0" 
+              class="fully-paid-badge"
+            >
+              ✅ Completado
+            </span>
           </div>
         </li>
       </ul>
     </div>
   </div>
+
 </template>
 
 <script>
@@ -240,6 +279,7 @@ import axios from '../../axios';
 import BackButton from './BackButton.vue';
 import { jsPDF } from 'jspdf';
 import CodeGeneratorModal from './CodeGeneratorModal.vue';
+import CreditPayment from './CreditPayment.vue';
 
 const STOCK_THRESHOLD = 10;
 const PAYMENT_TOLERANCE = 0.02;
@@ -249,7 +289,8 @@ export default {
   components: {
     BackButton,
     AutocompleteSearch,
-    CodeGeneratorModal
+    CodeGeneratorModal,
+    CreditPayment
   },
   data() {
     return {
@@ -257,6 +298,8 @@ export default {
       customers: [],
       products: [],
       showCancellationModal: false,
+      showCreditPaymentModal: false,
+      selectedSaleForPayment: null,
       newSale: {
         customer_id: null,
         items: [{ product_id: null, quantity: 1, price: 0 }],
@@ -266,8 +309,7 @@ export default {
           ves_paid: 0,
         },
         credit_days: 30,
-        customer_pin: '', // 🟢 NUEVO: Campo para PIN del cliente
-        cancellation_code: '' // 🟢 NUEVO: Campo para código de cancelación
+        cancellation_code: ''
       },
       loading: false,
       creating: false,
@@ -279,6 +321,18 @@ export default {
     await this.fetchData();
   },
   methods: {
+    openCreditPayment(sale) {
+      this.selectedSaleForPayment = sale;
+      this.showCreditPaymentModal = true;
+    },
+
+    async handlePaymentSuccess() {
+      this.showCreditPaymentModal = false;
+      this.selectedSaleForPayment = null;
+      // Forzar recarga de datos
+      await this.fetchData();
+    },
+
     async fetchBcvRate() {
       try {
         const response = await axios.get('/api/exchange-rate');
@@ -291,59 +345,111 @@ export default {
     },
 
     async fetchData() {
-      this.loading = true;
-      try {
-        await this.fetchBcvRate();
+  this.loading = true;
+  try {
+    await this.fetchBcvRate();
 
-        const [salesResponse, customersResponse, productsResponse] = await Promise.all([
-          axios.get('/api/sales'),
-          axios.get('/api/customers'),
-          axios.get('/api/products')
-        ]);
+    const [salesResponse, customersResponse, productsResponse] = await Promise.all([
+      axios.get('/api/sales'),
+      axios.get('/api/customers'),
+      axios.get('/api/products')
+    ]);
 
-        const customersMap = new Map(customersResponse.data.map(c => [c.id, c]));
+    const customersMap = new Map(customersResponse.data.map(c => [c.id, c]));
 
-        this.sales = salesResponse.data.map(sale => {
-          const customer = customersMap.get(sale.customer_id) || { name: 'Cliente Desconocido', email: '', address: '' };
-          return {
-            ...sale,
-            customer_name: customer.name,
-            customer_email: customer.email,
-            customer_address: customer.address,
-            total_usd: parseFloat(sale.total_usd), 
-            total_amount_ves: parseFloat(sale.total_amount_ves),
-            exchange_rate_used: parseFloat(sale.exchange_rate_used || this.bcvRate), 
-            usd_paid: parseFloat(sale.usd_paid || 0),
-            ves_paid: parseFloat(sale.ves_paid || 0),
-            payment_method: sale.payment_method || sale.tipo_pago || 'N/A',
-            balance_due_usd: parseFloat(sale.balance_due_usd || 0),
-            status: sale.tipo_pago === 'Crédito' && (parseFloat(sale.balance_due_usd || 0) > 0) ? 'Crédito' : sale.status,
-            cancellation_code: sale.cancellation_code || null,
-            items: sale.items.map(item => ({
-              ...item,
-              price_usd: parseFloat(item.price_usd || item.price) 
-            }))
-          };
-        });
+    this.sales = salesResponse.data.map(sale => {
+      const customer = customersMap.get(sale.customer_id) || { name: 'Cliente Desconocido', email: '', address: '' };
+      
+      // Calcular valores importantes
+      const totalAmount = parseFloat(sale.total_amount_usd || sale.total_usd || 0);
+      const balanceDue = parseFloat(sale.balance_due_usd || 0);
+      const paidAmount = parseFloat(sale.paid_amount_usd || 0);
+      const isCreditSale = sale.tipo_pago === 'Crédito' || sale.payment_method === 'Crédito';
+      
+      console.log(`Procesando venta ${sale.id}:`, {
+        totalAmount,
+        balanceDue,
+        paidAmount,
+        isCreditSale,
+        tipo_pago: sale.tipo_pago,
+        status_from_db: sale.status
+      }); 
+      
+     
+// Determinar el estado correcto - LÓGICA CORREGIDA
 
-        this.customers = customersResponse.data.map(c => ({
-          ...c,
-          cedula: c.cedula || 'N/A', 
-          fullSearchKey: `${c.name} - Cédula: ${c.cedula || 'N/A'}`
-        }));
+let status;
 
-        this.products = productsResponse.data.map(p => ({
-          ...p,
-          stock: Number(p.stock),
-          price: Number(p.price) 
-        }));
-      } catch (error) {
-        console.error("Error fetching data:", error);
-        alert('Error al cargar ventas o clientes/productos. Verifique la consola.');
-      } finally {
-        this.loading = false;
-      }
-    },
+if (isCreditSale) {
+  // Usar toFixed(2) para asegurar la verificación de cero
+  const balanceDueCheck = balanceDue.toFixed(2); 
+  
+  // Si el saldo es menor o igual a la tolerancia, está Pagado
+  if (balanceDueCheck <= PAYMENT_TOLERANCE) {
+    status = 'Pagado';
+  } else if (paidAmount > 0) {
+    status = 'Abonado';
+  } else {
+    status = 'Crédito'; // Crédito recién creado sin abonos
+  }
+} else {
+  // Para ventas normales (contado/mixto)
+  status = 'Completado';
+}
+    
+      return {
+        ...sale,
+        customer_name: customer.name,
+        customer_email: customer.email,
+        customer_address: customer.address,
+        total_usd: totalAmount,
+        total_amount_ves: parseFloat(sale.total_amount_ves || totalAmount * this.bcvRate),
+        exchange_rate_used: parseFloat(sale.exchange_rate_used || this.bcvRate),
+        usd_paid: parseFloat(sale.usd_paid || 0),
+        ves_paid: parseFloat(sale.ves_paid || 0),
+        payment_method: sale.tipo_pago || 'Contado',
+        balance_due_usd: balanceDue,
+        paid_amount_usd: paidAmount,
+        status: status,
+        cancellation_code: sale.cancellation_code || null,
+        items: sale.items ? sale.items.map(item => ({
+          ...item,
+          price_usd: parseFloat(item.price_usd || item.price || 0)
+        })) : []
+      };
+    });
+
+    this.customers = customersResponse.data.map(c => ({
+      ...c,
+      cedula: c.cedula || 'N/A', 
+      fullSearchKey: `${c.name} - Cédula: ${c.cedula || 'N/A'}`
+    }));
+
+    this.products = productsResponse.data.map(p => ({
+      ...p,
+      stock: Number(p.stock) || 0,
+      price: Number(p.price) || 0
+    }));
+
+    // Debug: Verificar todas las ventas a crédito
+    console.log('=== RESUMEN VENTAS A CRÉDITO ===');
+    this.sales.filter(s => s.payment_method === 'Crédito').forEach(sale => {
+      console.log(`Venta ${sale.id.substring(0, 8)}:`, {
+        estado: sale.status,
+        total: sale.total_usd,
+        saldo: sale.balance_due_usd,
+        pagado: sale.paid_amount_usd,
+        deberiaSer: sale.balance_due_usd > 0 ? 'Crédito/Abonado' : 'Pagado'
+      });
+    });
+
+  } catch (error) {
+    console.error("Error fetching data:", error);
+    alert('Error al cargar ventas o clientes/productos. Verifique la consola.');
+  } finally {
+    this.loading = false;
+  }
+},
     
     calculateTotalAmountUSD() {
       return this.newSale.items.reduce((total, item) => {
@@ -396,7 +502,6 @@ export default {
       return totalPaidInUSD >= totalUSD - PAYMENT_TOLERANCE;
     },
 
-    // 🟢 NUEVO: Validación completa del formulario
     isFormValid() {
       // Validación básica
       if (!this.newSale.customer_id || 
@@ -407,9 +512,6 @@ export default {
 
       // Validación específica para crédito
       if (this.newSale.payment.method === 'CREDIT') {
-        if (!this.newSale.customer_pin || this.newSale.customer_pin.length !== 4) {
-          return false;
-        }
         if (!this.newSale.cancellation_code) {
           return false;
         }
@@ -421,11 +523,9 @@ export default {
       return true;
     },
 
-    // 🟢 NUEVO: Manejar cambio de método de pago
     handlePaymentMethodChange() {
       this.newSale.payment.usd_paid = 0;
       this.newSale.payment.ves_paid = 0;
-      this.newSale.customer_pin = '';
       this.newSale.cancellation_code = '';
 
       const totalUSD = this.calculateTotalAmountUSD();
@@ -515,17 +615,15 @@ export default {
       }
     },
 
-    // 🟢 NUEVO: Abrir modal para generar código
     openCancellationModal() {
       this.showCancellationModal = true;
       this.$nextTick(() => {
         if (this.$refs.cancellationModalRef) {
           this.$refs.cancellationModalRef.generateInitialCode();
         }
-      });
+      }); 
     },
 
-    // 🟢 NUEVO: Manejar código generado desde el modal
     handleCodeGenerated(generatedCode) {
       this.newSale.cancellation_code = generatedCode;
       this.showCancellationModal = false;
@@ -562,8 +660,7 @@ export default {
           dias_credito: creditDaysValue, 
           usd_paid: Number(this.newSale.payment.usd_paid),
           ves_paid: Number(this.newSale.payment.ves_paid),
-          customer_pin: this.newSale.customer_pin, // 🟢 INCLUIR PIN
-          cancellation_code: this.newSale.cancellation_code // 🟢 INCLUIR CÓDIGO
+          cancellation_code: this.newSale.cancellation_code
         };
         
         const response = await axios.post('/api/sales', salePayload);
@@ -571,7 +668,6 @@ export default {
 
         let successMessage = `Venta #${responseData.sale_id.substring(0, 8)}... registrada exitosamente!`;
         
-        // Mensaje especial para ventas a crédito
         if (this.newSale.payment.method === 'CREDIT') {
           successMessage += `\n\n🔐 **VENTA A CRÉDITO REGISTRADA**\nCódigo de Cancelación: ${this.newSale.cancellation_code}\nGuarde este código para futuras cancelaciones.`;
         }
@@ -582,7 +678,6 @@ export default {
 
         alert(successMessage);
         
-        // Reiniciar formulario
         this.resetForm();
         await this.fetchData();
         
@@ -601,7 +696,6 @@ export default {
       }
     },
 
-    // 🟢 NUEVO: Reiniciar formulario
     resetForm() {
       this.newSale = {
         customer_id: null,
@@ -612,7 +706,6 @@ export default {
           ves_paid: 0 
         },
         credit_days: 30,
-        customer_pin: '',
         cancellation_code: ''
       };
       this.localStockAlerts = [];
@@ -625,6 +718,7 @@ export default {
       
       const balanceDueUSD = sale.balance_due_usd || 0; 
       const balanceDueVES = balanceDueUSD * bcvRate; 
+      const paidAmountUSD = sale.paid_amount_usd || 0;
 
       const itemsWithVES = sale.items.map(item => {
         const priceUSD = parseFloat(item.price_usd);
@@ -746,13 +840,19 @@ export default {
       doc.text(`Bs. ${totalAmountVES.toFixed(2)}`, 185, y, null, null, "right");
       y += 7; 
 
-      if (balanceDueUSD > 0) {
-          doc.setFontSize(10);
-          doc.setFont(undefined, 'normal');
-          doc.text(`Pagado en USD: $${sale.usd_paid.toFixed(2)}`, 120, y);
+      // Mostrar información de crédito mejorada
+      if (sale.status === 'Crédito' || sale.status === 'Abonado' || sale.status === 'Pagado') {
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        doc.text(`Estado del Crédito: ${sale.status}`, 120, y);
+        y += 5;
+        
+        if (paidAmountUSD > 0) {
+          doc.text(`Abonado (USD): $${paidAmountUSD.toFixed(2)}`, 120, y);
           y += 5;
-          doc.text(`Pagado en BS: Bs. ${sale.ves_paid.toFixed(2)}`, 120, y);
-          y += 7; 
+        }
+        
+        if (balanceDueUSD > 0) {
           doc.setFontSize(12);
           doc.setFont(undefined, 'bold');
           doc.text(`SALDO PENDIENTE (Bs):`, 120, y);
@@ -761,6 +861,12 @@ export default {
           doc.setFontSize(10);
           doc.setFont(undefined, 'normal');
           doc.text(`Saldo Referencial (USD): $${balanceDueUSD.toFixed(2)}`, 120, y);
+        } else {
+          doc.setFontSize(12);
+          doc.setFont(undefined, 'bold');
+          doc.text(`✅ CRÉDITO PAGADO COMPLETAMENTE`, 120, y);
+          y += 7;
+        }
       } else {
         doc.setFontSize(10);
         doc.setFont(undefined, 'normal');
@@ -802,254 +908,401 @@ export default {
 
 
 
+
+
+
 <style scoped>
-/* Estilos CSS */
 .sales-container {
-    padding: 2rem;
-    font-family: 'Inter', sans-serif;
-    background-color: #f0f4f8;
-    min-height: 100vh;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .page-title {
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: #2d3748;
-    margin-bottom: 2rem;
-    border-bottom: 3px solid #667eea;
-    padding-bottom: 0.5rem;
+  color: #333;
+  margin-bottom: 20px;
+  text-align: center;
 }
 
 .card {
-    background: white;
-    border-radius: 1rem;
-    padding: 2rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
-    margin-bottom: 2rem;
+  background: white;
+  border-radius: 10px;
+  padding: 25px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
 }
 
-.create-sale-card h2 {
-    color: #2d3748;
-    margin-bottom: 1.5rem;
-}
-
-.form-group {
-    margin-bottom: 1rem;
-}
-
-.product-item-group {
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 1rem;
-    align-items: end;
-    margin-bottom: 1.5rem;
-    padding: 1rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.75rem;
-    background-color: #fafcff;
-}
-
-.product-item-group label {
-    margin-bottom: 0.25rem;
-}
-
-.alert-box {
-    padding: 1rem;
-    border-radius: 0.5rem;
-    margin-bottom: 1.5rem;
-    font-size: 0.95rem;
-}
-.warning-alert {
-    background-color: #fff3cd;
-    border: 1px solid #ffc107;
-    color: #856404;
-}
-.warning-alert ul {
-    list-style: disc;
-    padding-left: 20px;
-    margin-top: 5px;
-}
-.warning-alert p {
-    margin-bottom: 5px;
-}
-
-.error-message {
-    color: #e53e3e;
-    font-size: 0.85rem;
-    margin-top: 5px;
-    font-weight: 600;
-}
-
-/* Nuevo estilo para la línea divisoria */
-.separator {
-    margin: 2rem 0;
-    border: 0;
-    border-top: 1px dashed #e2e8f0;
-}
-.summary-box {
-    padding: 1rem;
-    background-color: #f7fcf9;
-    border: 1px solid #c6f6d5;
-    border-radius: 0.5rem;
-    margin-bottom: 1rem;
-}
-.summary-box strong {
-    font-weight: 700;
-    color: #2f855a;
-}
-.payment-fields-group {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-}
-.payment-info {
-    font-weight: 500;
-    color: #2f855a; /* Color para destacar la información de pago */
-    border-left: 3px solid #48bb78;
-    padding-left: 10px;
-}
-
-
-select,
-input[type="number"] {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.5rem;
-    font-size: 1rem;
-}
-
-.add-item-btn,
-.remove-btn,
-.pdf-btn {
-    background-color: #667eea;
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    margin-top: 1rem;
-    transition: background-color 0.3s;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-}
-
-.add-item-btn:hover,
-.remove-btn:hover,
-.pdf-btn:hover {
-    background-color: #5a67d8;
-}
-
-.remove-btn {
-    background-color: #e53e3e;
-    margin-left: 1rem;
-    margin-top: 0;
-}
-.remove-btn:hover {
-    background-color: #c53030;
-}
-
-.submit-btn {
-    width: 100%;
-    background-color: #48bb78;
-    color: white;
-    border: none;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    font-weight: 600;
-    font-size: 1.125rem;
-    cursor: pointer;
-    transition: background-color 0.3s;
-    margin-top: 1.5rem;
-}
-
-.submit-btn:disabled {
-    background-color: #a0aec0;
-    cursor: not-allowed;
+.create-sale-card {
+  border-left: 4px solid #007bff;
 }
 
 .sales-list-card {
-    margin-top: 2rem;
+  border-left: 4px solid #28a745;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #555;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  font-size: 16px;
+  transition: border-color 0.3s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  border-color: #007bff;
+  outline: none;
+}
+
+.product-item-group {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 15px;
+  align-items: end;
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.product-selection {
+  grid-column: 1;
+}
+
+.quantity-input {
+  grid-column: 2;
+}
+
+.remove-btn {
+  grid-column: 3;
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  height: fit-content;
+}
+
+.remove-btn:hover {
+  background: #c82333;
+}
+
+.add-item-btn {
+  background: #17a2b8;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-bottom: 20px;
+}
+
+.add-item-btn:hover {
+  background: #138496;
+}
+
+.separator {
+  margin: 25px 0;
+  border: none;
+  border-top: 2px solid #eee;
+}
+
+.summary-box {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.summary-box p {
+  margin: 8px 0;
+}
+
+.credit-summary {
+  background: #fff3cd;
+  padding: 10px;
+  border-radius: 5px;
+  margin-top: 10px;
+}
+
+.credit-warning {
+  color: #856404;
+  font-weight: bold;
+  margin: 0;
+}
+
+.credit-fields {
+  background: #e8f4fd;
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.payment-fields-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.generate-code-btn {
+  background: #6f42c1;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-right: 10px;
+}
+
+.generate-code-btn:hover {
+  background: #5a2d91;
+}
+
+.code-display {
+  background: #d1ecf1;
+  padding: 10px;
+  border-radius: 5px;
+  margin-top: 10px;
+  font-family: monospace;
+}
+
+.submit-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  width: 100%;
+  margin-top: 20px;
+}
+.text-white{
+  color: white;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #218838;
+}
+
+.submit-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.alert-box {
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.warning-alert {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+}
+
+.error-message {
+  color: #dc3545;
+  font-size: 14px;
+  margin-top: 5px;
 }
 
 .loading-state {
-    text-align: center;
-    font-size: 1.125rem;
-    color: #718096;
+  text-align: center;
+  padding: 20px;
+  color: #666;
 }
 
 .no-sales-state {
-    text-align: center;
-    font-size: 1.125rem;
-    color: #718096;
-    margin-top: 1rem;
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-style: italic;
 }
 
 .sales-list {
-    list-style: none;
-    padding: 0;
+  list-style: none;
+  padding: 0;
 }
 
 .sale-item {
-    background-color: #f7fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 0.75rem;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-    display: flex;
-    flex-direction: column;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  background: #f9f9f9;
 }
 
 .sale-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #e2e8f0;
-    padding-bottom: 0.75rem;
-    margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
 }
 
 .sale-header h3 {
-    margin: 0;
-    font-size: 1.25rem;
-    color: #2d3748;
+  margin: 0;
+  color: #333;
 }
 
 .sale-details p {
-    margin: 0.5rem 0;
-    color: #718096;
+  margin: 5px 0;
+  color: #666;
 }
 
 .status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 0.5rem;
-    font-weight: 600;
-    font-size: 0.875rem;
-    text-transform: capitalize;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
 }
 
 .status-badge.pending {
-    background-color: #fefcbf;
-    color: #8b5b2e;
+  background: #fff3cd;
+  color: #856404;
 }
 
 .status-badge.completed {
-    background-color: #c6f6d5;
-    color: #2f855a;
+  background: #d1edff;
+  color: #0c5460;
+}
+
+.status-badge.credit {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.sale-items {
+  margin-top: 15px;
+}
+
+.sale-items h4 {
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.sale-items ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.sale-items li {
+  padding: 5px 0;
+  border-bottom: 1px solid #eee;
 }
 
 .sale-actions {
-    margin-top: 1rem;
-    text-align: right;
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  flex-wrap: wrap;
 }
 
 .pdf-btn {
-    background-color: #e53e3e;
-    margin-left: auto;
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
 }
+
 .pdf-btn:hover {
-    background-color: #c53030;
+  background: #c82333;
+}
+
+.pay-credit-btn {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.pay-credit-btn:hover {
+  background: linear-gradient(135deg, #218838, #1e9e8a);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .product-item-group {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .payment-fields-group {
+    grid-template-columns: 1fr;
+  }
+  
+  .sale-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .sale-actions {
+    flex-direction: column;
+  }
+  
+  .sales-container {
+    padding: 10px;
+  }
+}
+.balance-due {
+  color: #e74c3c;
+  font-weight: bold;
+}
+
+.balance-paid {
+  color: #27ae60;
+  font-weight: bold;
+}
+
+.fully-paid {
+  color: #27ae60;
+  background: #d4edda;
+  padding: 5px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.partial-paid {
+  color: #e67e22;
+  background: #fff3cd;
+  padding: 5px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.not-paid {
+  color: #f39c12;
+  background: #fef9e7;
+  padding: 5px;
+  border-radius: 4px;
+  font-weight: bold;
 }
 </style>
+
