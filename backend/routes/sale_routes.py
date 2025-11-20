@@ -1,4 +1,3 @@
-
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
@@ -603,6 +602,7 @@ def pay_credit():
             cur.connection.rollback()
         app_logger.error(f"Error al registrar pago de crédito: {e}", exc_info=True)
         return jsonify({"msg": "Error al registrar pago", "error": str(e)}), 500
+
 # ---------------------------------------------------------
 # RUTAS DE REPORTES ADMIN
 # ---------------------------------------------------------
