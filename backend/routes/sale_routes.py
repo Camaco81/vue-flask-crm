@@ -451,9 +451,10 @@ def get_customers_with_credit():
         params = []
         
         if search_term:
-            base_query += " AND cedula::text LIKE %s"
+            # Buscar por cédula o nombre
+            base_query += " AND (cedula::text LIKE %s OR name ILIKE %s)"
             search_pattern = f"%{search_term}%"
-            params.append(search_pattern)
+            params.extend([search_pattern, search_pattern])
         
         base_query += " ORDER BY balance_pendiente_usd DESC, name"
         
@@ -464,7 +465,7 @@ def get_customers_with_credit():
             for record in cur.fetchall():
                 # Obtener ventas activas de crédito para este cliente
                 cur.execute("""
-                    SELECT COUNT(*) as count, MAX(fecha_vencimiento) as ultima_fecha
+                    SELECT COUNT(*) as count
                     FROM sales 
                     WHERE customer_id = %s 
                     AND status = 'Crédito' 
@@ -479,8 +480,7 @@ def get_customers_with_credit():
                     'cedula': str(record['cedula']) if record['cedula'] else 'N/A',
                     'email': record['email'] or '',
                     'saldo_pendiente': float(record['saldo_pendiente'] or 0),
-                    'ventas_credito_activas': ventas_info['count'] or 0,
-                    'ultima_fecha_vencimiento': ventas_info['ultima_fecha']
+                    'ventas_credito_activas': ventas_info['count'] or 0
                 }
                 customers.append(customer_data)
             
@@ -489,6 +489,62 @@ def get_customers_with_credit():
     except Exception as e:
         app_logger.error(f"Error al obtener clientes con crédito: {e}", exc_info=True)
         return jsonify({"msg": "Error interno del servidor al buscar clientes"}), 500
+
+@sale_bp.route('/customer/<customer_id>/credit-sales', methods=['GET'])
+@jwt_required()
+def get_customer_credit_sales(customer_id):
+    """Obtiene las ventas a crédito pendientes de un cliente específico"""
+    current_user_id, user_role = get_user_and_role()
+    
+    if not current_user_id:
+        return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
+    
+    try:
+        with get_db_cursor() as cur:
+            # Verificar que el cliente existe
+            cur.execute("SELECT id, name FROM customers WHERE id = %s", (customer_id,))
+            customer = cur.fetchone()
+            
+            if not customer:
+                return jsonify({"msg": "Cliente no encontrado"}), 404
+            
+            # Obtener ventas a crédito pendientes
+            cur.execute("""
+                SELECT 
+                    id,
+                    sale_date,
+                    total_amount_usd,
+                    balance_due_usd,
+                    dias_credito,
+                    fecha_vencimiento,
+                    cancellation_code,
+                    status
+                FROM sales 
+                WHERE customer_id = %s 
+                AND status = 'Crédito' 
+                AND balance_due_usd > 0
+                ORDER BY sale_date DESC
+            """, (customer_id,))
+            
+            sales = []
+            for record in cur.fetchall():
+                sale_data = {
+                    'id': record['id'],
+                    'sale_date': record['sale_date'].isoformat() if record['sale_date'] else None,
+                    'total_amount_usd': float(record['total_amount_usd'] or 0),
+                    'balance_due_usd': float(record['balance_due_usd'] or 0),
+                    'dias_credito': record['dias_credito'] or 0,
+                    'fecha_vencimiento': record['fecha_vencimiento'].isoformat() if record['fecha_vencimiento'] else None,
+                    'cancellation_code': record['cancellation_code'],
+                    'status': record['status']
+                }
+                sales.append(sale_data)
+            
+            return jsonify(sales), 200
+            
+    except Exception as e:
+        app_logger.error(f"Error al obtener ventas a crédito del cliente: {e}", exc_info=True)
+        return jsonify({"msg": "Error al cargar las ventas del cliente"}), 500
 
 @sale_bp.route('/pay-credit', methods=['POST'])
 @jwt_required()
@@ -513,9 +569,13 @@ def pay_credit():
     payment_amount = float(data.get('payment_amount', 0))
     payment_currency = data.get('payment_currency')  # 'USD' o 'VES'
     cancellation_code = data.get('cancellation_code')
+    exchange_rate = data.get('exchange_rate', 1.0)  # Tasa para pagos en bolívares
     
     if payment_amount <= 0:
         return jsonify({"msg": "El monto de pago debe ser mayor a 0"}), 400
+    
+    if payment_currency == 'VES' and (not exchange_rate or exchange_rate <= 0):
+        return jsonify({"msg": "La tasa de cambio para pagos en bolívares es requerida"}), 400
     
     cur = None
     try:
@@ -523,7 +583,7 @@ def pay_credit():
             # Verificar que la venta existe y pertenece al cliente
             cur.execute("""
                 SELECT s.id, s.balance_due_usd, s.cancellation_code, s.total_amount_usd,
-                       s.dias_credito, s.fecha_vencimiento
+                       s.dias_credito, s.fecha_vencimiento, s.status
                 FROM sales s 
                 WHERE s.id = %s AND s.customer_id = %s AND s.status = 'Crédito'
                 FOR UPDATE
@@ -542,15 +602,9 @@ def pay_credit():
             
             balance_due = float(sale['balance_due_usd'])
             
-            # Obtener tasa de cambio si el pago es en bolívares
-            exchange_rate = 1.0
+            # Calcular monto en USD
             if payment_currency == 'VES':
-                try:
-                    exchange_rate = get_dolarvzla_rate()
-                    payment_amount_usd = payment_amount / exchange_rate
-                except Exception as e:
-                    cur.connection.rollback()
-                    return jsonify({"msg": "Error al obtener tasa de cambio para pago en bolívares"}), 500
+                payment_amount_usd = payment_amount / exchange_rate
             else:
                 payment_amount_usd = payment_amount
             
@@ -558,7 +612,7 @@ def pay_credit():
             if payment_amount_usd > balance_due + PAYMENT_TOLERANCE:
                 cur.connection.rollback()
                 return jsonify({
-                    "msg": f"El pago (${payment_amount_usd:.2f}) excede el saldo pendiente (${balance_due:.2f})"
+                    "msg": f"El pago (${payment_amount_usd:.2f} USD) excede el saldo pendiente (${balance_due:.2f} USD)"
                 }), 400
             
             # Calcular nuevo saldo
@@ -583,21 +637,25 @@ def pay_credit():
                 (payment_amount_usd, customer_id)
             )
             
-            # Registrar el pago en una tabla de pagos (si existe)
+            # Registrar el pago en la tabla de pagos
             try:
                 cur.execute("""
                     INSERT INTO credit_payments 
-                    (sale_id, customer_id, payment_amount, payment_currency, exchange_rate, user_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (sale_id, customer_id, payment_amount, payment_currency, exchange_rate, current_user_id))
+                    (sale_id, customer_id, payment_amount, payment_currency, 
+                     exchange_rate, payment_amount_usd, user_id, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                """, (sale_id, customer_id, payment_amount, payment_currency, 
+                     exchange_rate, payment_amount_usd, current_user_id))
             except Exception as e:
                 app_logger.warning(f"No se pudo registrar en credit_payments: {e}")
+                # No hacemos rollback porque el pago principal sí se registró
             
             cur.connection.commit()
             
             response_data = {
-                "msg": f"Pago registrado exitosamente. Nuevo saldo: ${new_balance:.2f}",
+                "msg": f"Pago registrado exitosamente. Nuevo saldo: ${new_balance:.2f} USD",
                 "sale_id": sale_id,
+                "customer_id": customer_id,
                 "payment_amount": payment_amount,
                 "payment_currency": payment_currency,
                 "payment_amount_usd": payment_amount_usd,
@@ -615,7 +673,7 @@ def pay_credit():
         if cur and cur.connection:
             cur.connection.rollback()
         app_logger.error(f"Error al registrar pago de crédito: {e}", exc_info=True)
-        return jsonify({"msg": "Error al registrar pago", "error": str(e)}), 500
+        return jsonify({"msg": "Error interno al registrar pago"}), 500
 
 # ---------------------------------------------------------
 # RUTAS DE REPORTES ADMIN
