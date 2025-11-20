@@ -683,7 +683,7 @@ def pay_credit():
                 sale_id
             ))
             
-            # 5. Éxito
+            # 5. Exito
             return jsonify({
                 'msg': f'Pago de $ {amount_paid_usd.quantize(Decimal("0.01"))} USD registrado con éxito. Estado: {new_status}',
                 'new_status': new_status,
