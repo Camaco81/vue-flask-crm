@@ -583,9 +583,9 @@ def pay_credit():
             # Verificar que la venta existe y pertenece al cliente
             cur.execute("""
                 SELECT s.id, s.balance_due_usd, s.cancellation_code, s.total_amount_usd,
-                       s.dias_credito, s.fecha_vencimiento, s.status
+                       s.dias_credito, s.fecha_vencimiento, s.status, s.paid_amount_usd
                 FROM sales s 
-                WHERE s.id = %s AND s.customer_id = %s AND s.status = 'Crédito'
+                WHERE s.id = %s AND s.customer_id = %s AND s.status IN ('Crédito', 'Abonado')
                 FOR UPDATE
             """, (sale_id, customer_id))
             
@@ -601,6 +601,7 @@ def pay_credit():
                 return jsonify({"msg": "Código de cancelación incorrecto"}), 401
             
             balance_due = float(sale['balance_due_usd'])
+            paid_amount = float(sale['paid_amount_usd'] or 0)
             
             # Calcular monto en USD
             if payment_currency == 'VES':
@@ -615,21 +616,33 @@ def pay_credit():
                     "msg": f"El pago (${payment_amount_usd:.2f} USD) excede el saldo pendiente (${balance_due:.2f} USD)"
                 }), 400
             
-            # Calcular nuevo saldo
+            # Calcular nuevo saldo y nuevo monto pagado
             new_balance = max(0.0, balance_due - payment_amount_usd)
+            new_paid_amount = paid_amount + payment_amount_usd
+            total_amount = float(sale['total_amount_usd'])
             
-            # Actualizar saldo de la venta
-            cur.execute(
-                "UPDATE sales SET balance_due_usd = %s WHERE id = %s",
-                (new_balance, sale_id)
-            )
-            
-            # Si el saldo llega a 0, cambiar status a Completado
+            # Determinar el nuevo estado
             if new_balance <= PAYMENT_TOLERANCE:
-                cur.execute(
-                    "UPDATE sales SET status = 'Completado' WHERE id = %s",
-                    (sale_id,)
-                )
+                # Crédito completamente pagado
+                new_status = 'Pagado'
+                new_balance = 0.0  # Asegurar que sea cero
+                new_paid_amount = total_amount  # Asegurar que coincida con el total
+            elif new_paid_amount > 0 and new_balance > 0:
+                # Tiene abonos pero aún debe
+                new_status = 'Abonado'
+            else:
+                # No debería ocurrir, pero por seguridad
+                new_status = 'Crédito'
+            
+            # Actualizar la venta con nuevo saldo, monto pagado y estado
+            cur.execute("""
+                UPDATE sales 
+                SET balance_due_usd = %s, 
+                    paid_amount_usd = %s,
+                    status = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+            """, (new_balance, new_paid_amount, new_status, sale_id))
             
             # Actualizar balance del cliente
             cur.execute(
@@ -642,18 +655,28 @@ def pay_credit():
                 cur.execute("""
                     INSERT INTO credit_payments 
                     (sale_id, customer_id, payment_amount, payment_currency, 
-                     exchange_rate, payment_amount_usd, user_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                     exchange_rate, payment_amount_usd, user_id, created_at,
+                     previous_balance, new_balance, payment_status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s, %s)
                 """, (sale_id, customer_id, payment_amount, payment_currency, 
-                     exchange_rate, payment_amount_usd, current_user_id))
+                     exchange_rate, payment_amount_usd, current_user_id,
+                     balance_due, new_balance, new_status))
             except Exception as e:
                 app_logger.warning(f"No se pudo registrar en credit_payments: {e}")
                 # No hacemos rollback porque el pago principal sí se registró
             
             cur.connection.commit()
             
+            # Mensaje según el estado
+            if new_status == 'Pagado':
+                message = "✅ ¡CRÉDITO CANCELADO COMPLETAMENTE!"
+            elif new_status == 'Abonado':
+                message = f"✅ Abono registrado exitosamente. Estado: Abonado. Nuevo saldo: ${new_balance:.2f} USD"
+            else:
+                message = f"Pago registrado exitosamente. Nuevo saldo: ${new_balance:.2f} USD"
+            
             response_data = {
-                "msg": f"Pago registrado exitosamente. Nuevo saldo: ${new_balance:.2f} USD",
+                "msg": message,
                 "sale_id": sale_id,
                 "customer_id": customer_id,
                 "payment_amount": payment_amount,
@@ -661,11 +684,9 @@ def pay_credit():
                 "payment_amount_usd": payment_amount_usd,
                 "previous_balance": balance_due,
                 "new_balance": new_balance,
+                "new_status": new_status,
                 "exchange_rate": exchange_rate if payment_currency == 'VES' else None
             }
-            
-            if new_balance <= PAYMENT_TOLERANCE:
-                response_data["msg"] = "✅ ¡CRÉDITO CANCELADO COMPLETAMENTE!"
             
             return jsonify(response_data), 200
             
@@ -674,6 +695,70 @@ def pay_credit():
             cur.connection.rollback()
         app_logger.error(f"Error al registrar pago de crédito: {e}", exc_info=True)
         return jsonify({"msg": "Error interno al registrar pago"}), 500
+    
+@sale_bp.route('/customer/<customer_id>/credit-sales', methods=['GET'])
+@jwt_required()
+def get_customer_credit_sales(customer_id):
+    """Obtiene las ventas a crédito pendientes de un cliente específico"""
+    current_user_id, user_role = get_user_and_role()
+    
+    if not current_user_id:
+        return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
+    
+    try:
+        with get_db_cursor() as cur:
+            # Verificar que el cliente existe
+            cur.execute("SELECT id, name FROM customers WHERE id = %s", (customer_id,))
+            customer = cur.fetchone()
+            
+            if not customer:
+                return jsonify({"msg": "Cliente no encontrado"}), 404
+            
+            # Obtener ventas a crédito pendientes y abonadas (excluyendo las completamente pagadas)
+            cur.execute("""
+                SELECT 
+                    id,
+                    sale_date,
+                    total_amount_usd,
+                    balance_due_usd,
+                    paid_amount_usd,
+                    dias_credito,
+                    fecha_vencimiento,
+                    cancellation_code,
+                    status
+                FROM sales 
+                WHERE customer_id = %s 
+                AND status IN ('Crédito', 'Abonado')
+                AND balance_due_usd > 0
+                ORDER BY 
+                    CASE status 
+                        WHEN 'Abonado' THEN 1
+                        WHEN 'Crédito' THEN 2
+                        ELSE 3
+                    END,
+                    sale_date DESC
+            """, (customer_id,))
+            
+            sales = []
+            for record in cur.fetchall():
+                sale_data = {
+                    'id': record['id'],
+                    'sale_date': record['sale_date'].isoformat() if record['sale_date'] else None,
+                    'total_amount_usd': float(record['total_amount_usd'] or 0),
+                    'balance_due_usd': float(record['balance_due_usd'] or 0),
+                    'paid_amount_usd': float(record['paid_amount_usd'] or 0),
+                    'dias_credito': record['dias_credito'] or 0,
+                    'fecha_vencimiento': record['fecha_vencimiento'].isoformat() if record['fecha_vencimiento'] else None,
+                    'cancellation_code': record['cancellation_code'],
+                    'status': record['status']
+                }
+                sales.append(sale_data)
+            
+            return jsonify(sales), 200
+            
+    except Exception as e:
+        app_logger.error(f"Error al obtener ventas a crédito del cliente: {e}", exc_info=True)
+        return jsonify({"msg": "Error al cargar las ventas del cliente"}), 500
 
 # ---------------------------------------------------------
 # RUTAS DE REPORTES ADMIN
