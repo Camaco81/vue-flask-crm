@@ -33,6 +33,7 @@ def get_user_and_role():
 
         with get_db_cursor() as cur:
             # Buscamos role_id directamente
+            # Nota: Asumo que la tabla 'users' tiene una columna 'role_id'
             cur.execute("SELECT role_id FROM users WHERE id = %s", (current_user_id,))
             user_record = cur.fetchone()
             if user_record:
@@ -44,7 +45,7 @@ def get_user_and_role():
         return None, None
 
 # =========================================================
-# FÁBRICA DE DECORADORES DE PERMISOS (OPTIMIZACIÓN)
+# FÁBRICA DE DECORADORES DE PERMISOS
 # =========================================================
 
 def role_required(allowed_role_ids, error_message="Permiso denegado por rol."):
@@ -60,10 +61,12 @@ def role_required(allowed_role_ids, error_message="Permiso denegado por rol."):
             
             # 1. Comprobar si el usuario está autenticado y tiene rol
             if role_id is None:
-                return jsonify({'msg': 'Autenticación requerida.'}), 401
+                # 401: No autenticado / Token inválido
+                return jsonify({'msg': 'Autenticación requerida o token inválido.'}), 401
 
             # 2. Comprobar si el rol está permitido
             if role_id not in allowed_role_ids:
+                # 403: Prohibido / Sin permiso para este recurso
                 return jsonify({'msg': error_message}), 403
                 
             return f(*args, **kwargs)
@@ -71,30 +74,31 @@ def role_required(allowed_role_ids, error_message="Permiso denegado por rol."):
     return decorator
 
 # =========================================================
-# DECORADORES DE ACCESO RÁPIDO (REEMPLAZANDO LOS VIEJOS)
+# DECORADORES DE ACCESO RÁPIDO (Definición clara de permisos)
 # =========================================================
 
-# Vistas de Venta y Cliente (Vendedor o Admin)
+# Vistas de Venta y Cliente (Requieren Vendedor o Admin)
+# **ESTE ES EL DECORADOR QUE DEBES USAR PARA CREAR CLIENTES**
 check_seller_permission = role_required(
     [ADMIN_ROLE_ID, SELLER_ROLE_ID], 
-    "Permiso denegado. Se requiere rol de vendedor o administrador."
+    "Acceso denegado: solo administradores y vendedores pueden crear/gestionar clientes y ventas."
 )
 
-# Vistas de Administración pura
+# Vistas de Administración pura (Requieren solo Admin)
 check_admin_permission = role_required(
     [ADMIN_ROLE_ID], 
     "Permiso denegado. Se requiere rol de administrador."
 )
 
-# Vistas de Gestión de Productos (Ahora más explícito)
+# Vistas de Productos (Dependiendo de si el cliente puede ver productos, ajusta los roles)
 check_product_manager_permission = role_required(
-    [ADMIN_ROLE_ID, SELLER_ROLE_ID, CUSTOMER_ROLE_ID], 
-    "Permiso denegado. Se requiere un rol válido para gestionar productos." # Ajusta esto si solo Admin/Vendedor
+    [ADMIN_ROLE_ID, SELLER_ROLE_ID], # Solo Admin y Vendedor gestionan/ven productos
+    "Permiso denegado. Se requiere un rol válido para gestionar productos." 
 )
 
 
 # =========================================================
-# FUNCIONES DE VALIDACIÓN (sin cambios, son correctas)
+# FUNCIONES DE VALIDACIÓN (Sin cambios)
 # =========================================================
 
 def validate_required_fields(data, fields):
