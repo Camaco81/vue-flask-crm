@@ -87,16 +87,21 @@ def customer_single(customer_id):
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
     
-    # 2. Comprobación de Autorización (PUT y DELETE solo para Admin)
+    # 2. Comprobación de Autorización (PUT y DELETE)
+    ALLOWED_MODIFICATION_ROLES = [ADMIN_ROLE_ID, SELLER_ROLE_ID]
+
     if request.method in ['PUT', 'DELETE']:
-        # CORRECCIÓN: Compara el role_id directamente con la constante del Admin
-        if user_role != ADMIN_ROLE_ID: 
-            return jsonify({"msg": "Acceso denegado: solo administradores pueden modificar o eliminar clientes"}), 403
+        # 🟢 CAMBIO CLAVE: Ahora permite tanto ADMIN como VENDEDOR
+        if user_role not in ALLOWED_MODIFICATION_ROLES: 
+            return jsonify({"msg": "Acceso denegado: solo administradores y vendedores pueden modificar o eliminar clientes"}), 403
+
+    # Convertimos el UUID a string para usarlo en las queries SQL
+    customer_id_str = str(customer_id) 
 
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, email, phone, address, cedula FROM customers WHERE id = %s;", (str(customer_id),))
+                cur.execute("SELECT id, name, email, phone, address, cedula FROM customers WHERE id = %s;", (customer_id_str,))
                 customer = cur.fetchone()
             if customer:
                 return jsonify(dict(customer)), 200
@@ -112,7 +117,6 @@ def customer_single(customer_id):
         set_clauses = []
         params = []
         for key, value in data.items():
-            # Validación de campos permitidos para la actualización
             if key in ['name', 'email', 'phone', 'address', 'cedula']:
                 set_clauses.append(f"{key} = %s")
                 params.append(value)
@@ -120,7 +124,7 @@ def customer_single(customer_id):
         if not set_clauses:
             return jsonify({"msg": "No hay campos válidos para actualizar"}), 400
 
-        params.append(str(customer_id)) # El ID del cliente (UUID) va al final
+        params.append(customer_id_str)
         query = f"UPDATE customers SET {', '.join(set_clauses)} WHERE id = %s RETURNING id;"
 
         try:
@@ -142,7 +146,7 @@ def customer_single(customer_id):
     elif request.method == 'DELETE':
         try:
             with get_db_cursor(commit=True) as cur:
-                cur.execute("DELETE FROM customers WHERE id = %s RETURNING id;", (str(customer_id),))
+                cur.execute("DELETE FROM customers WHERE id = %s RETURNING id;", (customer_id_str,))
                 deleted_id = cur.fetchone()
             if deleted_id:
                 return jsonify({"msg": "Cliente eliminado exitosamente"}), 200
