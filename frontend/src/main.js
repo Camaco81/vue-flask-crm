@@ -11,9 +11,9 @@ import {
     faUser, 
     faCreditCard, 
     faBars, 
-    faCheckCircle, // (Regulares)
+    faCheckCircle, 
     
-    // NUEVOS ÍCONOS PARA EL DASHBOARD
+    // ÍCONOS DE NAVEGACIÓN Y DASHBOARD
     faUsers, // Clientes
     faShoppingCart, // Ventas
     faUserCircle, // Avatar
@@ -22,7 +22,14 @@ import {
     faCog, // Configuración
     faUserPlus, // Agregar Cliente
     faCashRegister, // Registrar Venta
-    faTimes // Ícono de "Cerrar" (X) para el menú móvil
+    faTimes, // Ícono de "Cerrar" (X)
+    
+    // 🟢 NUEVOS ÍCONOS PARA ACCIONES (EDITAR, ELIMINAR, VER, GUARDAR)
+    faEdit,       // Lápiz: Usado para Editar/Modificar
+    faTrashAlt,   // Bote de Basura: Usado para Eliminar
+    faEye,        // Ojo: Usado para Ver/Detalle
+    faSave,       // Disquete: Usado para Guardar
+    faArrowLeft   // Flecha: Usado para Volver/Atrás (Si lo necesitas)
 } from '@fortawesome/free-solid-svg-icons';
 
 // Añadir TODOS los íconos a la librería global
@@ -32,7 +39,7 @@ library.add(
     faBars, 
     faCheckCircle, 
     
-    // NUEVOS
+    // DASHBOARD
     faUsers, 
     faShoppingCart, 
     faUserCircle, 
@@ -41,8 +48,15 @@ library.add(
     faCog, 
     faUserPlus, 
     faCashRegister,
-    faTimes
-);
+    faTimes,
+    
+    // 🟢 NUEVOS ÍCONOS DE ACCIÓN
+    faEdit,
+    faTrashAlt,
+    faEye,
+    faSave,
+    faArrowLeft
+); 
 
 const app = createApp(App);
 

@@ -550,11 +550,11 @@ export default {
   .dashboard-container {
     flex-direction: column;
   }
-  
+ 
   .sidebar {
     width: 100%;
     height: auto;
-    flex-direction: row;
+    flex-direction: column;
     overflow-x: auto;
   }
   
@@ -569,6 +569,7 @@ export default {
   
   .user-section {
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 15px;
   }
@@ -590,6 +591,10 @@ export default {
   
   .actions-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+   aside{
+    display: flex;
+    flex-direction: column;
   }
 }
 
