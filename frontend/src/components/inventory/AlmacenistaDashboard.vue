@@ -15,9 +15,7 @@
           <i class="fas fa-boxes"></i> Gestionar Productos e Inventario
         </router-link>
         
-        <router-link to="/almacenista/notifications" class="btn-action btn-secondary-action">
-          <i class="fas fa-list-alt"></i> Ver Historial de Alertas
-        </router-link>
+       
 
         <button @click="logout" class="btn-action btn-warning">
           <i class="fas fa-sign-out-alt"></i> Cerrar Sesión

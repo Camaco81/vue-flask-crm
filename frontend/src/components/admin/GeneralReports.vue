@@ -38,8 +38,9 @@
         </p>
         <p><strong>Fecha:</strong> {{ formatDateTime(order.order_date) }}</p>
         <p><strong>Estado:</strong> <span :class="getStatusClass(order.status)">{{ order.status }}</span></p>
+        
         <p>
-          <strong>Monto Total:</strong> ${{ parseFloat(order.total_amount || 0).toFixed(2) }}
+          <strong>Monto Total:</strong> ${{ parseFloat(order.total_amount_usd || 0).toFixed(2) }}
         </p>
         
         <div class="order-items">
@@ -69,8 +70,8 @@ export default {
   },
   computed: {
     totalGlobalSalesAmount() {
-      // 🟢 Mejorado: Asegura que si order.total_amount es nulo/undefined, usa 0
-      return this.allOrders.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
+      // 💡 CORRECCIÓN CRÍTICA: Usar total_amount_usd
+      return this.allOrders.reduce((sum, order) => sum + parseFloat(order.total_amount_usd || 0), 0);
     },
     salesBySeller() {
       const sales = {};
@@ -80,8 +81,8 @@ export default {
         if (!sales[sellerKey]) {
           sales[sellerKey] = 0;
         }
-        // 🟢 Mejorado: Asegura que si order.total_amount es nulo/undefined, usa 0
-        sales[sellerKey] += parseFloat(order.total_amount || 0);
+        // 💡 CORRECCIÓN CRÍTICA: Usar total_amount_usd
+        sales[sellerKey] += parseFloat(order.total_amount_usd || 0);
       });
       return sales;
     }

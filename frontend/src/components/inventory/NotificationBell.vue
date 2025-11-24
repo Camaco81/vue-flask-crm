@@ -1,22 +1,19 @@
 <template>
   <div class="notification-container">
     <button @click="toggleDropdown" class="notification-btn" :aria-expanded="showDropdown">
-      <i class="fas fa-bell"></i>
-      <span v-if="unreadCount > 0" class="notification-badge">{{ unreadCount }}</span>
+      <font-awesome-icon icon="fas fa-bell"/>
+      <span v-if="notifications.length > 0" class="notification-badge">{{ notifications.length }}</span>
     </button>
 
     <div v-if="showDropdown" class="dropdown-menu">
       <div class="dropdown-header">
-        <h4>Notificaciones ({{ unreadCount }} No Leídas)</h4>
-        <button @click="markAllAsRead" class="mark-read-btn" v-if="unreadCount > 0">
-          Marcar todas como leídas
-        </button>
+        <h4>Alertas Estacionales Activas ({{ notifications.length }})</h4>
       </div>
 
       <div v-if="loading" class="loading-state">Cargando...</div>
 
       <div v-else-if="notifications.length === 0" class="empty-state">
-        No tienes notificaciones nuevas.
+        No hay alertas estacionales activas en este momento.
       </div>
 
       <div v-else class="notification-list">
@@ -26,10 +23,13 @@
           :class="['notification-item', notif.tipo]"
         >
           <div class="icon">
-            <i :class="getIcon(notif.tipo)"></i>
+            <font-awesome-icon 
+              :icon="getIcon(notif.tipo)" 
+              :class="getIconClass(notif.tipo)"
+            />
           </div>
           <div class="content">
-            <p class="message">{{ notif.mensaje }}</p>
+            <p class="message" v-html="notif.mensaje"></p> 
             <small class="time">{{ formatTime(notif.created_at) }}</small>
           </div>
         </div>
@@ -39,77 +39,56 @@
 </template>
 
 <script>
-import notificationService from '@/services/notificationService'; 
+import apiClient from '../../axios'; // 🟢 Usando la instancia de Axios importada
 
 export default {
   name: 'NotificationBell',
   data() {
     return {
       notifications: [],
-      unreadCount: 0,
       showDropdown: false, 
       loading: false,
     };
   },
-  computed: {
-    userRole() {
-      // 💡 Lógica para obtener el rol del usuario desde localStorage
-      const user = JSON.parse(localStorage.getItem('user_info') || '{}');
-      
-      // Asume: 1=Admin, 2=Vendedor, 3=Almacenista
-      if (user.role_id === 1 || user.role_id === 3) return 'almacenista'; 
-      
-      // Asegúrate de devolver un rol válido o null
-      return null; 
-    }
-  },
   methods: {
     toggleDropdown() {
       this.showDropdown = !this.showDropdown;
-      // Cuando se abre, forzar la recarga de notificaciones
       if (this.showDropdown) {
         this.fetchNotifications();
       }
     },
     
-    // 🟢 NUEVO: Cierra el dropdown si el clic fue fuera del componente
     closeDropdown(event) {
       if (this.$el && !this.$el.contains(event.target)) {
         this.showDropdown = false;
       }
     },
     
-    // Método para cargar las alertas desde el backend
+    /**
+     * 🟢 AJUSTE CLAVE: Consumo directo del endpoint /api/alerts/seasonal usando apiClient (Axios).
+     * Se asume que apiClient maneja la URL base y el token JWT automáticamente.
+     */
     async fetchNotifications() {
-      if (!this.userRole || this.loading) return;
+      if (this.loading) return;
       this.loading = true;
       try {
-        const response = await notificationService.getUnreadNotifications(this.userRole);
+        // 🟢 Reemplazando 'fetch' con 'apiClient.get'
+        const response = await apiClient.get('/api/alerts/seasonal');
         
-        this.notifications = response.data;
-        this.unreadCount = response.data.length;
+        // Axios envuelve los datos de la respuesta en 'response.data'
+        this.notifications = response.data; 
+        
       } catch (error) {
-        console.error("Error al obtener notificaciones:", error);
-        this.notifications = [];
-        this.unreadCount = 0;
+        // Axios maneja mejor los errores HTTP, pero el manejo final en el componente es similar
+        console.error("Error al obtener alertas estacionales:", error);
+        // Mostrar array vacío en caso de error
+        this.notifications = []; 
       } finally {
         this.loading = false;
       }
     },
 
-    // Método para marcar como leídas
-    async markAllAsRead() {
-      try {
-        await notificationService.markAllAsRead(this.userRole);
-        this.unreadCount = 0;
-        this.notifications = [];
-        this.showDropdown = false;
-      } catch (error) {
-        console.error("Error al marcar como leídas:", error);
-      }
-    },
-
-    // Método para formatear el tiempo
+    // Método para formatear el tiempo (Mantenido)
     formatTime(timestamp) {
         const date = new Date(timestamp);
         const now = new Date();
@@ -130,7 +109,11 @@ export default {
             if (interval >= 1) {
                 if (typeof Intl.RelativeTimeFormat !== 'undefined') {
                     const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
-                    return rtf.format(-interval, unit.rtfUnit); 
+                    try {
+                        return rtf.format(-interval, unit.rtfUnit);
+                    } catch {
+                         return `hace ${interval} ${unit.name}${interval > 1 ? 's' : ''}`;
+                    }
                 }
                 return `hace ${interval} ${unit.name}${interval > 1 ? 's' : ''}`;
             }
@@ -138,31 +121,41 @@ export default {
         return 'justo ahora';
     },
 
-    // Método para asignar el icono
+    // Método para asignar el icono (Mantenido)
     getIcon(tipo) {
         switch (tipo) {
-            case 'stock_critico':
-                return 'fas fa-exclamation-triangle text-warning'; 
+            case 'stock_critico_estacional':
+                return 'fas fa-exclamation-triangle'; 
             case 'tendencia_alta':
-                return 'fas fa-chart-line text-info'; 
+                return 'fas fa-chart-line'; 
             default:
-                return 'fas fa-info-circle text-muted';
+                return 'fas fa-info-circle';
+        }
+    },
+    // Método para asignar la clase de color (Mantenido)
+    getIconClass(tipo) {
+        switch (tipo) {
+            case 'stock_critico_estacional':
+                return 'text-danger'; 
+            case 'tendencia_alta':
+                return 'text-info'; 
+            default:
+                return 'text-muted';
         }
     }
   },
   
   mounted() {
     this.fetchNotifications();
-    // 🟢 Agregar listener para cerrar al hacer clic fuera
     document.addEventListener('click', this.closeDropdown);
   },
   
-  // 🟢 IMPORTANTE: Eliminar el listener al destruir el componente (previene fugas de memoria)
   beforeUnmount() { 
     document.removeEventListener('click', this.closeDropdown);
   }
 };
 </script>
+
 
 <style scoped>
 /* Estilos necesarios para el layout (Sin cambios) */
@@ -275,4 +268,26 @@ export default {
 .text-info {
     color: #4299e1; /* Azul */
 }
+.text-warning {
+    color: #ecc94b; /* Amarillo */
+}
+.text-info {
+    color: #4299e1; /* Azul */
+}
+
+/* Estilos para notificaciones NO LEÍDAS */
+.notification-item.unread {
+    font-weight: 600; /* Hace que el texto resalte */
+    background-color: #f7fafc; /* Fondo ligeramente más claro */
+}
+
+/* Estilos para el ítem de notificación de Stock Crítico */
+.notification-item.stock_critico {
+    border-left: 4px solid #ecc94b; 
+}
+
+/* Estilos para el ítem de notificación de Tendencia Alta */
+.notification-item.tendencia_alta {
+    border-left: 4px solid #4299e1; 
+} 
 </style>
