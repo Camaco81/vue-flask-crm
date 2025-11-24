@@ -20,6 +20,8 @@ from backend.routes.sale_routes import sale_bp
 # user_bp contiene /profile; admin_bp contiene /users
 from backend.routes.user_routes import user_bp, admin_bp
 from backend.routes.common_routes import rate_bp
+from backend.routes.alert_routes import alert_bp
+
 
 
 # --- 1. CONFIGURACIÓN INICIAL (LOAD ENV) ---
@@ -81,7 +83,7 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(customer_bp, url_prefix='/api/customers')
 app.register_blueprint(product_bp, url_prefix='/api/products')
 app.register_blueprint(sale_bp, url_prefix='/api/sales') 
-
+app.register_blueprint( alert_bp)
 # Rutas que están directamente bajo /api (ej. /api/profile, /api/rate)
 app.register_blueprint(rate_bp, url_prefix='/api')
 app.register_blueprint(user_bp, url_prefix='/api') # Contiene /profile
