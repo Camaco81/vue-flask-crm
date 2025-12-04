@@ -820,29 +820,44 @@ def get_pending_credits():
 
     # 2. Query SQL para obtener créditos pendientes
     query = """
-        SELECT 
-            s.id AS sale_id,
-            s.total_amount_usd,
-            s.balance_due_usd,
-            s.sale_date,
-            s.fecha_vencimiento,
-            s.dias_credito,
-            c.name AS customer_name,
-            c.cedula AS customer_cedula,
-            -- 💡 Joins para obtener los nombres del Vendedor y el Administrador Aprobador
-            u_seller.email AS seller_email,
-            u_admin.email AS admin_approver_email,
-            s.admin_id_aprobador
-        FROM sales s
-        JOIN customers c ON s.customer_id = c.id
-        JOIN users u_seller ON s.user_id = u_seller.id -- Vendedor que la hizo
-        -- 💡 Nuevo JOIN para el administrador que aprobó el crédito
-        LEFT JOIN users u_admin ON s.admin_id_aprobador = u_admin.id
-        WHERE 
-            s.tipo_pago = 'Crédito' AND s.balance_due_usd > %s
-        ORDER BY 
-            s.fecha_vencimiento ASC;
-    """
+            SELECT 
+                s.id,
+                s.customer_id,
+                c.name as customer_name,
+                c.email as customer_email,
+                c.cedula as customer_cedula,
+                s.sale_date,
+                s.status,
+                s.tipo_pago,
+                s.usd_paid,
+                s.ves_paid,
+                s.total_amount_usd,
+                s.total_amount_ves,
+                s.exchange_rate_used,
+                u.email as seller_email,
+                u.id as seller_id,
+                s.balance_due_usd,
+                s.paid_amount_usd,
+                s.fecha_vencimiento,
+                s.dias_credito,
+                s.cancellation_code,
+                json_agg(json_build_object(
+                    'product_id', p.id,
+                    'product_name', p.name,
+                    'quantity', si.quantity,
+                    'price_usd', si.price  -- CORREGIDO: usar 'price' en lugar de 'price_usd'
+                )) AS items
+            FROM sales s
+            JOIN customers c ON s.customer_id = c.id
+            JOIN users u ON s.user_id = u.id 
+            JOIN sale_items si ON s.id = si.sale_id
+            JOIN products p ON si.product_id = p.id
+            GROUP BY s.id, c.name, c.email, c.cedula, s.sale_date, s.status, 
+            s.tipo_pago, s.usd_paid, s.ves_paid, s.total_amount_usd, s.total_amount_ves, 
+            s.exchange_rate_used, u.email, u.id, s.balance_due_usd, s.paid_amount_usd,
+            s.fecha_vencimiento, s.dias_credito, s.cancellation_code
+            ORDER BY s.sale_date DESC;
+        """
     
     try:
         with get_db_cursor() as cur:
