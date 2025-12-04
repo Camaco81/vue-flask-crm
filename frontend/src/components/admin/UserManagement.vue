@@ -6,7 +6,7 @@
       </router-link>
     </button>
 
-    <h1 class="section-title">Gestión de Usuarios (Roles 1, 2 y 3)</h1> 
+    <h1 class="section-title">Gestión de Usuarios</h1> 
 
     <button @click="openModal('create')" class="btn btn-primary add-button">
       <i class="fas fa-plus-circle"></i> Agregar Nuevo Usuario

@@ -1,10 +1,10 @@
 <template>
   <div class="admin-general-reports">
     <div class="header-controls">
-      <button @click="goBack" class="btn-back">
+     <button @click="goBack" class="btn-back">
         ← Regresar
       </button>
-    </div>
+    </div> 
     
     <h1>Reportes Generales de Ventas</h1>
     <p>Aquí se muestra un resumen de todas las ventas del sistema, incluyendo quién las realizó.</p>
@@ -31,7 +31,7 @@
     <div v-if="allOrders.length > 0" class="orders-list">
       <h2>Detalle de Todas las Órdenes</h2>
       <div v-for="order in allOrders" :key="order.id" class="order-card">
-        <h3>Orden #{{ order.id }} - Cliente: {{ order.customer_name }}</h3>
+        <h3>Cliente: {{ order.customer_name }}</h3>
         <p>
           <strong>Vendedor/Consultor:</strong> 
           {{ order.seller_email || `ID: ${order.seller_id}` || 'N/A' }}
