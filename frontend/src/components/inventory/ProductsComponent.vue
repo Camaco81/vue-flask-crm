@@ -1,3 +1,4 @@
+
 <template>
 <div class="products-container">
  <div class="page-header">
@@ -14,13 +15,10 @@
 </div>
  </div>
  <div class="header-stats">
-<div class="stat-item">
- <span class="stat-number">{{ products ? products.length : 0 }}</span>
- <span class="stat-label">Productos</span>
-</div>
-<div class="stat-item">
- <span class="stat-number">{{ totalStock }}</span>
- <span class="stat-label">Unidades en Stock</span>
+
+<div class="stat-item stat-low-stock">
+ <span class="stat-number">{{ lowStockCount }}</span>
+ <span class="stat-label">Productos con Stock Bajo</span>
 </div>
  </div>
 </div>
@@ -365,8 +363,15 @@ return this.filteredProducts.slice(start, end);
 },
 
 totalStock() {
-// Se asegura que el stock siempre sea un número (o 0 si es nulo/inválido) antes de sumar
+// Se mantiene la función por si se usa en otro lugar, pero se eliminó del template
 return this.products.reduce((sum, product) => sum + (product.stock || 0), 0);
+},
+
+// 💡 NUEVO CÓMPUTO: Productos con stock bajo (Stock < 10)
+lowStockCount() {
+    if (!this.products) return 0;
+    // Usa la misma lógica de "low-stock" definida en el CSS
+    return this.products.filter(product => product.stock < 10).length;
 },
 
 visiblePages() {
@@ -703,6 +708,22 @@ this.fetchProducts();
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
+/* 💡 NUEVO ESTILO PARA ALERTA DE STOCK BAJO */
+.stat-item.stat-low-stock {
+  /* Usar colores de advertencia */
+  border: 2px solid #dc3545; /* Rojo de peligro */
+  background: linear-gradient(135deg, rgba(220, 53, 69, 0.1), rgba(255, 193, 7, 0.1));
+}
+
+.stat-item.stat-low-stock .stat-number {
+  color: #dc3545; /* Rojo para visibilidad inmediata */
+}
+
+.stat-item.stat-low-stock .stat-label {
+  color: #dc3545;
+}
+
 
 /* ===== CONTENT WRAPPER ===== */
 .content-wrapper {
@@ -1154,6 +1175,30 @@ this.fetchProducts();
   margin-right: 8px;
   color: #718096;
 }
+
+.product-stock {
+  display: flex;
+  align-items: center;
+  font-size: clamp(14px, 2.5vw, 16px);
+  font-weight: 600;
+  color: #4a5568;
+  margin: 8px 0;
+}
+
+.product-stock i {
+  margin-right: 8px;
+  color: #718096;
+}
+
+/* Stock bajo en la tarjeta individual */
+.product-stock.low-stock {
+  color: #dc3545; /* Rojo para alertar */
+  font-weight: 700;
+}
+.product-stock.low-stock i {
+  color: #dc3545;
+}
+
 
 .product-actions {
   display: flex;

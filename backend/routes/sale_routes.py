@@ -798,3 +798,83 @@ def admin_general_reports():
     except Exception as e:
         app_logger.error(f"Error al obtener los reportes generales admin: {e}", exc_info=True)
         return jsonify({"msg": "Error al cargar los reportes generales del administrador", "error": str(e)}), 500
+
+# =========================================================
+# ENDPOINT PARA MONITOREO DE CRÉDITOS (ADMIN)
+# =========================================================
+
+@sale_bp.route('/credits/pending', methods=['GET'])
+@jwt_required()
+def get_pending_credits():
+    """
+    Obtiene todas las ventas a crédito con saldo pendiente.
+    Optimizado para la vista de monitoreo del administrador.
+    """
+    # 1. Verificar Rol: Solo el administrador debe acceder a esta información sensible.
+    user_info = get_user_and_role()
+    if user_info['role'] != 'admin':
+        return jsonify({"msg": "Permiso denegado. Solo administradores pueden acceder a este reporte de créditos."}), 403
+
+    # 2. Query SQL para obtener créditos pendientes
+    query = """
+        SELECT 
+            s.id AS sale_id,
+            s.total_amount_usd,
+            s.balance_due_usd,
+            s.sale_date,
+            s.fecha_vencimiento,
+            s.dias_credito,
+            c.name AS customer_name,
+            c.cedula AS customer_cedula,
+            -- 💡 Joins para obtener los nombres del Vendedor y el Administrador Aprobador
+            u_seller.email AS seller_email,
+            u_admin.email AS admin_approver_email,
+            s.admin_id_aprobador
+        FROM sales s
+        JOIN customers c ON s.customer_id = c.id
+        JOIN users u_seller ON s.user_id = u_seller.id -- Vendedor que la hizo
+        -- 💡 Nuevo JOIN para el administrador que aprobó el crédito
+        LEFT JOIN users u_admin ON s.admin_id_aprobador = u_admin.id
+        WHERE 
+            s.tipo_pago = 'Crédito' AND s.balance_due_usd > %s
+        ORDER BY 
+            s.fecha_vencimiento ASC;
+    """
+    
+    try:
+        with get_db_cursor() as cur:
+            # Usar PAYMENT_TOLERANCE para evitar errores de redondeo
+            cur.execute(query, (PAYMENT_TOLERANCE,)) 
+            
+            records = cur.fetchall()
+            
+            # Formatear la salida
+            credit_list = []
+            for record in records:
+                # Calcular días en mora (si aplica)
+                fecha_vencimiento = record['fecha_vencimiento']
+                dias_en_mora = 0
+                hoy = datetime.now().date()
+                
+                if fecha_vencimiento and fecha_vencimiento < hoy:
+                    dias_en_mora = (hoy - fecha_vencimiento).days
+
+                credit_list.append({
+                    "sale_id": record['sale_id'],
+                    "total_amount_usd": float(record['total_amount_usd']),
+                    "balance_due_usd": float(record['balance_due_usd']),
+                    "sale_date": record['sale_date'].isoformat(),
+                    "fecha_vencimiento": record['fecha_vencimiento'].isoformat() if record['fecha_vencimiento'] else None,
+                    "dias_credito": record['dias_credito'],
+                    "customer_name": record['customer_name'],
+                    "customer_cedula": record['customer_cedula'],
+                    "seller_email": record['seller_email'],
+                    "admin_approver_email": record['admin_approver_email'] or "N/A (Error ID)",
+                    "dias_en_mora": dias_en_mora
+                })
+
+            return jsonify(credit_list), 200
+
+    except Exception as e:
+        app_logger.error(f"Error al obtener créditos pendientes: {e}")
+        return jsonify({"msg": "Error interno del servidor al consultar créditos."}), 500

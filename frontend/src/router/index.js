@@ -10,6 +10,7 @@ import RegisterForm from '../components/RegisterForm.vue';
 import AdminDashboard from '@/components/admin/AdminDashboard.vue';
 import UserManagement from '@/components/admin/UserManagement.vue';
 import AdminGeneralReports from '@/components/admin/GeneralReports.vue';
+import AdminCreditMonitoring from '@/components/admin/AdminCreditMonitoring.vue';
 
 // --- Importaciones para el Rol de Vendedor (role_id = 2) ---
 import VendedorDashboard from '@/components/vendedor/VendedorDashboard.vue';
@@ -48,6 +49,13 @@ const routes = [
   path: '/admin/general-reports',
   name: 'AdminGeneralReports',
   component: AdminGeneralReports,
+  meta: { requiresAuth: true, requiredRole: 1 }
+ },
+
+ {
+  path: '/admin/credits-reports',
+  name: 'AdminCreditMonitoring',
+  component: AdminCreditMonitoring,
   meta: { requiresAuth: true, requiredRole: 1 }
  },
 
