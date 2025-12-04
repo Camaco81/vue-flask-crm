@@ -811,9 +811,12 @@ def get_pending_credits():
     Optimizado para la vista de monitoreo del administrador.
     """
     # 1. Verificar Rol: Solo el administrador debe acceder a esta información sensible.
-    user_info = get_user_and_role()
-    if user_info['role'] != 'admin':
-        return jsonify({"msg": "Permiso denegado. Solo administradores pueden acceder a este reporte de créditos."}), 403
+    current_user_id, user_role = get_user_and_role()
+    
+    # 1. Verificar Permisos (Solo Admin)
+    if not check_admin_permission(user_role):
+        return jsonify({"msg": "Acceso denegado: Se requiere rol de Administrador."}), 403
+
 
     # 2. Query SQL para obtener créditos pendientes
     query = """
