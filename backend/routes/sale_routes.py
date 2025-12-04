@@ -802,7 +802,6 @@ def admin_general_reports():
 # =========================================================
 # ENDPOINT PARA MONITOREO DE CRÉDITOS (ADMIN)
 # =========================================================
-
 @sale_bp.route('/credits/pending', methods=['GET'])
 @jwt_required()
 def get_pending_credits():
@@ -811,17 +810,17 @@ def get_pending_credits():
     Optimizado para la vista de monitoreo del administrador.
     """
     # 1. Verificar Rol: Solo el administrador debe acceder a esta información sensible.
+    # FIX: Se desempaqueta correctamente la tupla (user_data, role)
     current_user_id, user_role = get_user_and_role()
     
     # 1. Verificar Permisos (Solo Admin)
     if not check_admin_permission(user_role):
         return jsonify({"msg": "Acceso denegado: Se requiere rol de Administrador."}), 403
 
-
     # 2. Query SQL para obtener créditos pendientes
     query = """
             SELECT 
-                s.id,
+                s.id as sale_id,
                 s.customer_id,
                 c.name as customer_name,
                 c.email as customer_email,
@@ -845,23 +844,23 @@ def get_pending_credits():
                     'product_id', p.id,
                     'product_name', p.name,
                     'quantity', si.quantity,
-                    'price_usd', si.price  -- CORREGIDO: usar 'price' en lugar de 'price_usd'
+                    'price_usd', si.price 
                 )) AS items
             FROM sales s
             JOIN customers c ON s.customer_id = c.id
             JOIN users u ON s.user_id = u.id 
             JOIN sale_items si ON s.id = si.sale_id
             JOIN products p ON si.product_id = p.id
-            GROUP BY s.id, c.name, c.email, c.cedula, s.sale_date, s.status, 
-            s.tipo_pago, s.usd_paid, s.ves_paid, s.total_amount_usd, s.total_amount_ves, 
-            s.exchange_rate_used, u.email, u.id, s.balance_due_usd, s.paid_amount_usd,
-            s.fecha_vencimiento, s.dias_credito, s.cancellation_code
+            -- FILTRADO CRÍTICO: Solo ventas a crédito o abonadas con saldo pendiente
+            WHERE s.balance_due_usd > %s 
+            AND s.status IN ('Crédito', 'Abonado')
+            GROUP BY s.id, c.name, c.email, c.cedula, u.email, u.id 
             ORDER BY s.sale_date DESC;
         """
     
     try:
         with get_db_cursor() as cur:
-            # Usar PAYMENT_TOLERANCE para evitar errores de redondeo
+            # Usar PAYMENT_TOLERANCE como parámetro para la cláusula WHERE
             cur.execute(query, (PAYMENT_TOLERANCE,)) 
             
             records = cur.fetchall()
@@ -884,15 +883,16 @@ def get_pending_credits():
                     "sale_date": record['sale_date'].isoformat(),
                     "fecha_vencimiento": record['fecha_vencimiento'].isoformat() if record['fecha_vencimiento'] else None,
                     "dias_credito": record['dias_credito'],
+                    "dias_en_mora": dias_en_mora,
                     "customer_name": record['customer_name'],
-                    "customer_cedula": record['customer_cedula'],
+                    "customer_cedula": str(record['customer_cedula']) if record['customer_cedula'] else 'N/A',
                     "seller_email": record['seller_email'],
-                    "admin_approver_email": record['admin_approver_email'] or "N/A (Error ID)",
-                    "dias_en_mora": dias_en_mora
+                    # Se omite 'admin_approver_email' por solicitud
+                    "items": record['items']
                 })
 
             return jsonify(credit_list), 200
 
     except Exception as e:
-        app_logger.error(f"Error al obtener créditos pendientes: {e}")
+        app_logger.error(f"Error al obtener créditos pendientes: {e}", exc_info=True)
         return jsonify({"msg": "Error interno del servidor al consultar créditos."}), 500
