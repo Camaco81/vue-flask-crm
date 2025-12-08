@@ -735,29 +735,30 @@ def pay_credit():
                 fecha_pago_final_update = sql.SQL("fecha_pago_final = fecha_pago_final")
 
             query = sql.SQL("""
-             UPDATE sales
-            SET 
+            UPDATE sales
+             SET 
             balance_due_usd = %s, 
             paid_amount_usd = %s,
-            status = %s,
-            ves_paid = ves_paid + CASE WHEN %s = 'VES' THEN %s ELSE 0 END,
-            usd_paid = usd_paid + CASE WHEN %s = 'USD' THEN %s ELSE 0 END,
-            exchange_rate_used = CASE WHEN %s = 'VES' THEN %s ELSE exchange_rate_used END,
-            updated_at = NOW(),
+             status = %s,
+             ves_paid = ves_paid + CASE WHEN %s = 'VES' THEN %s ELSE 0 END,
+             usd_paid = usd_paid + CASE WHEN %s = 'USD' THEN %s ELSE 0 END,
+             exchange_rate_used = CASE WHEN %s = 'VES' THEN %s ELSE exchange_rate_used END,
+             updated_at = NOW(),
             fecha_pago_final = CASE WHEN %s = 'Pagado' THEN NOW() ELSE fecha_pago_final END
-            WHERE id = %s
-            RETURNING balance_due_usd, status;
+    WHERE id = %s
+    RETURNING balance_due_usd, status;
         """).format(fecha_final_set=fecha_pago_final_update)
             
             cur.execute(query, (
-                new_balance_due, 
-                new_paid_usd, 
-                new_status,
-                payment_currency, raw_payment_amount, 
-                payment_currency, raw_payment_amount, 
-                payment_currency, exchange_rate, 
-                sale_id
-            ))
+            new_balance_due, 
+            new_paid_usd, 
+            new_status,
+            payment_currency, raw_payment_amount, 
+            payment_currency, raw_payment_amount, 
+            payment_currency, exchange_rate, 
+            new_status,  # Este es el parámetro para CASE WHEN del fecha_pago_final
+            sale_id
+))
             
             updated_sale = cur.fetchone() 
             
