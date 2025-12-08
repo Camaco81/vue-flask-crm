@@ -11,6 +11,7 @@ app_logger = logging.getLogger(__name__)
 ADMIN_ROLE_ID = 1
 SELLER_ROLE_ID = 2 
 CUSTOMER_ROLE_ID = 3
+VISITOR_ROLE_ID = 4
 # Puedes añadir más IDs de roles aquí si es necesario
 # =========================================================
 # FUNCIONES DE USUARIO Y ROL

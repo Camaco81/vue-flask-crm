@@ -18,7 +18,7 @@ from backend.utils.helpers import (
 ALMACENISTA_ROLE_ID = 3 
 ADMIN_ROLE_ID = 1
 CONSULTOR_ROLE_ID = 2 # Role 2 es el Vendedor
-
+VISITOR_ROLE_ID = 4 
 # Roles permitidos para gestión por el Administrador (1, 2, 3)
 ALLOWED_ROLES_FOR_ADMIN = (ADMIN_ROLE_ID, CONSULTOR_ROLE_ID, ALMACENISTA_ROLE_ID)
 

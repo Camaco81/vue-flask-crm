@@ -18,7 +18,7 @@ def register():
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
-    role_id = data.get('role_id', 2) # Default role_id, e.g., customer or basic user
+    role_id = data.get('role_id', 4) # Default role_id, e.g., customer or basic user
 
     if not email or not password:
         return jsonify({"msg": "Email and password are required"}), 400
