@@ -927,9 +927,9 @@ def get_admin_security_code():
         # 1. Verificar Permiso de Administrador
         user_id, user_role = get_user_and_role()
         # Se asume que get_user_and_role() obtiene el rol del JWT
-        if user_role != 'admin':
-            return jsonify({"msg": "Permiso denegado. Solo administradores pueden consultar este código."}), 403
-
+        if not check_admin_permission(user_role):
+            return jsonify({"msg": "Acceso denegado: Se requiere rol de Administrador."}), 403
+        
         # 2. Generar el código (la lógica se hace en el servidor)
         daily_code = get_daily_security_code_server()
         
