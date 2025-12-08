@@ -95,6 +95,31 @@ def determine_sale_status(is_credit_sale, balance_due, paid_amount):
         return 'Abonado'
     else:
         return 'Crédito'
+
+def build_sale_insert_query(is_credit_sale, fields, values, dias_credito, 
+                          monto_pendiente, fecha_vencimiento, cancellation_code, admin_auth_code):
+    """Construye dinámicamente la consulta SQL para insertar una venta"""
+    if is_credit_sale:
+        fields.extend([
+            "is_credit_sale", "dias_credito", "balance_due_usd", 
+            "fecha_vencimiento", "cancellation_code", "admin_auth_code_used"
+        ])
+        values.extend([
+            True, dias_credito, monto_pendiente, 
+            fecha_vencimiento, cancellation_code, admin_auth_code
+        ])
+    else:
+        fields.extend(["is_credit_sale", "balance_due_usd"])
+        values.extend([False, 0.0])
+    
+    # Construir la consulta SQL
+    placeholders = ["%s"] * len(values)
+    query = f"""
+        INSERT INTO sales ({', '.join(fields)}) 
+        VALUES ({', '.join(placeholders)})
+        RETURNING id;
+    """
+    return query    
     
 def get_daily_security_code_server():
     """
