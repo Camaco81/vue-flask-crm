@@ -373,23 +373,35 @@ def insert_sale_record(cur, customer_id, seller_user_id, total_amount_usd, total
                       exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid,
                       is_credit_sale, dias_credito, monto_pendiente, fecha_vencimiento, 
                       cancellation_code, admin_auth_code):
-    """Inserta el registro de la venta en la base de datos"""
+    """Inserta el registro de la venta en la base de datos usando solo columnas existentes"""
     fields = [
         "id", "customer_id", "user_id", "sale_date", "total_amount_usd", 
         "total_amount_ves", "exchange_rate_used", "status", "tipo_pago", 
-        "usd_paid", "ves_paid", "paid_amount_usd"
+        "usd_paid", "ves_paid", "paid_amount_usd", "balance_due_usd"
     ]
     
     values = [
         str(uuid.uuid4()), customer_id, seller_user_id, datetime.now(), 
         total_amount_usd, total_amount_ves, exchange_rate, status, 
-        tipo_pago_raw, usd_paid, ves_paid, usd_paid  # paid_amount_usd inicial = usd_paid
+        tipo_pago_raw, usd_paid, ves_paid, usd_paid, monto_pendiente
     ]
     
-    query = build_sale_insert_query(
-        is_credit_sale, fields, values, dias_credito, 
-        monto_pendiente, fecha_vencimiento, cancellation_code, admin_auth_code
-    )
+    # CONSTRUIR LA CONSULTA DINÁMICAMENTE
+    if is_credit_sale:
+        fields.extend(["dias_credito", "fecha_vencimiento", "cancellation_code"])
+        values.extend([dias_credito, fecha_vencimiento, cancellation_code])
+    else:
+        # Para ventas al contado, no incluir columnas de crédito
+        fields.extend(["dias_credito"])
+        values.extend([0])
+    
+    # Construir la consulta SQL
+    placeholders = ["%s"] * len(values)
+    query = f"""
+        INSERT INTO sales ({', '.join(fields)}) 
+        VALUES ({', '.join(placeholders)})
+        RETURNING id;
+    """
     
     cur.execute(query, values)
     return cur.fetchone()['id']
@@ -440,7 +452,7 @@ def build_success_response(new_sale_id, tipo_pago_raw, total_amount_usd, total_a
     
     if is_credit_sale:
         response["cancellation_code"] = cancellation_code
-        response["admin_auth_code_used"] = admin_auth_code  # Mostrar el código usado
+        response["admin_auth_code"] = admin_auth_code  # Mostrar el código usado
     
     return jsonify(response), 201
 
@@ -473,7 +485,7 @@ def handle_sales_listing(current_user_id, user_role):
                     'product_id', p.id,
                     'product_name', p.name,
                     'quantity', si.quantity,
-                    'price_usd', si.price  -- CORREGIDO: usar 'price' en lugar de 'price_usd'
+                    'price_usd', si.price
                 )) AS items
             FROM sales s
             JOIN customers c ON s.customer_id = c.id
@@ -723,19 +735,19 @@ def pay_credit():
                 fecha_pago_final_update = sql.SQL("fecha_pago_final = fecha_pago_final")
 
             query = sql.SQL("""
-                UPDATE sales
-                SET 
-                    balance_due_usd = %s, 
-                    paid_amount_usd = %s,
-                    status = %s,
-                    ves_paid = ves_paid + CASE WHEN %s = 'VES' THEN %s ELSE 0 END,
-                    usd_paid = usd_paid + CASE WHEN %s = 'USD' THEN %s ELSE 0 END,
-                    exchange_rate_used = CASE WHEN %s = 'VES' THEN %s ELSE exchange_rate_used END,
-                    updated_at = NOW(),
-                    {fecha_final_set}
-                WHERE id = %s
-                RETURNING balance_due_usd, status;
-            """).format(fecha_final_set=fecha_pago_final_update)
+             UPDATE sales
+            SET 
+            balance_due_usd = %s, 
+            paid_amount_usd = %s,
+            status = %s,
+            ves_paid = ves_paid + CASE WHEN %s = 'VES' THEN %s ELSE 0 END,
+            usd_paid = usd_paid + CASE WHEN %s = 'USD' THEN %s ELSE 0 END,
+            exchange_rate_used = CASE WHEN %s = 'VES' THEN %s ELSE exchange_rate_used END,
+            updated_at = NOW(),
+            fecha_pago_final = CASE WHEN %s = 'Pagado' THEN NOW() ELSE fecha_pago_final END
+            WHERE id = %s
+            RETURNING balance_due_usd, status;
+        """).format(fecha_final_set=fecha_pago_final_update)
             
             cur.execute(query, (
                 new_balance_due, 
