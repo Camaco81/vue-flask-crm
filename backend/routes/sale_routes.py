@@ -925,7 +925,7 @@ def get_admin_security_code():
     """
     try:
         # 1. Verificar Permiso de Administrador
-        user_info, user_id, user_role = get_user_and_role()
+        user_id, user_role = get_user_and_role()
         # Se asume que get_user_and_role() obtiene el rol del JWT
         if user_role != 'admin':
             return jsonify({"msg": "Permiso denegado. Solo administradores pueden consultar este código."}), 403
