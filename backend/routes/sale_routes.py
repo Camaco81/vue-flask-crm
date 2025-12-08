@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 from psycopg2 import sql 
-from backend.utils.helpers import get_user_and_role, check_admin_permission, validate_required_fields, check_seller_permission
+from backend.utils.helpers import get_user_and_role,  validate_required_fields, check_seller_permission
 from backend.utils.bcv_api import get_dolarvzla_rate 
 from backend.utils.inventory_utils import verificar_stock_y_alertar, STOCK_THRESHOLD
 import logging
@@ -10,9 +10,12 @@ from decimal import Decimal
 import uuid
 from datetime import datetime, timedelta
 import bcrypt
+import os
 
 sale_bp = Blueprint('sale', __name__, url_prefix='/api/sales')
 app_logger = logging.getLogger('backend.routes.sale_routes') 
+SECRET_SEED =os.environ.get('ADMIN_SECRET_SEED', 'mi-clave-unica-de-permiso')
+
 
 # =========================================================
 # CONSTANTES GLOBALES
@@ -91,6 +94,23 @@ def determine_sale_status(is_credit_sale, balance_due, paid_amount):
         return 'Abonado'
     else:
         return 'Crédito'
+    
+def get_daily_security_code_server():
+    """
+    Genera el código de seguridad determinista de 6 dígitos basado en la fecha y una semilla secreta.
+    """
+    today = datetime.now().date()
+    date_string = today.isoformat() # YYYY-MM-DD
+    combined_string = date_string + SECRET_SEED
+    
+    # Generación de hash simple de 6 dígitos
+    hash_value = 0
+    for char in combined_string:
+        hash_value = ((hash_value << 5) - hash_value) + ord(char)
+        hash_value &= 0xFFFFFFFF # Convertir a entero de 32 bits
+    
+    # Devolver un código de 6 dígitos
+    return str(abs(hash_value % 1000000)).zfill(6)
 
 # =========================================================
 # RUTAS DE VENTA
@@ -896,3 +916,30 @@ def get_pending_credits():
     except Exception as e:
         app_logger.error(f"Error al obtener créditos pendientes: {e}", exc_info=True)
         return jsonify({"msg": "Error interno del servidor al consultar créditos."}), 500
+    
+@sale_bp.route('/admin/security-code', methods=['GET'])
+@jwt_required()
+def get_admin_security_code():
+    """
+    Endpoint para que SOLO el administrador obtenga el código de seguridad diario.
+    """
+    try:
+        # 1. Verificar Permiso de Administrador
+        user_info, user_id, user_role = get_user_and_role()
+        # Se asume que get_user_and_role() obtiene el rol del JWT
+        if user_role != 'admin':
+            return jsonify({"msg": "Permiso denegado. Solo administradores pueden consultar este código."}), 403
+
+        # 2. Generar el código (la lógica se hace en el servidor)
+        daily_code = get_daily_security_code_server()
+        
+        return jsonify({
+            "status": "success",
+            "date": datetime.now().date().isoformat(),
+            "security_code": daily_code,
+            "msg": "Código de seguridad diario generado exitosamente."
+        }), 200
+
+    except Exception as e:
+        app_logger.error(f"Error al obtener código de seguridad: {e}", exc_info=True)
+        return jsonify({"msg": "Error interno del servidor al obtener el código."}), 500    
