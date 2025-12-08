@@ -64,24 +64,25 @@ def calculate_payment_totals(total_amount_usd, usd_paid, ves_paid, exchange_rate
     
     return total_paid_usd, saldo_pendiente
 
-def handle_credit_sale_validation(cancellation_code):
+def handle_credit_sale_validation(cancellation_code, admin_auth_code):
     """Maneja la validación para ventas a crédito"""
     if not cancellation_code:
         return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
-    return None  # No hay error
-
-def build_sale_insert_query(is_credit_sale, fields, values, dias_credito, monto_pendiente, fecha_vencimiento, cancellation_code):
-    """Construye la consulta de inserción de venta dinámicamente"""
-    if is_credit_sale:
-        fields.extend(["dias_credito", "balance_due_usd", "fecha_vencimiento", "cancellation_code"])
-        values.extend([dias_credito, monto_pendiente, fecha_vencimiento, cancellation_code])
-
-    placeholders = sql.SQL(', ').join(sql.Placeholder() * len(fields))
     
-    return sql.SQL("INSERT INTO sales ({}) VALUES ({}) RETURNING id").format(
-        sql.SQL(', ').join(map(sql.Identifier, fields)),
-        placeholders
-    )
+    # Validar el código del administrador
+    daily_code = get_daily_security_code_server()
+    if admin_auth_code != daily_code:
+        return jsonify({"msg": "Código de autorización de administrador incorrecto o expirado. Venta a crédito no autorizada."}), 403
+    
+    return None
+
+
+def validate_admin_auth_code(admin_auth_code_input):
+    """Valida el código de autorización del administrador"""
+    daily_code = get_daily_security_code_server()
+    if admin_auth_code_input != daily_code:
+        return jsonify({"msg": "Código de autorización de administrador incorrecto o expirado. Operación no autorizada."}), 403
+    return None
 
 def determine_sale_status(is_credit_sale, balance_due, paid_amount):
     """Determina el estado correcto de la venta"""
@@ -151,6 +152,7 @@ def handle_sale_creation(current_user_id, user_role):
         usd_paid_raw = data.get('usd_paid', 0)
         ves_paid_raw = data.get('ves_paid', 0)
         cancellation_code = data.get("cancellation_code")
+        admin_auth_code = data.get("admin_auth_code")  # NUEVO: código del admin
         
         # Validaciones
         if not isinstance(items, list) or len(items) == 0:
@@ -162,11 +164,15 @@ def handle_sale_creation(current_user_id, user_role):
         usd_paid, ves_paid = validate_payment_amounts(usd_paid_raw, ves_paid_raw)
         dias_credito = validate_credit_days(dias_credito_raw) if is_credit_sale else 0
         
-        # Validación para crédito
+        # Validación para crédito (ahora incluye admin_auth_code)
         if is_credit_sale:
-            error_response = handle_credit_sale_validation(cancellation_code)
+            error_response = handle_credit_sale_validation(cancellation_code, admin_auth_code)
             if error_response:
                 return error_response
+            # Guardar el código del admin para usar después
+            admin_auth_code_used = admin_auth_code
+        else:
+            admin_auth_code_used = None
 
         # Obtener tasa de cambio
         try:
@@ -175,22 +181,22 @@ def handle_sale_creation(current_user_id, user_role):
             app_logger.error(f"FATAL: No se pudo obtener la tasa de cambio: {e}", exc_info=True)
             return jsonify({"msg": "Error interno: No se pudo obtener la tasa de cambio del sistema"}), 500
 
-        # Procesar la venta en transacción
+        # Procesar la venta en transacción (pasar admin_auth_code_used)
         return process_sale_transaction(
             customer_id, items, tipo_pago_raw, is_credit_sale, 
             usd_paid, ves_paid, dias_credito, exchange_rate,
-            cancellation_code, current_user_id
+            cancellation_code, current_user_id, admin_auth_code_used
         )
         
     except ValueError as e:
         return jsonify({"msg": str(e)}), 400
     except Exception as e:
         app_logger.error(f"Error inesperado en creación de venta: {e}", exc_info=True)
-        return jsonify({"msg": "Error interno del servidor"}), 500
+        return jsonify({"msg": "Error interno del servidor"}), 50000
 
 def process_sale_transaction(customer_id, items, tipo_pago_raw, is_credit_sale, 
                            usd_paid, ves_paid, dias_credito, exchange_rate,
-                           cancellation_code, seller_user_id):
+                           cancellation_code, seller_user_id, admin_auth_code=None):
     """Procesa la venta dentro de una transacción"""
     cur = None
     try:
@@ -222,11 +228,12 @@ def process_sale_transaction(customer_id, items, tipo_pago_raw, is_credit_sale,
             if isinstance(monto_pendiente, tuple):  # Error ocurrió
                 return monto_pendiente
 
-            # Insertar venta
+            # Insertar venta (pasar admin_auth_code)
             new_sale_id = insert_sale_record(
                 cur, customer_id, seller_user_id, total_amount_usd, total_amount_ves,
                 exchange_rate, initial_status, tipo_pago_raw, usd_paid, ves_paid,
-                is_credit_sale, dias_credito, monto_pendiente, fecha_vencimiento, cancellation_code
+                is_credit_sale, dias_credito, monto_pendiente, fecha_vencimiento, 
+                cancellation_code, admin_auth_code
             )
 
             # Procesar items y stock
@@ -238,7 +245,7 @@ def process_sale_transaction(customer_id, items, tipo_pago_raw, is_credit_sale,
             return build_success_response(
                 new_sale_id, tipo_pago_raw, total_amount_usd, total_amount_ves,
                 exchange_rate, usd_paid, ves_paid, monto_pendiente, stock_alerts,
-                is_credit_sale, cancellation_code, initial_status
+                is_credit_sale, cancellation_code, initial_status, admin_auth_code
             )
                 
     except Exception as e:
@@ -246,7 +253,6 @@ def process_sale_transaction(customer_id, items, tipo_pago_raw, is_credit_sale,
             cur.connection.rollback()
         app_logger.error(f"Error en transacción de venta: {e}", exc_info=True)
         return jsonify({"msg": f"Error al registrar la venta: {str(e)}"}), 500
-
 def validate_stock_and_calculate_totals(cur, items):
     """Valida stock y calcula totales de la venta"""
     total_amount_usd = 0.0
@@ -340,7 +346,8 @@ def process_credit_sale(cur, is_credit_sale, customer_id, saldo_pendiente, dias_
 
 def insert_sale_record(cur, customer_id, seller_user_id, total_amount_usd, total_amount_ves,
                       exchange_rate, status, tipo_pago_raw, usd_paid, ves_paid,
-                      is_credit_sale, dias_credito, monto_pendiente, fecha_vencimiento, cancellation_code):
+                      is_credit_sale, dias_credito, monto_pendiente, fecha_vencimiento, 
+                      cancellation_code, admin_auth_code):
     """Inserta el registro de la venta en la base de datos"""
     fields = [
         "id", "customer_id", "user_id", "sale_date", "total_amount_usd", 
@@ -356,7 +363,7 @@ def insert_sale_record(cur, customer_id, seller_user_id, total_amount_usd, total
     
     query = build_sale_insert_query(
         is_credit_sale, fields, values, dias_credito, 
-        monto_pendiente, fecha_vencimiento, cancellation_code
+        monto_pendiente, fecha_vencimiento, cancellation_code, admin_auth_code
     )
     
     cur.execute(query, values)
@@ -390,7 +397,7 @@ def process_sale_items_and_stock(cur, sale_id, validated_items):
 
 def build_success_response(new_sale_id, tipo_pago_raw, total_amount_usd, total_amount_ves,
                           exchange_rate, usd_paid, ves_paid, monto_pendiente, stock_alerts,
-                          is_credit_sale, cancellation_code, status):
+                          is_credit_sale, cancellation_code, status, admin_auth_code=None):
     """Construye la respuesta de éxito"""
     response = {
         "msg": f"Venta {tipo_pago_raw} registrada exitosamente", 
@@ -408,6 +415,7 @@ def build_success_response(new_sale_id, tipo_pago_raw, total_amount_usd, total_a
     
     if is_credit_sale:
         response["cancellation_code"] = cancellation_code
+        response["admin_auth_code_used"] = admin_auth_code  # Mostrar el código usado
     
     return jsonify(response), 201
 
@@ -612,7 +620,7 @@ def pay_credit():
 
     # 1. Obtener datos y validar
     data = request.get_json()
-    required = ['sale_id', 'payment_amount', 'payment_currency', 'cancellation_code']
+    required = ['sale_id', 'payment_amount', 'payment_currency', 'cancellation_code', 'admin_auth_code']
 
     if error := validate_required_fields(data, required):
         return jsonify({'msg': f'Campo requerido faltante: {error}'}), 400
@@ -623,15 +631,19 @@ def pay_credit():
         payment_currency = data['payment_currency'].upper()
         cancellation_code_input = data['cancellation_code'].strip()
         exchange_rate = Decimal(str(data.get('exchange_rate', 1)))
-        # NUEVO: Obtener el método de pago (ej: 'transferencia', 'punto', 'efectivo')
+        admin_auth_code_input = data.get('admin_auth_code', '').strip()  # Nuevo: código del admin
         payment_method_input = data.get('payment_method', payment_currency).strip()
-
 
         if raw_payment_amount <= 0:
             return jsonify({'msg': 'El monto de pago debe ser positivo.'}), 400
 
         if payment_currency == 'VES' and exchange_rate <= 0:
             return jsonify({'msg': 'Se requiere una tasa de cambio válida para pagos en VES.'}), 400
+        
+        # Validar el código del administrador
+        daily_code = get_daily_security_code_server()
+        if admin_auth_code_input != daily_code:
+            return jsonify({'msg': 'Código de autorización de administrador incorrecto o expirado. Pago no autorizado.'}), 403
         
         # 2. Conectar y obtener datos de la venta
         with get_db_cursor() as cur:
@@ -943,3 +955,114 @@ def get_admin_security_code():
     except Exception as e:
         app_logger.error(f"Error al obtener código de seguridad: {e}", exc_info=True)
         return jsonify({"msg": "Error interno del servidor al obtener el código."}), 500    
+# Dentro de sale_routes.py, agrega esta nueva ruta
+
+@sale_bp.route('/credit-payment/<uuid:sale_id>', methods=['POST'])
+@jwt_required()
+def process_credit_payment(sale_id):
+    """
+    Procesa un abono o pago completo a una venta a crédito.
+    Requiere el código de autorización del administrador.
+    """
+    current_user_id, user_role = get_user_and_role() 
+    # Solo vendedor o admin puede procesar un pago
+    if not current_user_id or user_role not in SALES_ROLES:
+        return jsonify({"msg": "Acceso no autorizado."}), 401
+
+    data = request.get_json()
+    
+    # 1. Validar campos requeridos
+    required_fields = ['usd_paid', 'ves_paid', 'exchange_rate_used', 'admin_auth_code']
+    validation_error = validate_required_fields(data, required_fields)
+    if validation_error:
+        return jsonify({"msg": validation_error}), 400
+
+    usd_paid_raw = data.get('usd_paid')
+    ves_paid_raw = data.get('ves_paid')
+    exchange_rate = data.get('exchange_rate_used')
+    admin_auth_code_input = data.get('admin_auth_code') # El código del administrador
+
+    try:
+        # 2. Validar montos y calcular total pagado en USD
+        usd_paid, ves_paid = validate_payment_amounts(usd_paid_raw, ves_paid_raw)
+        if exchange_rate <= 0:
+            return jsonify({"msg": "Tasa de cambio inválida."}), 400
+        
+        total_paid_usd = usd_paid + (ves_paid / exchange_rate)
+
+        if total_paid_usd <= PAYMENT_TOLERANCE:
+            return jsonify({"msg": "Debe pagar un monto superior a cero."}), 400
+
+        # 3. Validar el código de seguridad diario del administrador
+        daily_code = get_daily_security_code_server()
+        if admin_auth_code_input != daily_code:
+            return jsonify({"msg": "Código de autorización de administrador incorrecto o expirado. Pago no autorizado."}), 403
+
+        with get_db_cursor(commit=False) as cur:
+            # 4. Obtener y bloquear la venta a crédito (FOR UPDATE)
+            cur.execute("""
+                SELECT 
+                    id, customer_id, total_amount_usd, balance_due_usd, paid_amount_usd
+                FROM sales s 
+                WHERE s.id = %s AND s.status != 'Pagado' FOR UPDATE;
+            """, (sale_id,))
+            sale_record = cur.fetchone()
+
+            if not sale_record:
+                return jsonify({'msg': 'Venta a crédito no encontrada o ya está pagada.'}), 404
+
+            balance_due = float(sale_record['balance_due_usd'])
+            current_paid_usd = float(sale_record['paid_amount_usd'])
+
+            if balance_due <= PAYMENT_TOLERANCE:
+                return jsonify({'msg': 'La venta ya está totalmente pagada.'}), 400
+
+            # 5. Calcular el nuevo saldo y el monto total pagado
+            payment_applied_to_balance = min(total_paid_usd, balance_due) # Solo aplicar hasta el balance
+            new_balance_due = round(balance_due - payment_applied_to_balance, 2)
+            new_paid_amount_usd = round(current_paid_usd + payment_applied_to_balance, 2)
+
+            # 6. Determinar el nuevo estado
+            # determine_sale_status debe aceptar is_credit_sale=True y los montos
+            new_status = determine_sale_status(True, new_balance_due, new_paid_amount_usd) 
+
+            # 7. Actualizar la tabla de ventas
+            cur.execute("""
+                UPDATE sales SET
+                    balance_due_usd = %s,
+                    paid_amount_usd = %s,
+                    status = %s,
+                    updated_at = NOW(),
+                    fecha_pago_final = CASE WHEN %s = 'Pagado' THEN NOW() ELSE fecha_pago_final END
+                WHERE id = %s
+                RETURNING id, balance_due_usd, paid_amount_usd, status;
+            """, (
+                new_balance_due,
+                new_paid_amount_usd,
+                new_status,
+                new_status,
+                sale_id
+            ))
+            updated_sale = cur.fetchone()
+
+            # 8. Actualizar el balance pendiente del cliente (si tienes una tabla de clientes)
+            customer_id = sale_record['customer_id']
+            cur.execute(
+                "UPDATE customers SET balance_pendiente_usd = balance_pendiente_usd - %s WHERE id = %s",
+                (payment_applied_to_balance, customer_id)
+            )
+
+            cur.connection.commit()
+            
+            return jsonify({
+                'msg': f"Pago procesado exitosamente. Venta en estado: {updated_sale['status']}",
+                'sale_id': updated_sale['id'],
+                'new_status': updated_sale['status'],
+                'new_balance': float(updated_sale['balance_due_usd'])
+            }), 200
+
+    except Exception as e:
+        if 'cur' in locals() and cur and cur.connection:
+            cur.connection.rollback()
+        app_logger.error(f"Error al procesar pago de crédito para venta {sale_id}: {e}", exc_info=True)
+        return jsonify({'msg': 'Error interno del servidor al procesar el pago.'}), 500
