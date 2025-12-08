@@ -76,7 +76,7 @@ export default {
     async login() {
       this.error = ''; // Limpiar errores anteriores
       try {
-        const response = await axios.post('/api/auth/login', { // Ruta corregida, sin /api/
+        const response = await axios.post('/api/auth/login', { // Ruta corregida
           email: this.email,
           password: this.password
         });
@@ -106,7 +106,11 @@ export default {
         this.$router.push('/dashboard');
       } else if (roleId === 2) { // Rol 2: Vendedor
         this.$router.push('/vendedor/vendedor-dasboard'); // O la ruta específica de vendedor
-      } else {
+      }
+      if (roleId === 4) { // Rol 1: Administrador
+        this.$router.push('visitor');
+      }
+       else {
         // En caso de rol desconocido o por defecto (ej. consultor)
         this.$router.push('/almacenista/dashboard'); 
       }

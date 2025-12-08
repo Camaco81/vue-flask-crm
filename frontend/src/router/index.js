@@ -5,12 +5,14 @@ import LandingPage from '@/components/LandingPage.vue';
 import HomeView from '../views/HomeView.vue';
 import LoginForm from '../components/LoginForm.vue';
 import RegisterForm from '../components/RegisterForm.vue';
+import VisitorWaitingView from '@/components/VisitorWaitingView.vue';
 
 // --- Importaciones para el Rol de Administrador (role_id = 1) ---
 import AdminDashboard from '@/components/admin/AdminDashboard.vue';
 import UserManagement from '@/components/admin/UserManagement.vue';
 import AdminGeneralReports from '@/components/admin/GeneralReports.vue';
 import AdminCreditMonitoring from '@/components/admin/AdminCreditMonitoring.vue';
+import AdminSecurityPanel from '@/components/admin/AdminSecurityPanel.vue';
 
 // --- Importaciones para el Rol de Vendedor (role_id = 2) ---
 import VendedorDashboard from '@/components/vendedor/VendedorDashboard.vue';
@@ -31,6 +33,8 @@ const routes = [
  { path: '/home', name: 'Home', component: HomeView },
  { path: '/login', name: 'Login', component: LoginForm },
  { path: '/register', name: 'Register', component: RegisterForm },
+ { path: '/visitor', name: 'VisitorWaitingView', component: VisitorWaitingView },
+
 
  // --- RUTAS DEL ADMINISTRADOR (role_id = 1) ---
  {
@@ -56,6 +60,12 @@ const routes = [
   path: '/admin/credits-reports',
   name: 'AdminCreditMonitoring',
   component: AdminCreditMonitoring,
+  meta: { requiresAuth: true, requiredRole: 1 }
+ },
+ {
+  path: '/admin/security',
+  name: 'AdminSecurityPanel',
+  component: AdminSecurityPanel,
   meta: { requiresAuth: true, requiredRole: 1 }
  },
 

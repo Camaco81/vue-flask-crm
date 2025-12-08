@@ -198,7 +198,22 @@
                     <i class="fas fa-tag"></i>
                   </button>
                 </div>
+                               <div class="form-group-inline full-width">
+    <label><i class="fas fa-user-shield"></i> Código Admin:</label>
+    <input
+      type="text"
+      v-model="newSale.admin_auth_code"
+      placeholder="Ingrese código de autorización del administrador"
+      class="compact-input"
+      maxlength="10"
+    >
+    <button type="button" @click="fetchAdminCode" class="icon-btn-small" title="Obtener código del día">
+      <i class="fas fa-sync"></i>
+    </button>
+  </div>
+
               </div>
+
               
               <div v-if="!isPaymentValid() && newSale.payment.method !== 'CREDIT'" class="error-message">
                 <i class="fas fa-exclamation-circle"></i> Monto pagado insuficiente
@@ -467,7 +482,8 @@ export default {
           ves_paid: 0,
         },
         credit_days: 30,
-        cancellation_code: ''
+        cancellation_code: '',
+        admin_auth_code: '',
       },
       loading: false,
       creating: false,
@@ -530,10 +546,6 @@ export default {
     }
   },
   methods: {
-    // Métodos existentes (fetchData, calculateTotalAmountUSD, etc.)
-    // ... mantén todos los métodos existentes aquí ...
-    
-    // Solo agregaré los nuevos métodos específicos para la UI mejorada:
     
     selectPaymentMethod(method) {
       this.newSale.payment.method = method;
@@ -750,30 +762,35 @@ if (isCreditSale) {
     },
 
     isFormValid() {
-      // Validación básica
-      if (!this.newSale.customer_id || 
-          this.newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > this.getProductStock(i.product_id)) ||
-          !this.isPaymentValid()) {
-        return false;
-      }
+  // Validación básica
+  if (!this.newSale.customer_id || 
+      this.newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > this.getProductStock(i.product_id)) ||
+      !this.isPaymentValid()) {
+    return false;
+  }
 
-      // Validación específica para crédito
-      if (this.newSale.payment.method === 'CREDIT') {
-        if (!this.newSale.cancellation_code) {
-          return false;
-        }
-        if (!this.newSale.credit_days || this.newSale.credit_days < 1) {
-          return false;
-        }
-      }
+  // Validación específica para crédito
+  if (this.newSale.payment.method === 'CREDIT') {
+    if (!this.newSale.cancellation_code) {
+      return false;
+    }
+    if (!this.newSale.credit_days || this.newSale.credit_days < 1) {
+      return false;
+    }
+    // NUEVO: Validar código del administrador
+    if (!this.newSale.admin_auth_code || this.newSale.admin_auth_code.trim().length < 4) {
+      return false;
+    }
+  }
 
-      return true;
-    },
+  return true;
+},
 
     handlePaymentMethodChange() {
       this.newSale.payment.usd_paid = 0;
       this.newSale.payment.ves_paid = 0;
       this.newSale.cancellation_code = '';
+      this.newSale.admin_auth_code = '';
 
       const totalUSD = this.calculateTotalAmountUSD();
 
@@ -907,7 +924,8 @@ if (isCreditSale) {
           dias_credito: creditDaysValue, 
           usd_paid: Number(this.newSale.payment.usd_paid),
           ves_paid: Number(this.newSale.payment.ves_paid),
-          cancellation_code: this.newSale.cancellation_code
+          cancellation_code: this.newSale.cancellation_code,
+           admin_auth_code: this.newSale.admin_auth_code
         };
         
         const response = await axios.post('/api/sales', salePayload);
@@ -953,7 +971,8 @@ if (isCreditSale) {
           ves_paid: 0 
         },
         credit_days: 30,
-        cancellation_code: ''
+        cancellation_code: '',
+         admin_auth_code: ''
       };
       this.localStockAlerts = [];
     },

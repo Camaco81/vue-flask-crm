@@ -1,8 +1,8 @@
 <template>
   <div class="credit-monitoring-container">
     <div class="header-controls">
-     <button @click="goBack" class="btn-back">
-        ← Regresar
+     <button @click="goBack" class="back-btn">
+        <i class="fas fa-arrow-left">⬅️</i>
       </button>
     </div> 
     <h1 class="page-title">
@@ -226,6 +226,27 @@ export default {
   padding: 30px;
   background-color: #f7f9fc;
   min-height: 100vh;
+}
+.back-btn {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  color: #495057;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.back-btn:hover {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+  transform: translateX(-3px);
 }
 
 .page-title {

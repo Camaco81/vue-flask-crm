@@ -34,11 +34,11 @@
         </div>
       </router-link>
       
-      <router-link to="/admin/settings" class="dashboard-card settings-link">
+      <router-link to="/admin/security" class="dashboard-card settings-link">
         <div class="card-icon"><i class="fas fa-cog"></i></div>
         <div class="card-content">
-          <h2 class="card-title">Configuración del Sistema</h2>
-          <p class="card-subtitle">Ajusta tasas de cambio, parámetros de stock y seguridad.</p>
+          <h2 class="card-title">Seguridad</h2>
+          <p class="card-subtitle">Aca podras generar tu codigo para permisos de ventas a credito</p>
         </div>
       </router-link>
     </div>
