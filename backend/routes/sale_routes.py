@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
 from psycopg2 import sql 
-from backend.utils.helpers import get_user_and_role,  validate_required_fields, check_seller_permission
+from backend.utils.helpers import get_user_and_role,  validate_required_fields, check_seller_permission, check_admin_permission
 from backend.utils.bcv_api import get_dolarvzla_rate 
 from backend.utils.inventory_utils import verificar_stock_y_alertar, STOCK_THRESHOLD
 import logging
