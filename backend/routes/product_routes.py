@@ -26,22 +26,30 @@ def products_collection():
     
     # ------------------ POST (Crear Producto) ------------------
     if request.method == 'POST':
-        # VERIFICACIÓN DE PERMISO (Ahora incluye el ID 3: Almacenista)
+    # VERIFICACIÓN DE PERMISO (Ahora incluye el ID 3: Almacenista)
         if not check_product_manager_permission(user_role_id):
             return jsonify({"msg": "Acceso denegado: solo administradores, consultores y almacenistas pueden crear productos"}), 403
-        
+
         data = request.get_json()
-        
-        if not validate_required_fields(data, ['name', 'price', 'stock']):
+
+    # 🛑 MODIFICACIÓN CLAVE: Verificación manual de existencia de claves.
+    # Esto es más robusto y evita el problema de que '0' sea considerado "missing"
+        required_fields = ['name', 'price', 'stock']
+        if data is None or not all(field in data for field in required_fields):
             return jsonify({"msg": "Missing required fields: name, price, stock"}), 400
+
+    # 🛑 ADICIONAL: Verificar que 'name' no sea vacío (la única validación de falsy estricta que es necesaria).
+        if not data['name'].strip():
+            return jsonify({"msg": "El nombre del producto no puede estar vacío"}), 400
 
         try:
             product_name = data['name'].strip()
             product_price = float(data['price'])
             product_stock = int(data['stock'])
-            
+
+        # Esta es la validación de valores que ya tienes y es correcta:
             if product_price <= 0 or product_stock < 0:
-                 return jsonify({"msg": "Price must be positive and Stock non-negative."}), 400
+                return jsonify({"msg": "Price must be positive and Stock non-negative."}), 400
 
             with get_db_cursor(commit=True) as cur:
                 cur.execute(
