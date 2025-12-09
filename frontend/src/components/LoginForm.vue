@@ -102,19 +102,22 @@ export default {
       }
     },
     redirectToRoleDashboard(roleId) {
-      if (roleId === 1) { // Rol 1: Administrador
+    if (roleId === 1) { // Rol 1: Administrador
         this.$router.push('/dashboard');
-      } else if (roleId === 2) { // Rol 2: Vendedor
-        this.$router.push('/vendedor/vendedor-dasboard'); // O la ruta específica de vendedor
-      }
-      if (roleId === 4) { // Rol 1: Administrador
-        this.$router.push('visitor');
-      }
-       else {
-        // En caso de rol desconocido o por defecto (ej. consultor)
+    } else if (roleId === 2) { // Rol 2: Vendedor
+        // Asegúrate de que esta ruta sea correcta, ej: '/vendedor/dashboard'
+        this.$router.push('/vendedor/vendedor-dasboard'); 
+    } else if (roleId === 3) { // Rol 3: Almacenista (Asumiendo que 3 es el almacén)
+        this.$router.push('/almacenista/dashboard');
+    } else if (roleId === 4) { // Rol 4: Visitante
+        this.$router.push('/visitor');
+    } 
+    // Si tienes otros roles (ej. consultor, o rol 3, si no lo tienes mapeado arriba)
+    else { 
+        console.warn(`Rol ID ${roleId} no mapeado. Redireccionando a Almacenista por defecto.`);
         this.$router.push('/almacenista/dashboard'); 
-      }
     }
+}
   }
 };
 </script>

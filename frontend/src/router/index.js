@@ -19,7 +19,7 @@ import VendedorDashboard from '@/components/vendedor/VendedorDashboard.vue';
 import VendedorCustomersComponent from '@/components/vendedor/CustomersComponent.vue';
 // 🚨 Vendedor ya NO gestiona productos, solo los consulta, pero su vista de ventas los necesita
 // Dejamos la importación si la vista de ventas la requiere para los selects
-import VendedorProductsComponent from '@/components/vendedor/ProductsComponent.vue'; 
+
 import VendedorOrdersComponent from '@/components/vendedor/SalesComponent.vue';
 import VendedorUserProfile from '@/components/vendedor/UserProfile.vue';
 
@@ -88,12 +88,7 @@ const routes = [
   component: CodeGeneratorModal,
   meta: { requiresAuth: true, requiredRole: 2 }
  },
- {
-  path: '/vendedor/products', // El vendedor solo consulta la lista de productos (no gestiona)
-  name: 'VendedorProducts',
-  component: VendedorProductsComponent,
-  meta: { requiresAuth: true, requiredRole: 2 }
- },
+
  {
   path: '/vendedor/sales',
   name: 'VendedorSales',
