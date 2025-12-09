@@ -123,11 +123,11 @@
                 </p>
                 <p class="order-date">
                   <i class="fas fa-calendar"></i>
-                  {{ formatDate(order.order_date) }}
+                  {{ formatDate(order.sale_date) }}
                 </p>
                 <p class="order-time">
                   <i class="fas fa-clock"></i>
-                  {{ formatTime(order.order_date) }}
+                  {{ formatTime(order.sale_date) }}
                 </p>
               </div>
               
@@ -268,7 +268,7 @@ export default {
       const yesterdayEnd = new Date(startDate);  // ← Ahora está dentro de un bloque
       yesterdayEnd.setHours(23, 59, 59, 999);
       this.filteredOrders = this.allOrders.filter(order => {
-        const orderDate = new Date(order.order_date);
+        const orderDate = new Date(order.sale_date);
         return orderDate >= startDate && orderDate <= yesterdayEnd;
       });
       return;
@@ -285,7 +285,7 @@ export default {
       }
       
       this.filteredOrders = this.allOrders.filter(order => {
-        const orderDate = new Date(order.order_date);
+        const orderDate = new Date(order.sale_date);
         return orderDate >= startDate && orderDate <= now;
       });
       

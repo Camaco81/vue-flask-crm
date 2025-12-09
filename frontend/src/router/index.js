@@ -25,7 +25,7 @@ import VendedorUserProfile from '@/components/vendedor/UserProfile.vue';
 
 // --- 🚨 NUEVAS IMPORTACIONES para el Rol de Almacenista (role_id = 3) ---
 import AlmacenistaDashboard from '@/components/inventory/AlmacenistaDashboard.vue'; // Nuevo Dashboard de Almacenista
-import InventoryManagement from '@/components/inventory/ProductsComponent.vue'; // Gestión de productos/inventario
+ // Gestión de productos/inventario
 import NotificationBell from '@/components/inventory/NotificationBell.vue';
 import CodeGeneratorModal from '@/components/vendedor/CodeGeneratorModal.vue';
 const routes = [
@@ -115,12 +115,7 @@ const routes = [
   component: AlmacenistaDashboard,
   meta: { requiresAuth: true, requiredRole: 3 } // Solo Almacenistas
  },
- {
-  path: '/almacenista/inventory', // Ruta principal para gestionar productos
-  name: 'InventoryManagement',
-  component: InventoryManagement,
-  meta: { requiresAuth: true, requiredRole: 3 } // Solo Almacenistas
- },
+ 
  {
   path: '/almacenista/notifications', // Ruta principal para gestionar productos
   name: 'NotificationBell',
