@@ -196,3 +196,85 @@ def verificar_tendencia_y_alertar():
 
                 except Exception as e:
                     print(f"Error en verificar_tendencia_y_alertar (SQL): {e}")
+
+def get_alert_stable_id(event_name: str, tipo: str) -> str:
+    """
+    Genera un ID único y estable basado en el evento y tipo de alerta. 
+    Esto garantiza que el estado 'leído' persista en la DB.
+    """
+    # Limpia y normaliza el nombre del evento
+    safe_name = re.sub(r'[^\w\s-]', '', event_name).strip().lower()
+    safe_name = re.sub(r'[-\s]+', '_', safe_name)
+    return f"{safe_name}_{tipo}"
+
+
+def calculate_active_seasonality_alerts(cur, rol_destino: str) -> list:
+    """
+    Calcula las alertas de estacionalidad basándose en el mes actual y el stock.
+    Devuelve la lista de objetos de alerta con su ID estable, sin guardarlas en la DB.
+    """
+    current_month = date.today().month
+    active_alerts = []
+    
+    # Iterar sobre las temporadas
+    for season in ESTACIONALIDAD:
+        if current_month in season['months']:
+            
+            # Generar el ID estable para este evento de temporada
+            stable_id = get_alert_stable_id(season['event'], season['tipo'])
+            
+            # Recolectar productos críticos para este evento
+            productos_criticos_info = []
+            is_triggered = False
+
+            # Consulta SQL: Busca productos de las categorías activas con stock bajo el umbral de temporada
+            for category in season['categories']:
+                query = """
+                SELECT id, name, stock_actual, category
+                FROM products
+                WHERE category = %s AND stock_actual < %s
+                """
+                
+                try:
+                    cur.execute(query, (category, season['stock_threshold']))
+                    productos_criticos = cur.fetchall()
+
+                    for product in productos_criticos:
+                        is_triggered = True
+                        productos_criticos_info.append(
+                            f"'{product['name']}' ({product['stock_actual']} uds)"
+                        )
+                except Exception as e:
+                    # Manejo de error de DB
+                    logging.error(f"Error SQL al revisar estacionalidad: {e}")
+                    
+            # 5. Si la alerta se disparó (stock bajo o es una alerta de promoción que siempre aplica)
+            if is_triggered or season['tipo'] == 'promocion_baja':
+                
+                # Resumen para el mensaje final
+                if productos_criticos_info:
+                    alert_summary = f"Productos críticos: {', '.join(productos_criticos_info[:3])}"
+                    if len(productos_criticos_info) > 3:
+                        alert_summary += f" y {len(productos_criticos_info) - 3} más."
+                else:
+                    alert_summary = "Revisa las categorías sugeridas para anticiparte."
+                
+                # Construcción del mensaje principal basado en la plantilla
+                categories_list_str = ", ".join(season['categories'])
+                final_message = season['message_template'].format(
+                    event=season['event'],
+                    categories_list=categories_list_str,
+                    threshold=season['stock_threshold']
+                )
+
+                # Creamos el objeto de alerta que enviaremos por WebSocket
+                active_alerts.append({
+                    "id": stable_id, # EL ID ESTABLE es la clave
+                    "message": final_message,
+                    "type": season['tipo'],
+                    "timestamp": time.time(),
+                    "summary": alert_summary,
+                    "rol_destino": rol_destino
+                })
+                
+    return active_alerts
