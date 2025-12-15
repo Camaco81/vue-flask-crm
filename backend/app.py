@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 import logging
 import os 
-
+from .realtime import socketio # Importa tu objeto socketio 
 # --- Importaciones de Librerías Externas ---
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
@@ -121,4 +121,12 @@ if __name__ == '__main__':
     # Usar variables de entorno para puerto y host (buena práctica para despliegue)
     port = int(os.environ.get("PORT", 5000))
     host = os.environ.get("HOST", '0.0.0.0')
-    app.run(debug=Config.DEBUG, host=host, port=port)
+    socketio.run(
+        app, 
+        debug=Config.DEBUG, 
+        host=host, 
+        port=port,
+        # Esto es útil en desarrollo para permitir el reloader de Werkzeug con SocketIO
+        allow_unsafe_werkzeug=True 
+    )
+   
