@@ -1,7 +1,8 @@
 from flask import Flask, jsonify, request
 import logging
 import os 
-from .realtime import socketio # Importa tu objeto socketio 
+# ✅ Solución: Importación relativa al módulo REALTIME dentro de la carpeta UTILS
+from .utils.realtime import socketio
 # --- Importaciones de Librerías Externas ---
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
