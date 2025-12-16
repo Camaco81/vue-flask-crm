@@ -1,10 +1,9 @@
 import time
-from flask_socketio import SocketIO, emit, join_room
-from backend.db import get_db_cursor
+from flask_socketio import SocketIO, emit, join_room, leave_room
+from backend.db import get_db_cursor # Asumo que get_db_cursor devuelve un cursor estándar (tuplas)
 from .inventory_utils import calculate_active_seasonality_alerts 
 
 # Configuración básica de SocketIO
-# Debes integrar esto en tu __init__.py de Flask
 socketio = SocketIO(cors_allowed_origins="*", async_mode='gevent') 
 
 # IDs Fijos para la demo (Single Tenant)
@@ -22,7 +21,6 @@ def persist_read_alerts(user_id: str, alert_ids: list):
         return
         
     try:
-        # Usamos el tenant_id por defecto para el cursor
         with get_db_cursor(commit=True) as cur: 
             for alert_id in alert_ids:
                 query = """
@@ -30,16 +28,37 @@ def persist_read_alerts(user_id: str, alert_ids: list):
                 VALUES (%s, %s, %s)
                 ON CONFLICT (user_id, alert_id) DO NOTHING;
                 """
-                # Asumo que el tenant_id es accesible desde la sesión o es fijo (como aquí)
                 cur.execute(query, (user_id, DEFAULT_TENANT_ID, alert_id))
-            print(f"DEBUG: Alertas persistidas para {user_id}: {alert_ids}")
+            print(f"DEBUG: Alertas estacionales persistidas para {user_id}: {alert_ids}")
 
     except Exception as e:
         print(f"Error al guardar alertas leídas: {e}")
 
+# 💡 NUEVA FUNCIÓN NECESARIA para marcar notificaciones estáticas como leídas
+def mark_static_alerts_as_read(alert_uuids: list):
+    """Marca las notificaciones estáticas (UUIDs) como leídas en la tabla 'notifications'."""
+    if not alert_uuids:
+        return
+    
+    try:
+        with get_db_cursor(commit=True) as cur:
+            # Marcamos is_read = TRUE donde el ID esté en la lista de UUIDs
+            # Asegúrate de que tu tabla notifications tiene el campo `is_read`
+            query = """
+            UPDATE notifications 
+            SET is_read = TRUE, read_at = NOW() 
+            WHERE id IN %s; 
+            """
+            # El %s debe ser una tupla de valores para la cláusula IN
+            cur.execute(query, (tuple(alert_uuids),))
+            print(f"DEBUG: {cur.rowcount} notificaciones estáticas marcadas como leídas: {alert_uuids}")
+            
+    except Exception as e:
+        print(f"Error al marcar notificaciones estáticas como leídas: {e}")
+
 
 def get_read_alert_ids(user_id: str) -> set:
-    """Obtiene todos los IDs de alertas que el usuario ya marcó como leídas."""
+    """Obtiene todos los IDs de alertas estacionales que el usuario ya marcó como leídas."""
     try:
         with get_db_cursor() as cur:
             cur.execute("""
@@ -58,12 +77,13 @@ def get_read_alert_ids(user_id: str) -> set:
 
 @socketio.on('join_dashboard')
 def on_join(data):
-    """El usuario se une a una sala para recibir sus notificaciones."""
+    """El usuario se une a una sala y se le envían sus notificaciones iniciales."""
     user_id = DEFAULT_USER_ID 
     
-    room = f'user_{user_id}' 
+    # 💡 Nomenclatura de sala más clara
+    room = f'user_dashboard_{user_id}' 
     join_room(room)
-    print(f"DEBUG: Usuario {user_id} unido a la sala: {room}")
+    print(f"DEBUG: Cliente unido al dashboard: {room}")
     
     # 1. Envía las alertas estacionales INICIALES
     send_initial_seasonality_alerts(user_id)
@@ -76,17 +96,17 @@ def on_join(data):
 def handle_mark_as_read(data):
     """Recibe el evento de marcar como leídas y actualiza la base de datos."""
     user_id = DEFAULT_USER_ID
-    alert_ids = data.get('alert_ids', []) # Lista de IDs estables o UUIDs
+    alert_ids = data.get('alert_ids', []) # Lista de IDs estables o UUIDs estáticos
 
-    # Solo persistimos las alertas estacionales (IDs estables)
-    stable_ids = [aid for aid in alert_ids if ALMACENISTA_ROL in aid] # Filtro simple por ahora
-    
+    # Separar IDs estacionales (estables, ejemplo: contienen el rol) y UUIDs (estáticos)
+    stable_ids = [aid for aid in alert_ids if ALMACENISTA_ROL in str(aid)]
+    static_uuids = [aid for aid in alert_ids if ALMACENISTA_ROL not in str(aid)] 
+
     if stable_ids:
         persist_read_alerts(user_id, stable_ids)
     
-    # NOTA: Si también quieres marcar las notificaciones estáticas como leídas:
-    # Debes implementar la lógica SQL aquí para actualizar la columna `is_read`
-    # en la tabla `notifications` usando los UUIDs proporcionados.
+    if static_uuids:
+        mark_static_alerts_as_read(static_uuids)
 
 
 # =========================================================
@@ -110,44 +130,40 @@ def send_initial_seasonality_alerts(user_id: str):
         ]
 
         # 4. Enviar solo las no leídas
-        room = f'user_{user_id}'
+        room = f'user_dashboard_{user_id}'
         socketio.emit('new_alerts', {'alerts': unread_alerts}, room=room)
         print(f"DEBUG: Enviadas {len(unread_alerts)} alertas estacionales no leídas a {user_id}")
         
     except Exception as e:
         print(f"ERROR: Fallo al enviar alertas estacionales: {e}")
         
-
+# 🚀 CORRECCIÓN APLICADA AQUÍ: Se accede a los resultados por índice numérico
 def send_initial_static_alerts(user_id: str):
     """Envía las notificaciones estáticas (DB) no leídas."""
     try:
         with get_db_cursor() as cur:
-            # Asumo que tienes una forma de obtener las notificaciones no leídas
-            # Aquí podrías consultar la tabla `notifications` por `rol_destino` y `is_read = FALSE`
+            # 💡 NOTA IMPORTANTE: El orden de las columnas debe coincidir con el acceso por índice [0], [1], [2], [3]
             cur.execute("""
-                SELECT id, mensaje, tipo, referencia_id 
+                SELECT id, mensaje, tipo, fecha_creacion
                 FROM notifications 
-                WHERE rol_destino = %s AND is_read = FALSE;
+                WHERE rol_destino = %s AND is_read = FALSE
+                ORDER BY fecha_creacion DESC; 
             """, (ALMACENISTA_ROL,)) 
             
-            static_alerts = cur.fetchall()
+            static_alerts_tuples = cur.fetchall()
             
-            # Formatear a la estructura de alerta si es necesario, y emitir:
+            # Formatear la tupla a diccionario para el frontend
             formatted_alerts = [{
-                'id': alert['id'], # UUID de la tabla notifications
-                'message': alert['mensaje'],
-                'type': alert['tipo'],
-                'timestamp': time.time(), # Usar la fecha de creación si está disponible
+                'id': alert[0],             # ID (UUID estático)
+                'message': alert[1],        # Mensaje
+                'type': alert[2],           # Tipo (stock_bajo, stock_critico)
+                'timestamp': alert[3].timestamp() if alert[3] else time.time(), # Fecha de creación (convertir a timestamp)
                 'rol_destino': ALMACENISTA_ROL
-            } for alert in static_alerts]
+            } for alert in static_alerts_tuples]
 
-        room = f'user_{user_id}'
+        room = f'user_dashboard_{user_id}'
         socketio.emit('new_alerts', {'alerts': formatted_alerts}, room=room)
         print(f"DEBUG: Enviadas {len(formatted_alerts)} notificaciones estáticas no leídas.")
         
     except Exception as e:
         print(f"ERROR: Fallo al enviar notificaciones estáticas: {e}")
-
-# NOTA: Deberías modificar tu función `create_notification` para llamar 
-# a `broadcast_new_alert` cada vez que se cree una nueva notificación estática 
-# (ej. stock bajo) para enviarla en tiempo real.
