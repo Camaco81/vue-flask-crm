@@ -1,8 +1,7 @@
 import time
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from backend.db import get_db_cursor 
-# 💡 CORRECCIÓN 1: Importar el rol desde inventory_utils para asegurar consistencia
-# 💡 CORRECCIÓN 2: Asegurar que la función calculate_active_seasonality_alerts se importe
+# 💡 CORRECCIÓN: Se importa ALMACENISTA_ROL y calculate_active_seasonality_alerts del módulo.
 from .inventory_utils import calculate_active_seasonality_alerts, ALMACENISTA_ROL 
 
 # Configuración básica de SocketIO
@@ -11,7 +10,7 @@ socketio = SocketIO(cors_allowed_origins="*", async_mode='gevent')
 # IDs Fijos para la demo (Single Tenant)
 DEFAULT_USER_ID = 'almacenista_unico_cliente_12345' 
 DEFAULT_TENANT_ID = 'default_tenant_001' 
-# ALMACENISTA_ROL ya está importado desde inventory_utils
+# ALMACENISTA_ROL ya está importado
 
 # =========================================================
 # Lógica de Persistencia (Marcar como Leído)
@@ -49,7 +48,6 @@ def mark_static_alerts_as_read(alert_uuids: list):
             SET is_read = TRUE, read_at = NOW() 
             WHERE id IN %s; 
             """
-            # Se usa una tupla para la cláusula IN
             cur.execute(query, (tuple(alert_uuids),))
             print(f"DEBUG: {cur.rowcount} notificaciones estáticas marcadas como leídas: {alert_uuids}")
             
@@ -66,8 +64,7 @@ def get_read_alert_ids(user_id: str) -> set:
                 WHERE user_id = %s AND tenant_id = %s;
             """, (user_id, DEFAULT_TENANT_ID))
             
-            # Usar row[0] asumiendo que get_db_cursor devuelve tuplas
-            return {row[0] for row in cur.fetchall()} 
+            return {row['alert_id'] for row in cur.fetchall()} # Se usa 'alert_id' gracias al DictCursor
     except Exception as e:
         print(f"Error al obtener alertas leídas: {e}")
         return set()
@@ -81,7 +78,6 @@ def on_join(data):
     """El usuario se une a una sala y se le envían sus notificaciones iniciales."""
     user_id = DEFAULT_USER_ID 
     
-    # 💡 Nomenclatura de sala más clara
     room = f'user_dashboard_{user_id}' 
     join_room(room)
     print(f"DEBUG: Cliente unido al dashboard: {room}")
@@ -118,8 +114,7 @@ def send_initial_seasonality_alerts(user_id: str):
     """Envía las alertas estacionales no leídas."""
     try:
         # 1. Calcular todas las alertas que APLICAN ESTE MES
-        # 💡 CORRECCIÓN CRÍTICA: Se remueve el argumento 'cur' de la llamada.
-        #    La nueva función calculate_active_seasonality_alerts abre su propia conexión.
+        # Se llama sin el cursor
         all_alerts = calculate_active_seasonality_alerts(ALMACENISTA_ROL)
             
         # 2. Obtener los IDs de las alertas que ya leyó el usuario
@@ -144,7 +139,7 @@ def send_initial_static_alerts(user_id: str):
     """Envía las notificaciones estáticas (DB) no leídas."""
     try:
         with get_db_cursor() as cur:
-            # 💡 NOTA IMPORTANTE: El orden de las columnas debe coincidir con el acceso por índice [0], [1], [2], [3]
+            # Ahora podemos usar nombres de columna en el SELECT
             cur.execute("""
                 SELECT id, mensaje, tipo, fecha_creacion
                 FROM notifications 
@@ -152,16 +147,16 @@ def send_initial_static_alerts(user_id: str):
                 ORDER BY fecha_creacion DESC; 
             """, (ALMACENISTA_ROL,)) 
             
-            static_alerts_tuples = cur.fetchall()
+            static_alerts = cur.fetchall()
             
-            # Formatear la tupla a diccionario para el frontend
+            # Formatear el diccionario para el frontend
             formatted_alerts = [{
-                'id': alert[0],             # ID (UUID estático)
-                'message': alert[1],        # Mensaje
-                'type': alert[2],           # Tipo (stock_bajo, stock_critico)
-                'timestamp': alert[3].timestamp() if alert[3] else time.time(), # Fecha de creación (convertir a timestamp)
+                'id': alert['id'], 
+                'message': alert['mensaje'], 
+                'type': alert['tipo'],
+                'timestamp': alert['fecha_creacion'].timestamp() if alert['fecha_creacion'] else time.time(), 
                 'rol_destino': ALMACENISTA_ROL
-            } for alert in static_alerts_tuples]
+            } for alert in static_alerts]
 
         room = f'user_dashboard_{user_id}'
         socketio.emit('new_alerts', {'alerts': formatted_alerts}, room=room)

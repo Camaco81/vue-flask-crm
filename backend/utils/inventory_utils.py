@@ -1,26 +1,20 @@
-from backend.db import get_db_cursor, get_dict_cursor # 💡 ASUMO QUE TIENES UN get_dict_cursor
+from backend.db import get_db_cursor # 💡 CORRECCIÓN: SOLO se importa get_db_cursor
 import uuid
 from datetime import date
 import logging
 import time
-import re # 💡 CORRECCIÓN 1: Se añade la importación de 're'
-
-# Importar SocketIO si vas a emitir desde aquí (actualmente no lo haces)
-# from .realtime import socketio 
+import re # Necesario para get_alert_stable_id
 
 STOCK_THRESHOLD = 10 
 ALMACENISTA_ROL = 'almacenista' # Definir el rol aquí para evitar circular references
 
-# Configura tu logger si es necesario
 inv_logger = logging.getLogger('backend.utils.inventory_utils')
 
 def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id: str = None):
     """Inserta una nueva notificación en la base de datos."""
-    # NOTA: La emisión en tiempo real debe hacerse AQUI después de cur.execute()
-    # Pero por ahora, solo insertaremos.
     try:
         new_id = str(uuid.uuid4())
-        # Usamos el cursor normal, pero debe poder recibir dicts si tu DB lo soporta
+        # Usamos el cursor normal que ahora sabemos que es DictCursor
         with get_db_cursor(commit=True) as cur: 
             cur.execute(
                 """
@@ -30,13 +24,9 @@ def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id
                 (new_id, rol_destino, mensaje, tipo, referencia_id)
             )
         print(f"Notificación estática creada: {mensaje}")
-        # 💡 LÓGICA DE EMISIÓN DEBE IR AQUÍ:
-        # from .realtime import broadcast_new_alert 
-        # broadcast_new_alert(new_id, rol_destino, mensaje, tipo, time.time())
     except Exception as e:
         print(f"Error al crear notificación: {e}")
         inv_logger.error(f"Error al crear notificación: {e}", exc_info=True)
-
 
 # Función auxiliar para generar IDs estables (necesaria para `read_alerts`)
 def get_alert_stable_id(event_name: str, tipo: str) -> str:
@@ -58,8 +48,8 @@ def verificar_tendencia_y_alertar():
     
     # 1. Obtener todas las reglas de estacionalidad activas para el mes actual
     try:
-        # 💡 CORRECCIÓN 2: Usar get_dict_cursor para acceder por nombre de columna
-        with get_dict_cursor() as cur: 
+        # Usamos get_db_cursor, que ahora sabemos que devuelve diccionarios
+        with get_db_cursor() as cur: 
             # Consulta la tabla de estacionalidad que creaste
             cur.execute("""
                 SELECT 
@@ -78,7 +68,6 @@ def verificar_tendencia_y_alertar():
     for rule in active_rules:
         
         # 3. Consulta SQL: Busca productos de la categoría activa con stock bajo el umbral de temporada
-        # Usamos el cursor de la primera consulta ya que es un DictCursor
         query = """
         SELECT id, name, stock_actual, category
         FROM products
@@ -86,7 +75,7 @@ def verificar_tendencia_y_alertar():
         """
         
         try:
-            with get_dict_cursor() as cur: 
+            with get_db_cursor() as cur: 
                 cur.execute(query, (rule['product_category'], rule['stock_threshold']))
                 productos_criticos = cur.fetchall()
 
@@ -110,23 +99,19 @@ def verificar_tendencia_y_alertar():
         except Exception as e:
             inv_logger.error(f"Error en verificación de productos (SQL): {e}", exc_info=True)
 
-# =========================================================
-# Lógica para SocketIO (Carga Inicial)
-# =========================================================
 
 def calculate_active_seasonality_alerts(rol_destino: str) -> list:
     """
     VERSIÓN SOCKETIO: Consulta la tabla seasonality_events.
     Devuelve la lista de objetos de alerta con su ID estable (para read_alerts),
-    SIN guardarlas en la DB, ya que son alertas recurrentes por mes.
+    SIN guardarlas en la DB.
     """
     current_month = date.today().month
     active_alerts = []
     
     # 1. Obtener todas las reglas de estacionalidad activas para el mes actual
     try:
-        # 💡 CORRECCIÓN 3: Usar get_dict_cursor para esta consulta también
-        with get_dict_cursor() as cur: 
+        with get_db_cursor() as cur: 
             cur.execute("""
                 SELECT 
                     event_name, alert_type, product_category, stock_threshold, message_template
@@ -141,7 +126,7 @@ def calculate_active_seasonality_alerts(rol_destino: str) -> list:
         return []
 
     # Mapeo de eventos para agrupar categorías
-    events_map = {} # {'Navidad e Iluminación': {'rules': [], 'productos_criticos': []}}
+    events_map = {} 
 
     # 2. Procesar las reglas y buscar productos críticos
     for rule in active_rules:
@@ -167,9 +152,9 @@ def calculate_active_seasonality_alerts(rol_destino: str) -> list:
         """
         
         try:
-            with get_dict_cursor() as cur:
-                cur.execute(query, (rule['product_category'], rule['stock_threshold']))
-                productos_criticos = cur.fetchall()
+            with get_db_cursor() as cur_check:
+                cur_check.execute(query, (rule['product_category'], rule['stock_threshold']))
+                productos_criticos = cur_check.fetchall()
 
                 if productos_criticos:
                     events_map[event_name]['is_triggered'] = True
@@ -185,15 +170,16 @@ def calculate_active_seasonality_alerts(rol_destino: str) -> list:
     # 3. Generar el objeto de alerta final
     for event_data in events_map.values():
         
-        # 5. Si la alerta se disparó (stock bajo) o es de promoción (siempre aplica)
+        # Si la alerta se disparó (stock bajo) o es de promoción (siempre aplica)
         if event_data['is_triggered'] or event_data['tipo'] == 'promocion_baja':
             
-            # Generar el ID estable para este evento de temporada (Para el sistema read_alerts)
+            # Generar el ID estable
             stable_id = get_alert_stable_id(event_data['event_name'], event_data['tipo'])
 
             # Resumen para el mensaje final
             if event_data['productos_criticos_info']:
-                unique_products = list(set(event_data['productos_criticos_info'])) # Evitar duplicados si una regla tiene varias categorías
+                # Usar set para obtener productos únicos antes de resumir
+                unique_products = list(set(event_data['productos_criticos_info'])) 
                 alert_summary = f"Productos críticos: {', '.join(unique_products[:3])}"
                 if len(unique_products) > 3:
                     alert_summary += f" y {len(unique_products) - 3} más."
@@ -208,12 +194,12 @@ def calculate_active_seasonality_alerts(rol_destino: str) -> list:
                 threshold=event_data['stock_threshold']
             )
 
-            # Creamos el objeto de alerta que enviaremos por WebSocket
+            # Creamos el objeto de alerta para WebSocket
             active_alerts.append({
-                "id": stable_id, # EL ID ESTABLE es la clave para la tabla read_alerts
+                "id": stable_id, 
                 "message": final_message,
                 "type": event_data['tipo'],
-                "timestamp": time.time(), # Usar NOW() de la DB si fuera una tabla
+                "timestamp": time.time(), 
                 "summary": alert_summary,
                 "rol_destino": rol_destino
             })
