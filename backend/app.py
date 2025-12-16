@@ -10,8 +10,7 @@ from flask_apscheduler import APScheduler
 
 # --- Importaciones de Módulos Locales (Absolutas) ---
 from backend.config import Config
-from backend.utils.inventory_utils import verificar_tendencia_y_alertar
-
+from backend.utils.inventory_utils import verificar_stock_y_alertar as verificar_tendencia_y_alertar
 # Blueprints (Rutas)
 from backend.auth import auth_bp
 from backend.routes.customer_routes import customer_bp
