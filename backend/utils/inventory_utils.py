@@ -65,9 +65,9 @@ def verificar_stock_y_alertar(): # 💡 CORRECCIÓN: Renombrado a la función or
         
         # 3. Consulta SQL: Busca productos de la categoría activa con stock bajo el umbral de temporada
         query = """
-        SELECT id, name, stock_actual, category
+        SELECT id, name, stock, category
         FROM products
-        WHERE category = %s AND stock_actual < %s
+        WHERE category = %s AND stock < %s
         """
         
         try:
@@ -80,7 +80,7 @@ def verificar_stock_y_alertar(): # 💡 CORRECCIÓN: Renombrado a la función or
                     mensaje = (
                         f"🔔 Aviso de Temporada ({rule['event_name']}): El producto "
                         f"'{product['name']}' (Cat: {rule['product_category']}) tiene stock bajo "
-                        f"({product['stock_actual']} uds) para la demanda proyectada. ¡Reponer!"
+                        f"({product['stock']} uds) para la demanda proyectada. ¡Reponer!"
                     )
                     
                     # Persistir la alerta en la tabla 'notifications' (Alerta Estática)
@@ -142,9 +142,9 @@ def calculate_active_seasonality_alerts(rol_destino: str) -> list:
         
         # 2a. Recolectar productos críticos para esta regla de categoría
         query = """
-        SELECT name, stock_actual
+        SELECT name, stock
         FROM products
-        WHERE category = %s AND stock_actual < %s
+        WHERE category = %s AND stock < %s
         """
         
         try:
