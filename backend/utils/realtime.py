@@ -1,7 +1,9 @@
 import time
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from backend.db import get_db_cursor # Asumo que get_db_cursor devuelve un cursor estándar (tuplas)
-from .inventory_utils import calculate_active_seasonality_alerts 
+from backend.db import get_db_cursor 
+# 💡 CORRECCIÓN 1: Importar el rol desde inventory_utils para asegurar consistencia
+# 💡 CORRECCIÓN 2: Asegurar que la función calculate_active_seasonality_alerts se importe
+from .inventory_utils import calculate_active_seasonality_alerts, ALMACENISTA_ROL 
 
 # Configuración básica de SocketIO
 socketio = SocketIO(cors_allowed_origins="*", async_mode='gevent') 
@@ -9,7 +11,7 @@ socketio = SocketIO(cors_allowed_origins="*", async_mode='gevent')
 # IDs Fijos para la demo (Single Tenant)
 DEFAULT_USER_ID = 'almacenista_unico_cliente_12345' 
 DEFAULT_TENANT_ID = 'default_tenant_001' 
-ALMACENISTA_ROL = 'almacenista'
+# ALMACENISTA_ROL ya está importado desde inventory_utils
 
 # =========================================================
 # Lógica de Persistencia (Marcar como Leído)
@@ -34,7 +36,7 @@ def persist_read_alerts(user_id: str, alert_ids: list):
     except Exception as e:
         print(f"Error al guardar alertas leídas: {e}")
 
-# 💡 NUEVA FUNCIÓN NECESARIA para marcar notificaciones estáticas como leídas
+
 def mark_static_alerts_as_read(alert_uuids: list):
     """Marca las notificaciones estáticas (UUIDs) como leídas en la tabla 'notifications'."""
     if not alert_uuids:
@@ -42,14 +44,12 @@ def mark_static_alerts_as_read(alert_uuids: list):
     
     try:
         with get_db_cursor(commit=True) as cur:
-            # Marcamos is_read = TRUE donde el ID esté en la lista de UUIDs
-            # Asegúrate de que tu tabla notifications tiene el campo `is_read`
             query = """
             UPDATE notifications 
             SET is_read = TRUE, read_at = NOW() 
             WHERE id IN %s; 
             """
-            # El %s debe ser una tupla de valores para la cláusula IN
+            # Se usa una tupla para la cláusula IN
             cur.execute(query, (tuple(alert_uuids),))
             print(f"DEBUG: {cur.rowcount} notificaciones estáticas marcadas como leídas: {alert_uuids}")
             
@@ -66,7 +66,8 @@ def get_read_alert_ids(user_id: str) -> set:
                 WHERE user_id = %s AND tenant_id = %s;
             """, (user_id, DEFAULT_TENANT_ID))
             
-            return {row[0] for row in cur.fetchall()}
+            # Usar row[0] asumiendo que get_db_cursor devuelve tuplas
+            return {row[0] for row in cur.fetchall()} 
     except Exception as e:
         print(f"Error al obtener alertas leídas: {e}")
         return set()
@@ -116,9 +117,10 @@ def handle_mark_as_read(data):
 def send_initial_seasonality_alerts(user_id: str):
     """Envía las alertas estacionales no leídas."""
     try:
-        with get_db_cursor() as cur:
-            # 1. Calcular todas las alertas que APLICAN ESTE MES
-            all_alerts = calculate_active_seasonality_alerts(cur, ALMACENISTA_ROL)
+        # 1. Calcular todas las alertas que APLICAN ESTE MES
+        # 💡 CORRECCIÓN CRÍTICA: Se remueve el argumento 'cur' de la llamada.
+        #    La nueva función calculate_active_seasonality_alerts abre su propia conexión.
+        all_alerts = calculate_active_seasonality_alerts(ALMACENISTA_ROL)
             
         # 2. Obtener los IDs de las alertas que ya leyó el usuario
         read_alert_ids = get_read_alert_ids(user_id)
@@ -137,7 +139,7 @@ def send_initial_seasonality_alerts(user_id: str):
     except Exception as e:
         print(f"ERROR: Fallo al enviar alertas estacionales: {e}")
         
-# 🚀 CORRECCIÓN APLICADA AQUÍ: Se accede a los resultados por índice numérico
+        
 def send_initial_static_alerts(user_id: str):
     """Envía las notificaciones estáticas (DB) no leídas."""
     try:
