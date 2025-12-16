@@ -1,12 +1,12 @@
-from backend.db import get_db_cursor # 💡 CORRECCIÓN: SOLO se importa get_db_cursor
+from backend.db import get_db_cursor
 import uuid
 from datetime import date
 import logging
 import time
-import re # Necesario para get_alert_stable_id
+import re 
 
 STOCK_THRESHOLD = 10 
-ALMACENISTA_ROL = 'almacenista' # Definir el rol aquí para evitar circular references
+ALMACENISTA_ROL = 'almacenista' 
 
 inv_logger = logging.getLogger('backend.utils.inventory_utils')
 
@@ -14,7 +14,6 @@ def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id
     """Inserta una nueva notificación en la base de datos."""
     try:
         new_id = str(uuid.uuid4())
-        # Usamos el cursor normal que ahora sabemos que es DictCursor
         with get_db_cursor(commit=True) as cur: 
             cur.execute(
                 """
@@ -28,7 +27,6 @@ def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id
         print(f"Error al crear notificación: {e}")
         inv_logger.error(f"Error al crear notificación: {e}", exc_info=True)
 
-# Función auxiliar para generar IDs estables (necesaria para `read_alerts`)
 def get_alert_stable_id(event_name: str, tipo: str) -> str:
     """
     Genera un ID único y estable basado en el evento y tipo de alerta. 
@@ -39,18 +37,16 @@ def get_alert_stable_id(event_name: str, tipo: str) -> str:
     return f"{ALMACENISTA_ROL}_{safe_name}_{tipo}"
 
 
-def verificar_tendencia_y_alertar():
+def verificar_stock_y_alertar(): # 💡 CORRECCIÓN: Renombrado a la función original
     """
-    VERSIÓN SCHEDULER: Se ejecuta diariamente. Consulta la tabla seasonality_events.
-    Genera y persiste notificaciones estáticas (notifications).
+    Se ejecuta periódicamente. Consulta la tabla seasonality_events 
+    para generar y persistir notificaciones estáticas.
     """
     current_month = date.today().month
     
     # 1. Obtener todas las reglas de estacionalidad activas para el mes actual
     try:
-        # Usamos get_db_cursor, que ahora sabemos que devuelve diccionarios
         with get_db_cursor() as cur: 
-            # Consulta la tabla de estacionalidad que creaste
             cur.execute("""
                 SELECT 
                     event_name, alert_type, product_category, stock_threshold, message_template
@@ -178,7 +174,6 @@ def calculate_active_seasonality_alerts(rol_destino: str) -> list:
 
             # Resumen para el mensaje final
             if event_data['productos_criticos_info']:
-                # Usar set para obtener productos únicos antes de resumir
                 unique_products = list(set(event_data['productos_criticos_info'])) 
                 alert_summary = f"Productos críticos: {', '.join(unique_products[:3])}"
                 if len(unique_products) > 3:
