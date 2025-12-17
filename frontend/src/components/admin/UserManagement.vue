@@ -1,6 +1,5 @@
 <template>
   <div class="user-management-page">
-    <!-- Header con navegación -->
     <div class="page-header">
       <button class="back-btn" @click="$router.push('/dashboard')" title="Volver al Dashboard">
         <i class="fas fa-arrow-left">⬅️</i>
@@ -20,7 +19,6 @@
       </div>
     </div>
 
-    <!-- Estadísticas rápidas -->
     <div class="stats-cards">
       <div class="stat-card">
         <div class="stat-icon admin">
@@ -60,9 +58,7 @@
       </div>
     </div>
 
-    <!-- Contenido principal -->
     <div class="main-content">
-      <!-- Estado de carga y error -->
       <div v-if="loading" class="loading-state">
         <div class="spinner"></div>
         <p>Cargando usuarios...</p>
@@ -79,7 +75,6 @@
         </button>
       </div>
 
-      <!-- Tabla de usuarios -->
       <div v-if="!loading && !error" class="table-wrapper">
         <div class="table-header">
           <div class="search-box">
@@ -110,7 +105,6 @@
           <table class="users-table">
             <thead>
               <tr>
-               
                 <th class="col-email">
                   <span>Email</span>
                   <button @click="sortBy('email')" class="sort-btn">
@@ -128,7 +122,6 @@
             </thead>
             <tbody>
               <tr v-for="user in filteredUsers" :key="user.id">
-              
                 <td class="user-email">
                   <i class="fas fa-envelope"></i>
                   <span>{{ user.email }}</span>
@@ -169,7 +162,6 @@
           </div>
         </div>
 
-        <!-- Paginación (opcional) -->
         <div v-if="filteredUsers.length > 0" class="pagination">
           <button class="pagination-btn" :disabled="currentPage === 1" @click="prevPage">
             <i class="fas fa-chevron-left"></i>
@@ -182,7 +174,6 @@
       </div>
     </div>
 
-    <!-- Modal para crear/editar usuario -->
     <div v-if="isModalOpen" class="modal-overlay" @click.self="closeModal">
       <div class="modal">
         <div class="modal-header">
@@ -278,7 +269,6 @@
       </div>
     </div>
 
-    <!-- Modal de confirmación de eliminación -->
     <div v-if="showDeleteDialog" class="modal-overlay" @click.self="showDeleteDialog = false">
       <div class="confirm-modal">
         <div class="confirm-icon">
@@ -421,8 +411,6 @@ export default {
     
     filterUsers() {
       let filtered = [...this.users];
-      
-      // Filtro por búsqueda
       if (this.searchQuery) {
         const query = this.searchQuery.toLowerCase();
         filtered = filtered.filter(user => 
@@ -430,30 +418,22 @@ export default {
           user.id.toLowerCase().includes(query)
         );
       }
-      
-      // Filtro por rol
       if (this.roleFilter !== 'all') {
         filtered = filtered.filter(user => user.role_id === parseInt(this.roleFilter));
       }
-      
-      // Ordenamiento
       filtered.sort((a, b) => {
         let aValue = a[this.sortField];
         let bValue = b[this.sortField];
-        
-        // Para ordenamiento de strings
         if (typeof aValue === 'string') {
           aValue = aValue.toLowerCase();
           bValue = bValue.toLowerCase();
         }
-        
         if (aValue < bValue) return this.sortOrder === 'asc' ? -1 : 1;
         if (aValue > bValue) return this.sortOrder === 'asc' ? 1 : -1;
         return 0;
       });
-      
       this.filteredUsers = filtered;
-      this.currentPage = 1; // Resetear a primera página al filtrar
+      this.currentPage = 1;
     },
     
     sortBy(field) {
@@ -488,7 +468,6 @@ export default {
       this.isSaving = true;
       try {
         const dataToSend = { ...this.currentUser };
-        
         if (this.modalMode === 'create') {
           await axios.post('/admin/users', dataToSend);
         } else {
@@ -497,22 +476,14 @@ export default {
           });
         }
         
-        this.$notify({
-          title: 'Éxito',
-          text: `Usuario ${this.modalMode === 'create' ? 'creado' : 'actualizado'} correctamente.`,
-          type: 'success'
-        });
+        // CORRECCIÓN: Se usa alert nativo para evitar el error de $notify
+        alert(`Éxito: Usuario ${this.modalMode === 'create' ? 'creado' : 'actualizado'} correctamente.`);
         
         this.fetchUsers();
         this.closeModal();
-        
       } catch (err) {
         const errorMsg = err.response?.data?.msg || 'Error al guardar el usuario.';
-        this.$notify({
-          title: 'Error',
-          text: errorMsg,
-          type: 'error'
-        });
+        alert(`Error: ${errorMsg}`);
         console.error('Error al guardar:', err);
       } finally {
         this.isSaving = false;
@@ -523,22 +494,14 @@ export default {
       try {
         await axios.delete(`/admin/users/${this.userToDelete.id}`);
         
-        this.$notify({
-          title: 'Éxito',
-          text: 'Usuario eliminado correctamente.',
-          type: 'success'
-        });
+        // CORRECCIÓN: Se usa alert nativo
+        alert('Éxito: Usuario eliminado correctamente.');
         
         this.fetchUsers();
         this.showDeleteDialog = false;
-        
       } catch (err) {
         const errorMsg = err.response?.data?.msg || 'Error al eliminar el usuario.';
-        this.$notify({
-          title: 'Error',
-          text: errorMsg,
-          type: 'error'
-        });
+        alert(`Error: ${errorMsg}`);
         console.error('Error al eliminar:', err);
       }
     },
@@ -565,14 +528,9 @@ export default {
     
     openDeleteDialog(user) {
       if (user.role_id === 1) {
-        this.$notify({
-          title: 'Acción no permitida',
-          text: 'No se puede eliminar a un administrador principal.',
-          type: 'warning'
-        });
+        alert('Acción no permitida: No se puede eliminar a un administrador principal.');
         return;
       }
-      
       this.userToDelete = user;
       this.showDeleteDialog = true;
     },
