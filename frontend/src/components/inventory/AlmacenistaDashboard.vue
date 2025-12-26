@@ -60,6 +60,19 @@
                   class="form-input"
                 />
               </div>
+              <div class="form-group">
+                <label for="product-category">
+                  <i class="fas fa-tag"></i> Categoria del Producto *
+                </label>
+                <input
+                  id="product-category"
+                  type="text"
+                  v-model="newProduct.category"
+                  placeholder="Ej: Canasta basica"
+                  required
+                  class="form-input"
+                />
+              </div>
               
               <div class="form-group">
                 <label for="product-price">
@@ -167,6 +180,7 @@
               <thead>
                 <tr>
                   <th>Producto</th>
+                  <th>Categoria</th>
                   <th>Precio</th>
                   <th>Stock</th>
                   <th>Acciones</th>
@@ -177,6 +191,10 @@
                   <td class="product-name">
                     <i class="fas fa-box"></i>
                     {{ product.name }}
+                  </td>
+                    <td class="product-category">
+                    <i class="fas fa-box"></i>
+                    {{ product.category }}
                   </td>
                   <td class="product-price">
                     ${{ parseFloat(product.price).toFixed(2) }}
@@ -246,6 +264,16 @@
               class="form-input"
             />
           </div>
+
+          <div class="form-group">
+            <label>Categoria del producto</label>
+            <input 
+              type="text" 
+              v-model="editingProduct.category" 
+              required 
+              class="form-input"
+            />
+          </div>
           
           <div class="form-group">
             <label>Precio</label>
@@ -269,6 +297,7 @@
               class="form-input"
             />
           </div>
+          
           
           <div class="modal-actions">
             <button type="button" @click="closeEditModal" class="btn btn-secondary">
@@ -303,8 +332,9 @@ export default {
       products: [],
       newProduct: {
         name: '',
-        price: 0.00,
-        stock: 0
+        price: 0,
+        stock: 0,
+        category: ''
       },
       loading: false,
       error: null,
@@ -345,77 +375,123 @@ export default {
     async addProduct() {
       this.addError = null;
       this.addSuccess = null;
+      
+      // 1. Validaciones básicas de campos vacíos
+      if (!this.newProduct.name?.trim() || !this.newProduct.category?.trim()) {
+        this.addError = "Nombre y Categoría son obligatorios";
+        return;
+      }
+
+      // 2. Limpieza estricta de tipos de datos
+      const priceValue = Number(this.newProduct.price);
+      const stockValue = Math.floor(Number(this.newProduct.stock));
+
+      // 3. Validar que no sean NaN y cumplan reglas de negocio
+      if (isNaN(priceValue) || priceValue <= 0) {
+        this.addError = "El precio debe ser un número válido mayor a 0";
+        return;
+      }
+      if (isNaN(stockValue) || stockValue < 0) {
+        this.addError = "El stock debe ser un número entero (0 o más)";
+        return;
+      }
+
       this.isSubmitting = true;
-
-      // Validaciones
-      if (!this.newProduct.name.trim()) {
-        this.addError = "El nombre del producto es requerido";
-        this.isSubmitting = false;
-        return;
-      }
-
-      if (this.newProduct.price <= 0) {
-        this.addError = "El precio debe ser mayor a 0";
-        this.isSubmitting = false;
-        return;
-      }
-
-      if (this.newProduct.stock < 0) {
-        this.addError = "El stock no puede ser negativo";
-        this.isSubmitting = false;
-        return;
-      }
 
       const productToSend = {
         name: this.newProduct.name.trim(),
-        price: parseFloat(this.newProduct.price).toFixed(2),
-        stock: parseInt(this.newProduct.stock)
+        category: this.newProduct.category.trim(),
+        price: priceValue, // Enviamos el número puro
+        stock: stockValue  // Enviamos el entero puro
       };
 
       try {
         const { data } = await apiClient.post('/api/products', productToSend);
         
         this.addSuccess = `Producto "${data.name}" agregado exitosamente`;
+        
+        // Aseguramos que el nuevo producto en la lista local también sea numérico
         this.products.unshift({
           ...data,
-          price: parseFloat(data.price),
+          price: Number(data.price),
           stock: parseInt(data.stock)
         });
         
         this.resetForm();
-        
-        setTimeout(() => {
-          this.addSuccess = null;
-        }, 3000);
+        setTimeout(() => this.addSuccess = null, 3000);
       } catch (error) {
         this.addError = error.response?.data?.msg || 'Error al agregar el producto';
-        console.error("Error:", error);
       } finally {
         this.isSubmitting = false;
+      }
+    },
+
+    async updateProduct() {
+      this.editError = null;
+
+      // Limpieza de datos para la edición
+      const priceValue = Number(this.editingProduct.price);
+      const stockValue = Math.floor(Number(this.editingProduct.stock));
+
+      if (isNaN(priceValue) || priceValue <= 0 || isNaN(stockValue) || stockValue < 0) {
+        this.editError = "Verifica que el precio y stock sean números válidos";
+        return;
+      }
+
+      this.isUpdating = true;
+
+      const productUpdate = {
+        name: this.editingProduct.name.trim(),
+        category: this.editingProduct.category.trim(),
+        price: priceValue,
+        stock: stockValue
+      };
+
+      try {
+        const productId = this.editingProduct.id;
+        const { data } = await apiClient.put(`/api/products/${productId}`, productUpdate);
+        
+        const index = this.products.findIndex(p => p.id === data.id);
+        if (index !== -1) {
+          this.products.splice(index, 1, {
+            ...data,
+            price: Number(data.price),
+            stock: parseInt(data.stock)
+          });
+        }
+        
+        this.closeEditModal();
+      } catch (error) {
+        this.editError = error.response?.data?.msg || 'Error al actualizar';
+      } finally {
+        this.isUpdating = false;
       }
     },
 
     async fetchProducts() {
       this.loading = true;
       this.error = null;
-
       try {
         const { data } = await apiClient.get('/api/products');
         this.products = data.map(p => ({
           ...p,
-          price: parseFloat(p.price),
+          price: Number(p.price),
           stock: parseInt(p.stock)
         }));
       } catch (error) {
         this.error = 'Error al cargar los productos';
-        console.error("Error:", error);
       } finally {
         this.loading = false;
       }
     },
 
     resetForm() {
-      this.newProduct = { name: '', price: 0.00, stock: 0 };
+      this.newProduct = { 
+        name: '', 
+        price: 0, 
+        stock: 0, 
+        category: '' 
+      };
       this.addError = null;
     },
 
@@ -428,40 +504,6 @@ export default {
     closeEditModal() {
       this.showEditModal = false;
       this.editingProduct = null;
-      this.editError = null;
-    },
-
-    async updateProduct() {
-      this.isUpdating = true;
-      this.editError = null;
-
-      try {
-        const productId = this.editingProduct.id;
-        const productUpdate = {
-          name: this.editingProduct.name.trim(),
-          price: parseFloat(this.editingProduct.price).toFixed(2),
-          stock: parseInt(this.editingProduct.stock)
-        };
-
-        const { data } = await apiClient.put(`/api/products/${productId}`, productUpdate);
-        
-        const index = this.products.findIndex(p => p.id === data.id);
-        if (index !== -1) {
-          this.products.splice(index, 1, {
-            ...data,
-            price: parseFloat(data.price),
-            stock: parseInt(data.stock)
-          });
-        }
-        
-        this.closeEditModal();
-        alert(`Producto "${data.name}" actualizado exitosamente`);
-      } catch (error) {
-        this.editError = error.response?.data?.msg || 'Error al actualizar el producto';
-        console.error("Error:", error);
-      } finally {
-        this.isUpdating = false;
-      }
     },
 
     async confirmDelete(product) {
@@ -471,18 +513,12 @@ export default {
           this.products = this.products.filter(p => p.id !== product.id);
         } catch (error) {
           alert('Error al eliminar el producto');
-          console.error("Error:", error);
         }
       }
     },
 
-    prevPage() {
-      if (this.currentPage > 1) this.currentPage--;
-    },
-
-    nextPage() {
-      if (this.currentPage < this.totalPages) this.currentPage++;
-    }
+    prevPage() { if (this.currentPage > 1) this.currentPage--; },
+    nextPage() { if (this.currentPage < this.totalPages) this.currentPage++; }
   },
   mounted() {
     this.fetchProducts();

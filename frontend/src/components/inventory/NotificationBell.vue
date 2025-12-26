@@ -1,6 +1,4 @@
-Aquí está el código sin espacios en blanco innecesarios, manteniendo toda la funcionalidad y estructura:
 
-```vue
 <template>
 <div class="notification-container">
 <button @click="toggleDropdown" class="notification-btn" :aria-expanded="showDropdown">
@@ -57,149 +55,146 @@ import apiClient from '../../axios';
 const SOCKET_URL = apiClient.defaults.baseURL;
 
 export default {
-name: 'NotificationBell',
-data() {
-return {
-socket: null,
-notifications: [],
-showDropdown: false,
-connectionStatus: 'connecting',
-user: {
-id: 'almacenista_unico_cliente_12345',
-},
-};
-},
-methods: {
-toggleDropdown() {
-this.showDropdown = !this.showDropdown;
-if (this.showDropdown && this.notifications.length > 0) {
-this.markAllAsSeen();
-}
-},
-closeDropdown(event) {
-if (this.$el && !this.$el.contains(event.target)) {
-this.showDropdown = false;
-}
-},
-markAllAsSeen() {
-if (!this.socket || this.notifications.length === 0) return;
-const alertIdsToMark = this.notifications.map(n => n.id);
-this.socket.emit('mark_as_read', {
-user_id: this.user.id,
-alert_ids: alertIdsToMark 
-});
-},
-markAllAsRead() {
-if (!this.socket || this.notifications.length === 0) return;
-this.markAllAsSeen();
-this.notifications = []; 
-this.showDropdown = false;
-},
-markOneAsRead(alertId) {
-if (!this.socket) return;
-this.socket.emit('mark_as_read', {
-user_id: this.user.id,
-alert_ids: [alertId]
-});
-this.notifications = this.notifications.filter(n => n.id !== alertId);
-},
-setupSocketConnection() {
-this.socket = io(SOCKET_URL, {
-transports: ['websocket', 'polling'],
-reconnectionAttempts: 5,
-reconnectionDelay: 1000
-});
-this.socket.on('connect', () => {
-this.connectionStatus = 'connected';
-console.log('DEBUG: Conectado a WebSockets. Uniéndose a sala...');
-this.socket.emit('join_dashboard', { user_id: this.user.id });
-});
-this.socket.on('disconnect', () => {
-this.connectionStatus = 'disconnected';
-console.log('DEBUG: Desconectado de WebSockets.');
-});
-this.socket.on('connect_error', (err) => {
-this.connectionStatus = 'disconnected';
-console.error('ERROR de conexión WebSocket:', err.message);
-});
-this.socket.on('new_alerts', (data) => {
-console.log('DEBUG: Nuevas alertas recibidas:', data.alerts);
-const newAlerts = data.alerts.filter(
-alert => !this.notifications.some(existing => existing.id === alert.id)
-);
-this.notifications = [...newAlerts, ...this.notifications];
-});
-},
-formatTime(timestamp) {
-const date = new Date(timestamp * 1000); 
-const now = new Date();
-const diffInSeconds = (now - date) / 1000;
-const units = [
-{ name: "año", seconds: 31536000, rtfUnit: 'year' },
-{ name: "mes", seconds: 2592000, rtfUnit: 'month' },
-{ name: "día", seconds: 86400, rtfUnit: 'day' },
-{ name: "hora", seconds: 3600, rtfUnit: 'hour' },
-{ name: "minuto", seconds: 60, rtfUnit: 'minute' },
-{ name: "segundo", seconds: 1, rtfUnit: 'second' }
-];
-for (let i = 0; i < units.length; i++) {
-const unit = units[i];
-const interval = Math.floor(diffInSeconds / unit.seconds);
-if (interval >= 1) {
-if (typeof Intl.RelativeTimeFormat !== 'undefined') {
-const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
-try {
-return rtf.format(-interval, unit.rtfUnit);
-} catch {
-return `hace ${interval} ${unit.name}${interval > 1 ? 's' : ''}`;
-}
-}
-return `hace ${interval} ${unit.name}${interval > 1 ? 's' : ''}`;
-}
-}
-return 'justo ahora';
-},
-getIcon(type) {
-switch (type) {
-case 'tendencia_alta':
-return 'fas fa-chart-line'; 
-case 'tendencia_media':
-return 'fas fa-bell'; 
-case 'promocion_baja':
-return 'fas fa-arrow-down'; 
-case 'stock_bajo':
-case 'stock_critico': 
-return 'fas fa-exclamation-triangle'; 
-default:
-return 'fas fa-info-circle';
-}
-},
-getIconClass(type) {
-switch (type) {
-case 'tendencia_alta':
-return 'text-danger';
-case 'tendencia_media':
-return 'text-info'; 
-case 'promocion_baja':
-return 'text-warning';
-case 'stock_bajo':
-case 'stock_critico':
-return 'text-danger'; 
-default:
-return 'text-muted';
-}
-}
-},
-mounted() {
-this.setupSocketConnection(); 
-document.addEventListener('click', this.closeDropdown);
-},
-beforeUnmount() { 
-if (this.socket) {
-this.socket.disconnect();
-}
-document.removeEventListener('click', this.closeDropdown);
-}
+  name: 'NotificationBell',
+  data() {
+    return {
+      socket: null,
+      notifications: [],
+      showDropdown: false,
+      connectionStatus: 'connecting',
+      // Ya no necesitamos hardcodear el ID aquí
+    };
+  },
+  methods: {
+    // Helper para obtener el token del almacenamiento local
+    getToken() {
+      return localStorage.getItem('access_token'); // Asegúrate de que este es el nombre de tu clave
+    },
+
+    toggleDropdown() {
+      this.showDropdown = !this.showDropdown;
+      if (this.showDropdown && this.notifications.length > 0) {
+        this.markAllAsSeen();
+      }
+    },
+
+    closeDropdown(event) {
+      if (this.$el && !this.$el.contains(event.target)) {
+        this.showDropdown = false;
+      }
+    },
+
+    markAllAsSeen() {
+      const token = this.getToken();
+      if (!this.socket || this.notifications.length === 0 || !token) return;
+      
+      const alertIdsToMark = this.notifications.map(n => n.id);
+      
+      // Enviamos el TOKEN en lugar del ID
+      this.socket.emit('mark_as_read', {
+        token: token,
+        alert_ids: alertIdsToMark 
+      });
+    },
+
+    markAllAsRead() {
+      if (!this.socket || this.notifications.length === 0) return;
+      this.markAllAsSeen();
+      this.notifications = []; 
+      this.showDropdown = false;
+    },
+
+    markOneAsRead(alertId) {
+      const token = this.getToken();
+      if (!this.socket || !token) return;
+
+      // Enviamos el TOKEN en lugar del ID
+      this.socket.emit('mark_as_read', {
+        token: token,
+        alert_ids: [alertId]
+      });
+      this.notifications = this.notifications.filter(n => n.id !== alertId);
+    },
+
+    setupSocketConnection() {
+      const token = this.getToken();
+      
+      if (!token) {
+        console.error("No se encontró token, el socket no se iniciará.");
+        return;
+      }
+
+      this.socket = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        // Opcional: enviar token en la conexión inicial
+        auth: { token: token } 
+      });
+
+      this.socket.on('connect', () => {
+        this.connectionStatus = 'connected';
+        console.log('DEBUG: Conectado. Enviando token para unirse a sala privada...');
+        
+        // El backend decodificará este token para obtener la cédula/ID
+        this.socket.emit('join_dashboard', { token: token });
+      });
+
+      this.socket.on('disconnect', () => {
+        this.connectionStatus = 'disconnected';
+      });
+
+      this.socket.on('new_alerts', (data) => {
+        console.log('DEBUG: Alertas recibidas:', data.alerts);
+        // Evitar duplicados
+        const newAlerts = data.alerts.filter(
+          alert => !this.notifications.some(existing => existing.id === alert.id)
+        );
+        this.notifications = [...newAlerts, ...this.notifications];
+      });
+    },
+
+    formatTime(timestamp) {
+      // (Mantenemos tu lógica de formatTime igual...)
+      const date = new Date(timestamp * 1000); 
+      const now = new Date();
+      const diffInSeconds = (now - date) / 1000;
+      if (diffInSeconds < 60) return 'justo ahora';
+      
+      const rtf = new Intl.RelativeTimeFormat('es', { numeric: 'auto' });
+      if (diffInSeconds < 3600) return rtf.format(-Math.floor(diffInSeconds/60), 'minute');
+      if (diffInSeconds < 86400) return rtf.format(-Math.floor(diffInSeconds/3600), 'hour');
+      return rtf.format(-Math.floor(diffInSeconds/86400), 'day');
+    },
+
+    getIcon(type) {
+      const icons = {
+        'tendencia_alta': 'fas fa-chart-line',
+        'tendencia_media': 'fas fa-bell',
+        'promocion_baja': 'fas fa-arrow-down',
+        'stock_bajo': 'fas fa-exclamation-triangle',
+        'stock_critico': 'fas fa-exclamation-triangle'
+      };
+      return icons[type] || 'fas fa-info-circle';
+    },
+
+    getIconClass(type) {
+      if (['tendencia_alta', 'stock_bajo', 'stock_critico'].includes(type)) return 'text-danger';
+      if (type === 'tendencia_media') return 'text-info';
+      if (type === 'promocion_baja') return 'text-warning';
+      return 'text-muted';
+    }
+  },
+  mounted() {
+    this.setupSocketConnection(); 
+    document.addEventListener('click', this.closeDropdown);
+  },
+  beforeUnmount() { 
+    if (this.socket) {
+      this.socket.disconnect();
+    }
+    document.removeEventListener('click', this.closeDropdown);
+  }
 };
 </script>
 
