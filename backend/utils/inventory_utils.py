@@ -3,98 +3,121 @@ import uuid
 from datetime import date
 import logging
 import time
-import re 
+import re
 
-# Constantes requeridas por otros módulos (como sale_routes)
+# Constantes de negocio
 STOCK_THRESHOLD = 10 
 ALMACENISTA_ROL = 'almacenista' 
 
 inv_logger = logging.getLogger('backend.utils.inventory_utils')
 
-def get_alert_stable_id(event_name: str, tipo: str) -> str:
-    """Genera un ID único y estable basado en el evento."""
-    safe_name = re.sub(r'[^\w\s-]', '', event_name).strip().lower()
-    safe_name = re.sub(r'[-\s]+', '_', safe_name)
-    return f"{ALMACENISTA_ROL}_{safe_name}_{tipo}"
-
 def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id: str = None):
-    """Inserta notificación con manejo de error si la tabla no existe."""
+    """
+    Inserta una notificación física en la base de datos.
+    Retorna el ID generado para poder rastrearlo.
+    """
+    new_id = str(uuid.uuid4())
     try:
-        new_id = str(uuid.uuid4())
         with get_db_cursor(commit=True) as cur: 
             cur.execute("""
                 INSERT INTO notifications (id, rol_destino, mensaje, tipo, referencia_id, is_read, fecha_creacion)
                 VALUES (%s, %s, %s, %s, %s, FALSE, NOW())
             """, (new_id, rol_destino, mensaje, tipo, referencia_id))
+            return new_id
     except Exception as e:
-        # Si la tabla no existe, solo lo logeamos para que la App no muera
-        inv_logger.warning(f"No se pudo guardar notificación (¿Falta tabla notifications?): {e}")
+        inv_logger.error(f"Error al persistir notificación en tabla: {e}")
+        return None
 
 def verificar_stock_y_alertar():
-    """Lógica para el worker/background."""
+    """
+    Worker que escanea stock y crea notificaciones INDEPENDIENTES.
+    Si hay 2 categorías críticas, crea 2 notificaciones separadas.
+    """
     current_month = date.today().month
     try:
         with get_db_cursor() as cur:
+            # 1. Traer reglas de temporada
             cur.execute("""
-                SELECT event_name, alert_type, product_category, stock_threshold 
+                SELECT event_name, alert_type, product_category, stock_threshold, message_template
                 FROM seasonality_events WHERE active_month = %s
             """, (current_month,))
             rules = cur.fetchall()
             
             for rule in rules:
-                cur.execute("SELECT id, name, stock FROM products WHERE category = %s AND stock < %s", 
-                           (rule['product_category'], rule['stock_threshold']))
+                # 2. Buscar productos críticos por cada categoría (Iluminación, Decoración, etc.)
+                cur.execute("""
+                    SELECT id, name, stock 
+                    FROM products 
+                    WHERE category = %s AND stock < %s
+                """, (rule['product_category'], rule['stock_threshold']))
                 products = cur.fetchall()
                 
-                for p in products:
-                    msg = f"🔔 {rule['event_name']}: {p['name']} tiene stock bajo ({p['stock']})."
-                    create_notification(ALMACENISTA_ROL, msg, rule['alert_type'], p['id'])
+                if products:
+                    # Agrupamos productos de la misma categoría en una sola notificación clara
+                    p_list = ", ".join([p['name'] for p in products])
+                    msg = rule['message_template'].format(
+                        event=rule['event_name'],
+                        categories_list=rule['product_category'],
+                        threshold=rule['stock_threshold']
+                    )
+                    full_message = f"{msg} | Productos: {p_list}"
+                    
+                    # Creamos la notificación en la tabla 'notifications'
+                    # Usamos el product_category como parte de la referencia para unicidad
+                    create_notification(
+                        ALMACENISTA_ROL, 
+                        full_message, 
+                        rule['alert_type'], 
+                        f"stock_bajo_{rule['product_category']}_{date.today()}"
+                    )
     except Exception as e:
-        inv_logger.error(f"Error en verificar_stock_y_alertar: {e}")
+        inv_logger.error(f"Error en worker de stock: {e}")
 
-def calculate_active_seasonality_alerts(rol_destino: str):
-    """Lógica para WebSockets/API - Uso de 'stock' en lugar de 'stock_actual'."""
-    current_month = date.today().month
+def calculate_active_seasonality_alerts(user_cedula: str, rol_destino: str):
+    """
+    Lógica para WebSockets: Consulta 'notifications' y filtra las ya leídas por el usuario.
+    """
     final_alerts = []
     try:
-        with get_db_cursor() as cur: 
-            cur.execute("SELECT * FROM seasonality_events WHERE active_month = %s", (current_month,))
-            rules = cur.fetchall()
-
-            events_map = {}
-            for rule in rules:
-                event = rule['event_name']
-                if event not in events_map:
-                    events_map[event] = {**rule, 'products': [], 'categories': []}
-                
-                # CORRECCIÓN: Aseguramos que la columna sea 'stock'
-                cur.execute("SELECT name, stock FROM products WHERE category = %s AND stock < %s", 
-                           (rule['product_category'], rule['stock_threshold']))
-                prods = cur.fetchall()
-                if prods: events_map[event]['products'].extend(prods)
-                if rule['product_category'] not in events_map[event]['categories']:
-                    events_map[event]['categories'].append(rule['product_category'])
-
-            for event_name, data in events_map.items():
-                if data['products'] or data['alert_type'] == 'promocion_baja':
-                    msg = data['message_template'].format(
-                        event=event_name, 
-                        categories_list=", ".join(data['categories']), 
-                        threshold=data['stock_threshold']
-                    )
-                    
-                    # Usamos 'stock' que es el nombre real en tu tabla products
-                    p_names = [f"{p['name']} ({p['stock']} ud)" for p in data['products']]
-                    summary = f"Críticos: {', '.join(p_names[:2])}" if p_names else "Revisión de temporada."
-
-                    final_alerts.append({
-                        "id": get_alert_stable_id(event_name, data['alert_type']),
-                        "message": msg,
-                        "type": data['alert_type'],
-                        "timestamp": time.time(),
-                        "summary": summary,
-                        "rol_destino": rol_destino
-                    })
+        with get_db_cursor() as cur:
+            # Seleccionamos notificaciones que el usuario NO ha leído (usando LEFT JOIN)
+            # Filtramos por el campo 'cedula' que es tu identificador de usuario
+            cur.execute("""
+                SELECT n.id, n.mensaje, n.tipo, n.fecha_creacion, n.referencia_id
+                FROM notifications n
+                LEFT JOIN read_alerts r ON n.id::text = r.alert_id AND r.user_id = %s
+                WHERE n.rol_destino = %s 
+                  AND r.alert_id IS NULL
+                ORDER BY n.fecha_creacion DESC
+            """, (str(user_cedula), rol_destino))
+            
+            rows = cur.fetchall()
+            for row in rows:
+                final_alerts.append({
+                    "id": str(row['id']),
+                    "message": row['mensaje'],
+                    "type": row['tipo'],
+                    "timestamp": row['fecha_creacion'].timestamp(),
+                    "summary": f"Alerta de {row['tipo']}",
+                    "referencia": row['referencia_id']
+                })
     except Exception as e:
-        inv_logger.error(f"Error en calculate_active_seasonality_alerts: {e}")
+        inv_logger.error(f"Error al calcular alertas desde tabla notifications: {e}")
+    
     return final_alerts
+
+def mark_notification_as_read(user_id: str, alert_id: str):
+    """
+    Registra que un usuario específico leyó una notificación específica.
+    """
+    try:
+        with get_db_cursor(commit=True) as cur:
+            cur.execute("""
+                INSERT INTO read_alerts (user_id, alert_id, tenant_id, fecha_lectura)
+                VALUES (%s, %s, 'default', NOW())
+                ON CONFLICT DO NOTHING
+            """, (str(user_id), str(alert_id)))
+            return True
+    except Exception as e:
+        inv_logger.error(f"Error al marcar como leída: {e}")
+        return False
