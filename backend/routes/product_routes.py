@@ -34,7 +34,7 @@ def products_collection():
 
     # 🛑 MODIFICACIÓN CLAVE: Verificación manual de existencia de claves.
     # Esto es más robusto y evita el problema de que '0' sea considerado "missing"
-        required_fields = ['name', 'price', 'stock']
+        required_fields = ['name', 'price', 'stock', 'category']
         if data is None or not all(field in data for field in required_fields):
             return jsonify({"msg": "Missing required fields: name, price, stock"}), 400
 
@@ -46,6 +46,8 @@ def products_collection():
             product_name = data['name'].strip()
             product_price = float(data['price'])
             product_stock = int(data['stock'])
+            product_category = data['category'].strip()
+
 
         # Esta es la validación de valores que ya tienes y es correcta:
             if product_price <= 0 or product_stock < 0:
@@ -53,8 +55,8 @@ def products_collection():
 
             with get_db_cursor(commit=True) as cur:
                 cur.execute(
-                    "INSERT INTO products (name, price, stock) VALUES (%s, %s, %s) RETURNING id, name, price, stock;",
-                    (product_name, product_price, product_stock)
+                    "INSERT INTO products (name, price, stock, category) VALUES (%s, %s, %s) RETURNING id, name, price, stock, category;",
+                    (product_name, product_price, product_stock, product_category)
                 )
                 
                 new_product_row = cur.fetchone()
@@ -74,7 +76,7 @@ def products_collection():
     elif request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, price, stock FROM products ORDER BY name;")
+                cur.execute("SELECT id, name, price, category, stock FROM products ORDER BY name;")
                 products = cur.fetchall()
                 products_list = [dict(p) for p in products] 
                 
@@ -101,7 +103,7 @@ def product_single(product_id):
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                cur.execute("SELECT id, name, price, stock FROM products WHERE id = %s;", (product_id,))
+                cur.execute("SELECT id, name, price, stock, category FROM products WHERE id = %s;", (product_id,))
                 product = cur.fetchone()
             if product:
                 return jsonify(dict(product)), 200
