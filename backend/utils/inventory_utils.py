@@ -5,17 +5,20 @@ import logging
 import time
 import re 
 
+# Constantes requeridas por otros módulos (como sale_routes)
+STOCK_THRESHOLD = 10 
 ALMACENISTA_ROL = 'almacenista' 
+
 inv_logger = logging.getLogger('backend.utils.inventory_utils')
 
-# --- HELPERS ---
 def get_alert_stable_id(event_name: str, tipo: str) -> str:
+    """Genera un ID único y estable basado en el evento."""
     safe_name = re.sub(r'[^\w\s-]', '', event_name).strip().lower()
     safe_name = re.sub(r'[-\s]+', '_', safe_name)
     return f"{ALMACENISTA_ROL}_{safe_name}_{tipo}"
 
 def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id: str = None):
-    """Inserta una notificación física en la tabla 'notifications'."""
+    """Inserta notificación con manejo de error si la tabla no existe."""
     try:
         new_id = str(uuid.uuid4())
         with get_db_cursor(commit=True) as cur: 
@@ -24,52 +27,47 @@ def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id
                 VALUES (%s, %s, %s, %s, %s, FALSE, NOW())
             """, (new_id, rol_destino, mensaje, tipo, referencia_id))
     except Exception as e:
-        inv_logger.error(f"Error al crear notificación: {e}")
+        # Si la tabla no existe, solo lo logeamos para que la App no muera
+        inv_logger.warning(f"No se pudo guardar notificación (¿Falta tabla notifications?): {e}")
 
-# --- FUNCIÓN QUE BUSCA APP.PY (EL FIX) ---
 def verificar_stock_y_alertar():
-    """
-    Esta es la función que llama tu app.py o tu scheduler.
-    Busca productos críticos y los guarda en la base de datos.
-    """
+    """Lógica para el worker/background."""
     current_month = date.today().month
     try:
         with get_db_cursor() as cur:
-            # 1. Traer reglas del mes
-            cur.execute("SELECT * FROM seasonality_events WHERE active_month = %s", (current_month,))
+            cur.execute("""
+                SELECT event_name, alert_type, product_category, stock_threshold 
+                FROM seasonality_events WHERE active_month = %s
+            """, (current_month,))
             rules = cur.fetchall()
             
             for rule in rules:
-                # 2. Buscar productos bajo el umbral
                 cur.execute("SELECT id, name, stock FROM products WHERE category = %s AND stock < %s", 
                            (rule['product_category'], rule['stock_threshold']))
                 products = cur.fetchall()
                 
                 for p in products:
-                    msg = f"⚠️ STOCK BAJO: El producto {p['name']} está bajo el umbral de {rule['event_name']}."
+                    msg = f"🔔 {rule['event_name']}: {p['name']} tiene stock bajo ({p['stock']})."
                     create_notification(ALMACENISTA_ROL, msg, rule['alert_type'], p['id'])
     except Exception as e:
-        inv_logger.error(f"Error en el worker de stock: {e}")
+        inv_logger.error(f"Error en verificar_stock_y_alertar: {e}")
 
-# --- FUNCIÓN PARA SOCKETS Y API ---
 def calculate_active_seasonality_alerts(rol_destino: str):
-    """Calcula alertas al vuelo para WebSockets sin guardarlas duplicadas."""
+    """Lógica para WebSockets/API - Uso de 'stock' en lugar de 'stock_actual'."""
     current_month = date.today().month
     final_alerts = []
     try:
         with get_db_cursor() as cur: 
-            cur.execute("""
-                SELECT event_name, alert_type, product_category, stock_threshold, message_template
-                FROM seasonality_events WHERE active_month = %s;
-            """, (current_month,))
-            active_rules = cur.fetchall()
+            cur.execute("SELECT * FROM seasonality_events WHERE active_month = %s", (current_month,))
+            rules = cur.fetchall()
 
             events_map = {}
-            for rule in active_rules:
+            for rule in rules:
                 event = rule['event_name']
                 if event not in events_map:
                     events_map[event] = {**rule, 'products': [], 'categories': []}
                 
+                # CORRECCIÓN: Aseguramos que la columna sea 'stock'
                 cur.execute("SELECT name, stock FROM products WHERE category = %s AND stock < %s", 
                            (rule['product_category'], rule['stock_threshold']))
                 prods = cur.fetchall()
@@ -79,11 +77,15 @@ def calculate_active_seasonality_alerts(rol_destino: str):
 
             for event_name, data in events_map.items():
                 if data['products'] or data['alert_type'] == 'promocion_baja':
-                    cats_str = ", ".join(data['categories'])
-                    msg = data['message_template'].format(event=event_name, categories_list=cats_str, threshold=data['stock_threshold'])
+                    msg = data['message_template'].format(
+                        event=event_name, 
+                        categories_list=", ".join(data['categories']), 
+                        threshold=data['stock_threshold']
+                    )
                     
+                    # Usamos 'stock' que es el nombre real en tu tabla products
                     p_names = [f"{p['name']} ({p['stock']} ud)" for p in data['products']]
-                    summary = f"Críticos: {', '.join(p_names[:2])}" if p_names else "Revisión sugerida."
+                    summary = f"Críticos: {', '.join(p_names[:2])}" if p_names else "Revisión de temporada."
 
                     final_alerts.append({
                         "id": get_alert_stable_id(event_name, data['alert_type']),
@@ -94,5 +96,5 @@ def calculate_active_seasonality_alerts(rol_destino: str):
                         "rol_destino": rol_destino
                     })
     except Exception as e:
-        inv_logger.error(f"Error calculando alertas: {e}")
+        inv_logger.error(f"Error en calculate_active_seasonality_alerts: {e}")
     return final_alerts
