@@ -1,15 +1,12 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from backend.db import get_db_cursor
-# Importar ahora la versión de helper ajustada (que usa IDs de rol)
-from backend.utils.helpers import get_user_and_role, check_product_manager_permission, validate_required_fields
+from backend.utils.helpers import get_user_and_role, check_product_manager_permission
+
 product_bp = Blueprint('product', __name__, url_prefix='/api/products')
 
-# --- Helper para obtener el producto completo después de INSERT/UPDATE/SELECT ---
+# --- Helper para convertir fila a diccionario ---
 def _fetch_product_details(cur, product_row):
-    """
-    Convierte la fila de la base de datos (después de RETURNING * o SELECT) a un diccionario.
-    """
     if product_row:
         columns = [desc[0] for desc in cur.description]
         return dict(zip(columns, product_row))
@@ -22,67 +19,64 @@ def _fetch_product_details(cur, product_row):
 def products_collection():
     current_user_id, user_role_id = get_user_and_role() 
     if not current_user_id:
-        return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
+        return jsonify({"msg": "Usuario no encontrado"}), 401
     
     # ------------------ POST (Crear Producto) ------------------
     if request.method == 'POST':
-    # VERIFICACIÓN DE PERMISO (Ahora incluye el ID 3: Almacenista)
         if not check_product_manager_permission(user_role_id):
-            return jsonify({"msg": "Acceso denegado: solo administradores, consultores y almacenistas pueden crear productos"}), 403
+            return jsonify({"msg": "Acceso denegado"}), 403
 
         data = request.get_json()
-
-    # 🛑 MODIFICACIÓN CLAVE: Verificación manual de existencia de claves.
-    # Esto es más robusto y evita el problema de que '0' sea considerado "missing"
         required_fields = ['name', 'price', 'stock', 'category']
-        if data is None or not all(field in data for field in required_fields):
-            return jsonify({"msg": "Missing required fields: name, price, stock"}), 400
-
-    # 🛑 ADICIONAL: Verificar que 'name' no sea vacío (la única validación de falsy estricta que es necesaria).
-        if not data['name'].strip():
-            return jsonify({"msg": "El nombre del producto no puede estar vacío"}), 400
+        
+        # Validar existencia de campos
+        if not data or not all(field in data for field in required_fields):
+            return jsonify({"msg": "Faltan campos: name, price, stock o category"}), 400
 
         try:
-            product_name = data['name'].strip()
+            # Limpieza y conversión de datos
+            product_name = str(data['name']).strip()
+            product_category = str(data['category']).strip()
             product_price = float(data['price'])
             product_stock = int(data['stock'])
-            product_category = data['category'].strip()
 
-
-        # Esta es la validación de valores que ya tienes y es correcta:
+            if not product_name or not product_category:
+                return jsonify({"msg": "Nombre y categoría no pueden estar vacíos"}), 400
+            
             if product_price <= 0 or product_stock < 0:
-                return jsonify({"msg": "Price must be positive and Stock non-negative."}), 400
+                return jsonify({"msg": "Precio debe ser > 0 y stock >= 0"}), 400
 
             with get_db_cursor(commit=True) as cur:
+                # CORRECCIÓN: Se agregaron los 4 placeholders (%s) para los 4 campos
                 cur.execute(
-                    "INSERT INTO products (name, price, stock, category) VALUES (%s, %s, %s) RETURNING id, name, price, stock, category;",
+                    """INSERT INTO products (name, price, stock, category) 
+                       VALUES (%s, %s, %s, %s) 
+                       RETURNING id, name, price, stock, category;""",
                     (product_name, product_price, product_stock, product_category)
                 )
                 
                 new_product_row = cur.fetchone()
                 new_product = _fetch_product_details(cur, new_product_row)
                 
-            if new_product:
-                return jsonify(new_product), 201
-            else:
-                return jsonify({"msg": "Product creation failed to return data"}), 500
+            return jsonify(new_product), 201
 
         except (ValueError, TypeError):
-             return jsonify({"msg": "Invalid data type for price or stock. Price must be a number (decimal allowed) and stock must be an integer."}), 400
+            return jsonify({"msg": "Precio debe ser número y stock un entero"}), 400
         except Exception as e:
-            return jsonify({"msg": "Error creating product.", "error": str(e)}), 500
+            return jsonify({"msg": "Error en el servidor", "error": str(e)}), 500
 
     # ------------------ GET (Listar Productos) ------------------
     elif request.method == 'GET':
         try:
             with get_db_cursor() as cur:
                 cur.execute("SELECT id, name, price, category, stock FROM products ORDER BY name;")
-                products = cur.fetchall()
-                products_list = [dict(p) for p in products] 
+                rows = cur.fetchall()
+                # Usamos el helper para cada fila
+                products_list = [_fetch_product_details(cur, row) for row in rows]
                 
             return jsonify(products_list), 200
         except Exception as e:
-            return jsonify({"msg": "Error fetching products", "error": str(e)}), 500
+            return jsonify({"msg": "Error al obtener productos", "error": str(e)}), 500
 
 # --------------------------------------------------------------------------
 
@@ -91,84 +85,84 @@ def products_collection():
 def product_single(product_id):
     current_user_id, user_role_id = get_user_and_role()
     if not current_user_id:
-        return jsonify({"msg": "Usuario no encontrado o token inválido"}), 401
+        return jsonify({"msg": "No autorizado"}), 401
     
-    # El product_id (el UUID) se usa directamente.
-
-    # VERIFICACIÓN DE PERMISO (Ahora incluye el ID 3: Almacenista)
-    if request.method in ['PUT', 'DELETE'] and not check_product_manager_permission(user_role_id):
-        return jsonify({"msg": "Acceso denegado: solo administradores, consultores y almacenistas pueden modificar o eliminar productos"}), 403
-
     # ------------------ GET (Producto Único) ------------------
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
                 cur.execute("SELECT id, name, price, stock, category FROM products WHERE id = %s;", (product_id,))
-                product = cur.fetchone()
+                row = cur.fetchone()
+                product = _fetch_product_details(cur, row)
+            
             if product:
-                return jsonify(dict(product)), 200
-            return jsonify({"msg": "Product not found"}), 404
+                return jsonify(product), 200
+            return jsonify({"msg": "Producto no encontrado"}), 404
         except Exception as e:
-            return jsonify({"msg": "Error fetching product", "error": str(e)}), 500
+            return jsonify({"msg": "Error", "error": str(e)}), 500
 
     # ------------------ PUT (Actualizar Producto) ------------------
     elif request.method == 'PUT':
+        if not check_product_manager_permission(user_role_id):
+            return jsonify({"msg": "Acceso denegado"}), 403
+
         data = request.get_json()
         if not data:
-            return jsonify({"msg": "No data provided for update"}), 400
+            return jsonify({"msg": "No hay datos para actualizar"}), 400
         
         set_clauses = []
         params = []
         
         try:
-            for key, value in data.items():
-                if key in ['name', 'price', 'stock']:
-                    set_clauses.append(f"{key} = %s")
-                    
-                    if key == 'price': 
-                        product_price = float(value)
-                        if product_price <= 0:
-                            return jsonify({"msg": "Price must be positive."}), 400
-                        params.append(product_price)
-                        
-                    elif key == 'stock': 
-                        product_stock = int(value)
-                        if product_stock < 0:
-                            return jsonify({"msg": "Stock cannot be negative."}), 400
-                        params.append(product_stock)
-                        
-                    else: 
-                        params.append(value.strip())
+            # Lista blanca de campos permitidos (incluyendo category)
+            allowed_fields = ['name', 'price', 'stock', 'category']
             
-        except (ValueError, TypeError):
-            return jsonify({"msg": "Invalid data type for price or stock during update. Price must be a number (decimal allowed) and stock must be an integer."}), 400
-                
-        if not set_clauses:
-            return jsonify({"msg": "No valid fields to update"}), 400
+            for key in allowed_fields:
+                if key in data:
+                    val = data[key]
+                    if key == 'price':
+                        val = float(val)
+                        if val <= 0: return jsonify({"msg": "Precio debe ser > 0"}), 400
+                    elif key == 'stock':
+                        val = int(val)
+                        if val < 0: return jsonify({"msg": "Stock no puede ser negativo"}), 400
+                    elif key in ['name', 'category']:
+                        val = str(val).strip()
+                        if not val: return jsonify({"msg": f"{key} no puede estar vacío"}), 400
+                    
+                    set_clauses.append(f"{key} = %s")
+                    params.append(val)
+            
+            if not set_clauses:
+                return jsonify({"msg": "Campos no válidos"}), 400
 
-        params.append(product_id) 
-        query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, price, stock,category;"
+            params.append(product_id) 
+            query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, price, stock, category;"
 
-        try:
             with get_db_cursor(commit=True) as cur:
                 cur.execute(query, tuple(params))
-                updated_product_row = cur.fetchone()
-                updated_product = _fetch_product_details(cur, updated_product_row)
+                updated_row = cur.fetchone()
+                updated_product = _fetch_product_details(cur, updated_row)
 
             if updated_product:
                 return jsonify(updated_product), 200
-            return jsonify({"msg": "Product not found or no changes made"}), 404
+            return jsonify({"msg": "Producto no encontrado"}), 404
+
+        except (ValueError, TypeError):
+            return jsonify({"msg": "Formato de datos inválido"}), 400
         except Exception as e:
-            return jsonify({"msg": "Error updating product.", "error": str(e)}), 500
+            return jsonify({"msg": "Error al actualizar", "error": str(e)}), 500
 
     # ------------------ DELETE (Eliminar Producto) ------------------
     elif request.method == 'DELETE':
+        if not check_product_manager_permission(user_role_id):
+            return jsonify({"msg": "Acceso denegado"}), 403
+            
         try:
             with get_db_cursor(commit=True) as cur:
                 cur.execute("DELETE FROM products WHERE id = %s RETURNING id;", (product_id,)) 
-                deleted_id = cur.fetchone()
-            if deleted_id:
-                return jsonify({"msg": "Product deleted successfully"}), 200
-            return jsonify({"msg": "Product not found"}), 404
+                if cur.fetchone():
+                    return jsonify({"msg": "Producto eliminado"}), 200
+                return jsonify({"msg": "Producto no encontrado"}), 404
         except Exception as e:
-            return jsonify({"msg": "Error deleting product", "error": str(e)}), 500
+            return jsonify({"msg": "Error al eliminar", "error": str(e)}), 500
