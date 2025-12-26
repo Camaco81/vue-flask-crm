@@ -147,7 +147,7 @@ def product_single(product_id):
             return jsonify({"msg": "No valid fields to update"}), 400
 
         params.append(product_id) 
-        query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, price, stock;"
+        query = f"UPDATE products SET {', '.join(set_clauses)} WHERE id = %s RETURNING id, name, price, stock,category;"
 
         try:
             with get_db_cursor(commit=True) as cur:
