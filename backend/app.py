@@ -17,6 +17,7 @@ from backend.routes.customer_routes import customer_bp
 from backend.routes.product_routes import product_bp
 from backend.routes.sale_routes import sale_bp
 # user_bp contiene /profile; admin_bp contiene /users
+# En app.py línea 20
 from backend.routes.user_routes import user_bp, admin_bp
 from backend.routes.common_routes import rate_bp
 from backend.routes.alert_routes import alert_bp
