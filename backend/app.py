@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 import logging
 import os 
-
+from .utils.realtime import socketio # 💡 IMPORTANTE: La instancia de socketio
 # --- Importaciones de Librerías Externas ---
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
@@ -10,8 +10,7 @@ from flask_apscheduler import APScheduler
 
 # --- Importaciones de Módulos Locales (Absolutas) ---
 from backend.config import Config
-from backend.utils.inventory_utils import verificar_tendencia_y_alertar
-
+from backend.utils.inventory_utils import verificar_stock_y_alertar as verificar_tendencia_y_alertar
 # Blueprints (Rutas)
 from backend.auth import auth_bp
 from backend.routes.customer_routes import customer_bp
@@ -20,10 +19,10 @@ from backend.routes.sale_routes import sale_bp
 # user_bp contiene /profile; admin_bp contiene /users
 from backend.routes.user_routes import user_bp, admin_bp
 from backend.routes.common_routes import rate_bp
+from backend.routes.alert_routes import alert_bp
 
 
 # --- 1. CONFIGURACIÓN INICIAL (LOAD ENV) ---
-# Debe ser lo primero para cargar las variables de entorno antes de la configuración de la app
 load_dotenv()
 
 # --- 2. CONFIGURACIÓN DE LOGGING ---
@@ -38,12 +37,14 @@ app.config.from_object(Config)
 # Inicializar extensiones
 jwt = JWTManager(app)
 
-# ALLOWED_ORIGINS = [
-#     "http://localhost:8080", 
-#     "http://127.0.0.1:8080", 
-#     "https://vue-flask-crm.netlify.app/", # Asume que tu frontend también se llama así, sino, usa la URL real
-#     # Si vas a desplegar el frontend en otra URL, añádela aquí
-# ]
+# 🚀 CORRECCIÓN CLAVE: CONECTAR SOCKETIO A LA APLICACIÓN
+# Esto registra la ruta /socket.io/ que faltaba, resolviendo el 404.
+try:
+    socketio.init_app(app)
+    app_logger.info("Flask-SocketIO inicializado y conectado a la aplicación.")
+except Exception as e:
+    app_logger.error(f"Error al inicializar SocketIO: {e}")
+
 
 CORS(
     app, 
@@ -81,7 +82,7 @@ app.register_blueprint(auth_bp, url_prefix='/api/auth')
 app.register_blueprint(customer_bp, url_prefix='/api/customers')
 app.register_blueprint(product_bp, url_prefix='/api/products')
 app.register_blueprint(sale_bp, url_prefix='/api/sales') 
-
+app.register_blueprint( alert_bp)
 # Rutas que están directamente bajo /api (ej. /api/profile, /api/rate)
 app.register_blueprint(rate_bp, url_prefix='/api')
 app.register_blueprint(user_bp, url_prefix='/api') # Contiene /profile
@@ -102,6 +103,7 @@ def index():
 @app.errorhandler(404)
 def not_found_error(error):
     """Maneja el error 404 (Recurso no encontrado)."""
+    # Esta advertencia es la que vimos que Flask emitía antes. Ahora debería ser menos común para /socket.io/
     app_logger.warning(f"404 Not Found: Path accessed: {request.path}") 
     return jsonify({"msg": "Resource not found", "error_code": 404}), 404
 
@@ -119,4 +121,9 @@ if __name__ == '__main__':
     # Usar variables de entorno para puerto y host (buena práctica para despliegue)
     port = int(os.environ.get("PORT", 5000))
     host = os.environ.get("HOST", '0.0.0.0')
+    
+    # ❌ IMPORTANTE: No usar app.run() para SocketIO con Gunicorn en producción
+    # Esta sección solo se usa si ejecutas el archivo directamente para debug local
+    # En producción, Gunicorn ejecutará: gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 --bind 0.0.0.0:$PORT backend.app:app
+    
     app.run(debug=Config.DEBUG, host=host, port=port)

@@ -71,7 +71,7 @@ def customers_collection():
         except Exception as e:
             return jsonify({"msg": "Error al obtener clientes"}), 500
 
-@customer_bp.route('/<int:customer_id>', methods=['GET', 'PUT', 'DELETE'])
+@customer_bp.route('/<uuid:customer_id>', methods=['GET', 'PUT', 'DELETE'])
 @jwt_required()
 def customer_single(customer_id):
     current_user_id, user_role = get_user_and_role()

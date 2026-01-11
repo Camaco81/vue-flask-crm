@@ -5,30 +5,36 @@ import LandingPage from '@/components/LandingPage.vue';
 import HomeView from '../views/HomeView.vue';
 import LoginForm from '../components/LoginForm.vue';
 import RegisterForm from '../components/RegisterForm.vue';
+import VisitorWaitingView from '@/components/VisitorWaitingView.vue';
 
 // --- Importaciones para el Rol de Administrador (role_id = 1) ---
 import AdminDashboard from '@/components/admin/AdminDashboard.vue';
 import UserManagement from '@/components/admin/UserManagement.vue';
 import AdminGeneralReports from '@/components/admin/GeneralReports.vue';
+import AdminCreditMonitoring from '@/components/admin/AdminCreditMonitoring.vue';
+import AdminSecurityPanel from '@/components/admin/AdminSecurityPanel.vue';
 
 // --- Importaciones para el Rol de Vendedor (role_id = 2) ---
 import VendedorDashboard from '@/components/vendedor/VendedorDashboard.vue';
 import VendedorCustomersComponent from '@/components/vendedor/CustomersComponent.vue';
 // 🚨 Vendedor ya NO gestiona productos, solo los consulta, pero su vista de ventas los necesita
 // Dejamos la importación si la vista de ventas la requiere para los selects
-import VendedorProductsComponent from '@/components/vendedor/ProductsComponent.vue'; 
+
 import VendedorOrdersComponent from '@/components/vendedor/SalesComponent.vue';
 import VendedorUserProfile from '@/components/vendedor/UserProfile.vue';
 
 // --- 🚨 NUEVAS IMPORTACIONES para el Rol de Almacenista (role_id = 3) ---
 import AlmacenistaDashboard from '@/components/inventory/AlmacenistaDashboard.vue'; // Nuevo Dashboard de Almacenista
-import InventoryManagement from '@/components/inventory/ProductsComponent.vue'; // Gestión de productos/inventario
+ // Gestión de productos/inventario
 import NotificationBell from '@/components/inventory/NotificationBell.vue';
+import CodeGeneratorModal from '@/components/vendedor/CodeGeneratorModal.vue';
 const routes = [
  { path: '/', name: 'LandingPage', component: LandingPage },
  { path: '/home', name: 'Home', component: HomeView },
  { path: '/login', name: 'Login', component: LoginForm },
  { path: '/register', name: 'Register', component: RegisterForm },
+ { path: '/visitor', name: 'VisitorWaitingView', component: VisitorWaitingView },
+
 
  // --- RUTAS DEL ADMINISTRADOR (role_id = 1) ---
  {
@@ -50,6 +56,19 @@ const routes = [
   meta: { requiresAuth: true, requiredRole: 1 }
  },
 
+ {
+  path: '/admin/credits-reports',
+  name: 'AdminCreditMonitoring',
+  component: AdminCreditMonitoring,
+  meta: { requiresAuth: true, requiredRole: 1 }
+ },
+ {
+  path: '/admin/security',
+  name: 'AdminSecurityPanel',
+  component: AdminSecurityPanel,
+  meta: { requiresAuth: true, requiredRole: 1 }
+ },
+
  // --- RUTAS DEL VENDEDOR (role_id = 2) ---
  {
   path: '/vendedor/vendedor-dasboard', // Ruta principal
@@ -63,12 +82,13 @@ const routes = [
   component: VendedorCustomersComponent,
   meta: { requiresAuth: true, requiredRole: 2 }
  },
- {
-  path: '/vendedor/products', // El vendedor solo consulta la lista de productos (no gestiona)
-  name: 'VendedorProducts',
-  component: VendedorProductsComponent,
+  {
+  path: '/vendedor/codegenerator',
+  name: 'CodeGenerator',
+  component: CodeGeneratorModal,
   meta: { requiresAuth: true, requiredRole: 2 }
  },
+
  {
   path: '/vendedor/sales',
   name: 'VendedorSales',
@@ -90,12 +110,7 @@ const routes = [
   component: AlmacenistaDashboard,
   meta: { requiresAuth: true, requiredRole: 3 } // Solo Almacenistas
  },
- {
-  path: '/almacenista/inventory', // Ruta principal para gestionar productos
-  name: 'InventoryManagement',
-  component: InventoryManagement,
-  meta: { requiresAuth: true, requiredRole: 3 } // Solo Almacenistas
- },
+ 
  {
   path: '/almacenista/notifications', // Ruta principal para gestionar productos
   name: 'NotificationBell',

@@ -4,7 +4,7 @@
    <div class="header-content">
     <div class="header-info">
      <div class="header-icon">
-      <i class="fas fa-users"></i>
+       <font-awesome-icon icon="fas fa-user"/>
      </div>
      <div class="header-text-container">
       <div class="header-text">
@@ -27,9 +27,9 @@
 
   <div class="content-wrapper">
    <div class="form-card">
-    <div class="card-header">
+    <div class="card-header"> 
      <div class="card-icon">
-      <i :class="isEditing ? 'fas fa-user-edit' : 'fas fa-user-plus'"></i>
+        <font-awesome-icon :icon="isEditing ? 'fas fa-edit' : 'fas fa-user-plus'"/>
      </div>
      <div class="card-title">
       <h3>{{ isEditing ? 'Editar Cliente' : 'Registrar Nuevo Cliente' }}</h3>
@@ -41,7 +41,7 @@
      <div class="form-grid">
       <div class="form-group full-width">
        <label for="customer-name">
-        <i class="fas fa-user"></i>
+         <font-awesome-icon icon="fas fa-user"/>
         <span>Nombre del Cliente *</span>
        </label>
        <input
@@ -56,7 +56,7 @@
 
       <div class="form-group">
        <label for="customer-cedula">
-        <i class="fas fa-id-card"></i>
+         <font-awesome-icon icon="fas fa-id-card"/>
         <span>Cédula / ID *</span>
        </label>
        <input
@@ -72,7 +72,7 @@
       </div>
       <div class="form-group">
        <label for="customer-email">
-        <i class="fas fa-envelope"></i>
+         <font-awesome-icon icon="fas fa-envelope"/>
         <span>Email *</span>
        </label>
        <input
@@ -87,7 +87,7 @@
 
       <div class="form-group">
        <label for="customer-phone">
-        <i class="fas fa-phone-alt"></i>
+         <font-awesome-icon icon="fas fa-phone-alt"/>
         <span>Teléfono</span>
        </label>
        <input
@@ -102,26 +102,26 @@
     
      <div class="form-group full-width">
       <label for="customer-address">
-       <i class="fas fa-map-marker-alt"></i>
-       <span>Dirección</span>
+         <font-awesome-icon icon="fas fa-map-marker-alt"/>
+        <span>Dirección</span>
       </label>
       <textarea
-       id="customer-address"
-       v-model="newCustomer.address"
-       placeholder="Ingresa la dirección del cliente"
-       class="form-textarea"
+        id="customer-address"
+        v-model="newCustomer.address"
+        placeholder="Ingresa la dirección del cliente"
+        class="form-textarea"
       ></textarea>
      </div>
 
      <div class="form-actions">
       <button type="button" @click="resetForm" class="reset-btn">
-       <i class="fas fa-undo"></i>
-       <span>{{ isEditing ? 'Cancelar' : 'Limpiar' }}</span>
+         <font-awesome-icon icon="fas fa-undo"/>
+        <span>{{ isEditing ? 'Cancelar' : 'Limpiar' }}</span>
       </button>
       <button type="submit" class="submit-btn" :disabled="isSubmitting">
-       <div v-if="isSubmitting" class="button-spinner"></div>
-       <i v-else :class="isEditing ? 'fas fa-save' : 'fas fa-plus'"></i>
-       <span>{{ isSubmitting ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Agregar Cliente') }}</span>
+        <div v-if="isSubmitting" class="button-spinner"></div>
+        <font-awesome-icon v-else :icon="isEditing ? 'fas fa-save' : 'fas fa-plus'"/>
+        <span>{{ isSubmitting ? 'Guardando...' : (isEditing ? 'Guardar Cambios' : 'Agregar Cliente') }}</span>
       </button>
      </div>
     </form>
@@ -129,13 +129,13 @@
     <transition name="slide-down">
      <div v-if="addError" class="alert alert-error">
       <div class="alert-icon">
-       <i class="fas fa-exclamation-circle"></i>
+         <font-awesome-icon icon="fas fa-exclamation-circle"/>
       </div>
       <div class="alert-content">
        <strong>Error:</strong> {{ addError }}
       </div>
       <button @click="addError = null" class="alert-close">
-       <i class="fas fa-times"></i>
+         <font-awesome-icon icon="fas fa-times"/>
       </button>
      </div>
     </transition>
@@ -143,13 +143,13 @@
     <transition name="slide-down">
      <div v-if="addSuccess" class="alert alert-success">
       <div class="alert-icon">
-       <i class="fas fa-check-circle"></i>
+         <font-awesome-icon icon="fas fa-check-circle"/>
       </div>
       <div class="alert-content">
        <strong>¡Éxito!</strong> {{ addSuccess }}
       </div>
       <button @click="addSuccess = null" class="alert-close">
-       <i class="fas fa-times"></i>
+         <font-awesome-icon icon="fas fa-times"/>
       </button>
      </div>
     </transition>
@@ -158,7 +158,7 @@
    <div class="list-card">
     <div class="card-header">
      <div class="card-icon">
-      <i class="fas fa-address-book"></i>
+        <font-awesome-icon icon="fas fa-address-book"/>
      </div>
      <div class="card-title">
       <h3>Lista de Clientes</h3>
@@ -166,27 +166,14 @@
      </div>
      <div class="card-actions">
       <button @click="fetchCustomers" class="refresh-btn" :disabled="loading">
-       <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
-       <span>{{ loading ? 'Cargando...' : 'Actualizar' }}</span>
+         <font-awesome-icon icon="fas fa-sync-alt" :class="{ 'fa-spin': loading }"/>
+        <span>{{ loading ? 'Cargando...' : 'Actualizar' }}</span>
       </button>
      </div>
     </div>
 
     <div class="search-section">
-     <div class="search-bar">
-      <div class="search-icon">
-       <i class="fas fa-search"></i>
-      </div>
-      <input
-       type="text"
-       v-model="searchTerm"
-       placeholder="Buscar clientes por nombre, email o cédula..."
-       class="search-input"
-      />
-      <button v-if="searchTerm" @click="searchTerm = ''" class="clear-search">
-       <i class="fas fa-times"></i>
-      </button>
-     </div>
+     
     </div>
 
     <div v-if="loading && customers.length === 0" class="loading-state">
@@ -198,21 +185,21 @@
 
     <div v-if="error && !loading" class="error-state">
      <div class="error-icon">
-      <i class="fas fa-exclamation-triangle"></i>
+        <font-awesome-icon icon="fas fa-exclamation-triangle"/>
      </div>
      <div class="error-content">
       <h3>Error al cargar clientes</h3>
       <p>{{ error }}</p>
       <button @click="fetchCustomers" class="retry-btn">
-       <i class="fas fa-redo-alt"></i>
-       Reintentar
+         <font-awesome-icon icon="fas fa-redo-alt"/>
+        Reintentar
       </button>
      </div>
     </div>
 
     <div v-if="!loading && !error && customers.length === 0" class="empty-state">
      <div class="empty-icon">
-      <i class="fas fa-users-slash"></i>
+        <font-awesome-icon icon="fas fa-users-slash"/>
      </div>
      <div class="empty-content">
       <h3>No hay clientes registrados</h3>
@@ -223,36 +210,36 @@
     <div v-if="!loading && !error && filteredCustomers.length > 0" class="customers-grid">
      <transition-group name="customer-item" tag="div" class="grid-container">
       <div
-       v-for="customer in paginatedCustomers"
-       :key="customer.id"
-       class="customer-card"
+        v-for="customer in paginatedCustomers"
+        :key="customer.id"
+        class="customer-card"
       >
-       <div class="customer-avatar">
-        <i class="fas fa-user-circle"></i>
-       </div>
-       <div class="customer-info">
-        <h4 class="customer-name">{{ customer.name }}</h4>
-        <p v-if="customer.cedula" class="customer-cedula">
-         <i class="fas fa-id-card"></i>
-         **Cédula:** {{ customer.cedula }}
-        </p>
-        <p class="customer-email">
-         <i class="fas fa-envelope"></i>
-         {{ customer.email }}
-        </p>
-        <p v-if="customer.phone" class="customer-phone">
-         <i class="fas fa-phone-alt"></i>
-         {{ customer.phone }}
-        </p>
-       </div>
-       <div class="customer-actions">
-        <button @click="editCustomer(customer)" class="action-btn edit-btn" title="Editar">
-         <i class="fas fa-edit"></i>
-        </button>
-        <button @click="showDeleteConfirmation(customer)" class="action-btn delete-btn" title="Eliminar">
-         <i class="fas fa-trash"></i>
-        </button>
-       </div>
+        <div class="customer-avatar">
+            <font-awesome-icon icon="fas fa-user-circle"/>
+        </div>
+        <div class="customer-info">
+          <h4 class="customer-name">{{ customer.name }}</h4>
+          <p v-if="customer.cedula" class="customer-cedula">
+             <font-awesome-icon icon="fas fa-id-card"/>
+            **Cédula:** {{ customer.cedula }}
+          </p>
+          <p class="customer-email">
+             <font-awesome-icon icon="fas fa-envelope"/>
+            {{ customer.email }}
+          </p>
+          <p v-if="customer.phone" class="customer-phone">
+             <font-awesome-icon icon="fas fa-phone-alt"/>
+            {{ customer.phone }}
+          </p>
+        </div>
+        <div class="customer-actions">
+          <button @click="editCustomer(customer)" class="action-btn edit-btn" title="Editar">
+            <font-awesome-icon icon="fas fa-edit"/>
+          </button>
+          <button @click="showDeleteConfirmation(customer)" class="action-btn delete-btn" title="Eliminar">
+            <font-awesome-icon icon="fas fa-trash-alt"/>
+          </button>
+        </div>
       </div>
      </transition-group>
     </div>
@@ -263,17 +250,17 @@
       :disabled="currentPage === 1"
       class="page-btn"
      >
-      <i class="fas fa-chevron-left"></i>
+        <font-awesome-icon icon="fas fa-chevron-left"/>
      </button>
     
      <div class="page-numbers">
       <button
-       v-for="page in visiblePages"
-       :key="page"
-       @click="currentPage = page"
-       :class="['page-number', { active: currentPage === page }]"
+        v-for="page in visiblePages"
+        :key="page"
+        @click="currentPage = page"
+        :class="['page-number', { active: currentPage === page }]"
       >
-       {{ page }}
+        {{ page }}
       </button>
      </div>
 
@@ -282,7 +269,7 @@
       :disabled="currentPage === totalPages"
       class="page-btn"
      >
-      <i class="fas fa-chevron-right"></i>
+        <font-awesome-icon icon="fas fa-chevron-right"/>
      </button>
     </div>
 
@@ -908,22 +895,7 @@ export default {
   z-index: 2;
 }
 
-.search-input {
-  width: 100%;
-  padding: 16px 20px 16px 48px;
-  border: 2px solid #e2e8f0;
-  border-radius: 12px;
-  font-size: 16px;
-  background: #f8fafc;
-  transition: all 0.3s ease;
-}
 
-.search-input:focus {
-  outline: none;
-  border-color: #667eea;
-  background: white;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-}
 
 .clear-search {
   position: absolute;
@@ -1285,6 +1257,7 @@ export default {
 @media (max-width: 992px) {
   .content-wrapper {
     grid-template-columns: 1fr;
+    width: 100%;
   }
   
   .page-header, .form-card, .list-card {
@@ -1304,7 +1277,7 @@ export default {
 
 @media (max-width: 768px) {
   .customers-container {
-    padding: 20px;
+    padding: 10px;
   }
   
   .header-content {

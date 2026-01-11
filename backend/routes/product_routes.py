@@ -23,6 +23,7 @@ def products_collection():
     
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado"}), 401
+        return jsonify({"msg": "Usuario no encontrado"}), 401
     
     # ------------------ POST (Crear Producto) ------------------
     if request.method == 'POST':
@@ -42,6 +43,7 @@ def products_collection():
                 return jsonify({"msg": "Precio debe ser positivo y Stock no negativo"}), 400
 
             with get_db_cursor(commit=True) as cur:
+                # CORRECCIÓN: Se agregaron los 4 placeholders (%s) para los 4 campos
                 cur.execute(
                     """INSERT INTO products (name, price, stock, tenant_id) 
                        VALUES (%s, %s, %s, %s) 

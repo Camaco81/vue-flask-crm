@@ -14,11 +14,126 @@ import logging
 from datetime import datetime, timedelta
 import uuid
 
-sale_bp = Blueprint('sale', __name__)
+sale_bp = Blueprint('sale', __name__, url_prefix='/api/sales')
 app_logger = logging.getLogger('backend.routes.sale_routes') 
+SECRET_SEED =os.environ.get('ADMIN_SECRET_SEED', 'mi-clave-unica-de-permiso')
+
 
 # Tolerancia para pagos (evitar errores de redondeo)
 PAYMENT_TOLERANCE = 0.01 
+
+def get_current_tenant():
+    """Extrae el tenant_id del token JWT."""
+    return get_jwt().get('tenant_id', 'default-tenant')
+
+def normalize_payment_type(tipo_pago_raw):
+    """Normaliza el tipo de pago a formato consistente"""
+    if not tipo_pago_raw:
+        return 'contado'
+    return tipo_pago_raw.lower().replace('é', 'e').strip()
+
+def validate_payment_amounts(usd_paid_raw, ves_paid_raw):
+    """Valida y convierte montos de pago"""
+    try:
+        usd_paid = float(usd_paid_raw) if usd_paid_raw not in [None, ''] else 0.0
+        ves_paid = float(ves_paid_raw) if ves_paid_raw not in [None, ''] else 0.0
+        
+        if usd_paid < 0 or ves_paid < 0:
+            raise ValueError("Los montos de pago deben ser positivos.")
+            
+        return usd_paid, ves_paid
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Los montos de pago deben ser números válidos: {e}")
+
+def validate_credit_days(dias_credito_raw):
+    """Valida y establece días de crédito por defecto"""
+    try:
+        dias_credito = int(dias_credito_raw) if dias_credito_raw not in [None, ''] else DEFAULT_CREDIT_DAYS
+        return max(1, dias_credito)  # Mínimo 1 día
+    except (ValueError, TypeError):
+        return DEFAULT_CREDIT_DAYS
+
+def calculate_payment_totals(total_amount_usd, usd_paid, ves_paid, exchange_rate):
+    """Calcula totales de pago y saldo pendiente"""
+    usd_from_ves = ves_paid / exchange_rate if exchange_rate > 0 else 0.0
+    total_paid_usd = usd_paid + usd_from_ves
+    saldo_pendiente = max(0.0, round(total_amount_usd - total_paid_usd, 2))
+    
+    return total_paid_usd, saldo_pendiente
+
+def handle_credit_sale_validation(cancellation_code, admin_auth_code):
+    """Maneja la validación para ventas a crédito"""
+    if not cancellation_code:
+        return jsonify({"msg": "Se requiere el código de cancelación para ventas a crédito."}), 400
+    
+    # Validar el código del administrador
+    daily_code = get_daily_security_code_server()
+    if admin_auth_code != daily_code:
+        return jsonify({"msg": "Código de autorización de administrador incorrecto o expirado. Venta a crédito no autorizada."}), 403
+    
+    return None
+
+
+def validate_admin_auth_code(admin_auth_code_input):
+    """Valida el código de autorización del administrador"""
+    daily_code = get_daily_security_code_server()
+    if admin_auth_code_input != daily_code:
+        return jsonify({"msg": "Código de autorización de administrador incorrecto o expirado. Operación no autorizada."}), 403
+    return None
+
+def determine_sale_status(is_credit_sale, balance_due, paid_amount):
+    """Determina el estado correcto de la venta"""
+    if not is_credit_sale:
+        return 'Completado'
+    
+    if balance_due <= PAYMENT_TOLERANCE:
+        return 'Pagado'
+    elif paid_amount > 0:
+        return 'Abonado'
+    else:
+        return 'Crédito'
+
+def build_sale_insert_query(is_credit_sale, fields, values, dias_credito, 
+                          monto_pendiente, fecha_vencimiento, cancellation_code, admin_auth_code):
+    """Construye dinámicamente la consulta SQL para insertar una venta"""
+    if is_credit_sale:
+        fields.extend([
+            "is_credit_sale", "dias_credito", "balance_due_usd", 
+            "fecha_vencimiento", "cancellation_code", "admin_auth_code_used"
+        ])
+        values.extend([
+            True, dias_credito, monto_pendiente, 
+            fecha_vencimiento, cancellation_code, admin_auth_code
+        ])
+    else:
+        fields.extend(["is_credit_sale", "balance_due_usd"])
+        values.extend([False, 0.0])
+    
+    # Construir la consulta SQL
+    placeholders = ["%s"] * len(values)
+    query = f"""
+        INSERT INTO sales ({', '.join(fields)}) 
+        VALUES ({', '.join(placeholders)})
+        RETURNING id;
+    """
+    return query    
+    
+def get_daily_security_code_server():
+    """
+    Genera el código de seguridad determinista de 6 dígitos basado en la fecha y una semilla secreta.
+    """
+    today = datetime.now().date()
+    date_string = today.isoformat() # YYYY-MM-DD
+    combined_string = date_string + SECRET_SEED
+    
+    # Generación de hash simple de 6 dígitos
+    hash_value = 0
+    for char in combined_string:
+        hash_value = ((hash_value << 5) - hash_value) + ord(char)
+        hash_value &= 0xFFFFFFFF # Convertir a entero de 32 bits
+    
+    # Devolver un código de 6 dígitos
+    return str(abs(hash_value % 1000000)).zfill(6)
 
 def get_current_tenant():
     """Extrae el tenant_id del token JWT."""

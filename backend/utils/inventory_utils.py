@@ -2,6 +2,8 @@ from backend.db import get_db_cursor
 from datetime import date
 import uuid
 import logging
+import time
+import re
 
 # Configuración de Logging
 inv_logger = logging.getLogger('backend.utils.inventory_utils')
@@ -14,7 +16,6 @@ def create_notification(tenant_id, rol_destino, mensaje, tipo, referencia_id=Non
     Inserta una nueva notificación en la base de datos vinculada a un tenant.
     """
     try:
-        new_id = str(uuid.uuid4())
         with get_db_cursor(commit=True) as cur:
             cur.execute(
                 """

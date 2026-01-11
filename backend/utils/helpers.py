@@ -2,6 +2,10 @@ from flask import jsonify
 from flask_jwt_extended import get_jwt_identity
 from backend.db import get_db_cursor
 import uuid
+from functools import wraps
+import logging
+
+app_logger = logging.getLogger(__name__) 
 
 # --- Constantes de Roles (Alineadas con la DB) ---
 # 1: Admin (Control total)
@@ -57,7 +61,7 @@ def check_product_manager_permission(user_role_id):
     return user_role_id in allowed_roles
 
 # =========================================================
-# FUNCIONES DE VALIDACIÓN
+# FUNCIONES DE VALIDACIÓN (Sin cambios)
 # =========================================================
 
 def validate_required_fields(data, fields):

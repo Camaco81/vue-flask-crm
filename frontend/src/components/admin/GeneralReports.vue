@@ -1,273 +1,953 @@
 <template>
   <div class="admin-general-reports">
-    <div class="header-controls">
-      <button @click="goBack" class="btn-back">
-        ← Regresar
+    <!-- Header mejorado -->
+    <div class="reports-header">
+      <button @click="goBack" class="back-btn">
+        <i class="fas fa-arrow-left">⬅️</i>
       </button>
+      <div class="header-content">
+        <h1><i class="fas fa-chart-line"></i> Reportes Generales de Ventas</h1>
+        <p class="subtitle">Monitoreo completo del rendimiento del sistema</p>
+      </div>
+    </div>
+
+    <!-- Filtros de fecha -->
+    <div class="filters-section">
+      <div class="filter-group">
+        <label for="date-filter"><i class="fas fa-calendar-alt"></i> Filtrar por fecha:</label>
+        <select id="date-filter" v-model="dateFilter" @change="applyDateFilter">
+          <option value="all">Todas las fechas</option>
+          <option value="today">Hoy</option>
+          <option value="yesterday">Ayer</option>
+          <option value="week">Esta semana</option>
+          <option value="month">Este mes</option>
+          <option value="year">Este año</option>
+        </select>
+      </div>
+      <div v-if="dateFilter !== 'all'" class="filter-summary">
+        <span class="filter-badge">
+          <i class="fas fa-filter"></i> {{ getDateFilterLabel() }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Estados -->
+    <div v-if="isLoading" class="loading-container">
+      <div class="spinner"></div>
+      <p>Cargando reportes...</p>
     </div>
     
-    <h1>Reportes Generales de Ventas</h1>
-    <p>Aquí se muestra un resumen de todas las ventas del sistema, incluyendo quién las realizó.</p>
-    <div v-if="isLoading" class="loading-message">Cargando reportes de ventas...</div>
-    <div v-if="error" class="error-message">{{ error }}</div>
-
-    <div v-if="!isLoading && !error && allOrders.length === 0" class="no-data-message">
-      Aún no hay órdenes registradas en el sistema.
+    <div v-if="error" class="error-alert">
+      <i class="fas fa-exclamation-circle"></i>
+      <p>{{ error }}</p>
     </div>
 
-    <div v-if="allOrders.length > 0" class="sales-summary">
-      <h3>Resumen Global</h3>
-      <p>Total de Órdenes: <strong>{{ allOrders.length }}</strong></p>
-      <p>Monto Total Vendido en el Sistema: <strong>${{ totalGlobalSalesAmount.toFixed(2) }}</strong></p>
-      
-      <h4>Ventas por Consultor/Vendedor:</h4>
-      <ul class="sales-by-seller-list">
-        <li v-for="(sales, seller) in salesBySeller" :key="seller">
-          <strong>{{ seller === 'Desconocido' ? 'Vendedor Desconocido' : seller }}:</strong> ${{ sales.toFixed(2) }}
-        </li>
-      </ul>
-    </div>
-
-    <div v-if="allOrders.length > 0" class="orders-list">
-      <h2>Detalle de Todas las Órdenes</h2>
-      <div v-for="order in allOrders" :key="order.id" class="order-card">
-        <h3>Orden #{{ order.id }} - Cliente: {{ order.customer_name }}</h3>
-        <p>
-          <strong>Vendedor/Consultor:</strong> 
-          {{ order.seller_email || `ID: ${order.seller_id}` || 'N/A' }}
-        </p>
-        <p><strong>Fecha:</strong> {{ formatDateTime(order.order_date) }}</p>
-        <p><strong>Estado:</strong> <span :class="getStatusClass(order.status)">{{ order.status }}</span></p>
-        <p>
-          <strong>Monto Total:</strong> ${{ parseFloat(order.total_amount || 0).toFixed(2) }}
-        </p>
-        
-        <div class="order-items">
-          <h4>Productos:</h4>
-          <ul>
-            <li v-for="(item, index) in order.items" :key="index">
-              {{ item.product_name }} (x{{ item.quantity }}) - ${{ parseFloat(item.price || 0).toFixed(2) }} c/u
-            </li>
-          </ul>
+    <!-- Contenido principal -->
+    <div v-if="!isLoading && !error" class="reports-content">
+      <!-- Gráfico de mejor vendedor -->
+      <div v-if="allOrders.length > 0" class="chart-section">
+        <h3><i class="fas fa-trophy"></i> Ranking de Vendedores</h3>
+        <div class="chart-container">
+          <canvas ref="topSellersChart"></canvas>
         </div>
+      </div>
+
+      <!-- Resumen mejorado -->
+      <div v-if="allOrders.length > 0" class="summary-cards">
+        <div class="summary-card">
+          <div class="card-icon total-orders">
+            <i class="fas fa-shopping-cart"></i>
+          </div>
+          <h3>{{ filteredOrders.length }}</h3>
+          <p>Órdenes Totales</p>
+        </div>
+        
+        <div class="summary-card">
+          <div class="card-icon total-revenue">
+            <i class="fas fa-dollar-sign"></i>
+          </div>
+          <h3>${{ formatNumber(totalGlobalSalesAmount) }}</h3>
+          <p>Ingresos Totales</p>
+        </div>
+        
+        <div class="summary-card">
+          <div class="card-icon top-seller">
+            <i class="fas fa-crown"></i>
+          </div>
+          <h3>{{ topSeller.name || 'N/A' }}</h3>
+          <p>Mejor Vendedor</p>
+          <small>${{ formatNumber(topSeller.sales || 0) }}</small>
+        </div>
+      </div>
+
+      <!-- Ventas por vendedor mejorada -->
+      <div v-if="allOrders.length > 0" class="sales-summary">
+        <h3><i class="fas fa-users"></i> Desempeño por Vendedor</h3>
+        <div class="sellers-grid">
+          <div v-for="(sales, seller) in salesBySeller" :key="seller" class="seller-card">
+            <div class="seller-avatar">
+              {{ getInitials(seller) }}
+            </div>
+            <div class="seller-info">
+              <h4>{{ seller === 'Desconocido' ? 'Vendedor Desconocido' : seller }}</h4>
+              <p class="seller-revenue">${{ formatNumber(sales) }}</p>
+              <p class="seller-orders">
+                {{ getSellerOrdersCount(seller) }} órdenes
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lista de órdenes mejorada -->
+      <div v-if="filteredOrders.length > 0" class="orders-section">
+        <div class="section-header">
+          <h3><i class="fas fa-list-alt"></i> Detalle de Órdenes ({{ filteredOrders.length }})</h3>
+        </div>
+        
+        <div class="orders-grid">
+          <div v-for="order in filteredOrders" :key="order.id" class="order-card">
+            <div class="order-header">
+              <span class="order-id">#{{ order.id }}</span>
+              <span :class="['order-status', getStatusClass(order.status)]">
+                {{ order.status }}
+              </span>
+            </div>
+            
+            <div class="order-body">
+              <div class="order-info">
+                <h4>{{ order.customer_name }}</h4>
+                <p class="order-seller">
+                  <i class="fas fa-user-tie"></i>
+                  {{ order.seller_email || `ID: ${order.seller_id}` || 'N/A' }}
+                </p>
+                <p class="order-date">
+                  <i class="fas fa-calendar"></i>
+                  {{ formatDate(order.sale_date) }}
+                </p>
+                <p class="order-time">
+                  <i class="fas fa-clock"></i>
+                  {{ formatTime(order.sale_date) }}
+                </p>
+              </div>
+              
+              <div class="order-amount">
+                <h3>${{ formatNumber(order.total_amount_usd) }}</h3>
+              </div>
+            </div>
+            
+            <div v-if="order.items && order.items.length > 0" class="order-items">
+              <p><strong>Productos:</strong></p>
+              <div class="items-list">
+                <span v-for="(item, index) in order.items.slice(0, 2)" :key="index" class="item-tag">
+                  {{ item.product_name }} (x{{ item.quantity }})
+                </span>
+                <span v-if="order.items.length > 2" class="item-tag more">
+                  +{{ order.items.length - 2 }} más
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mensaje sin datos -->
+      <div v-if="allOrders.length === 0" class="no-data-message">
+        <i class="fas fa-chart-pie"></i>
+        <h3>Aún no hay órdenes registradas</h3>
+        <p>No se han registrado ventas en el sistema</p>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import axios from '../../axios.js'; 
+import { Chart, registerables } from 'chart.js';
+import axios from '../../axios.js';
+
+Chart.register(...registerables);
 
 export default {
   name: 'AdminGeneralReports',
   data() {
     return {
       allOrders: [],
+      filteredOrders: [],
       isLoading: false,
-      error: ''
+      error: '',
+      dateFilter: 'all',
+      topSellersChart: null
     };
   },
   computed: {
     totalGlobalSalesAmount() {
-      // 🟢 Mejorado: Asegura que si order.total_amount es nulo/undefined, usa 0
-      return this.allOrders.reduce((sum, order) => sum + parseFloat(order.total_amount || 0), 0);
+      return this.filteredOrders.reduce((sum, order) => 
+        sum + parseFloat(order.total_amount_usd || 0), 0
+      );
     },
     salesBySeller() {
       const sales = {};
-      this.allOrders.forEach(order => {
-        const sellerKey = order.seller_email || (order.seller_id ? `Vendedor ID: ${order.seller_id}` : 'Desconocido');
+      this.filteredOrders.forEach(order => {
+        const sellerKey = order.seller_email || 
+                         (order.seller_id ? `Vendedor ID: ${order.seller_id}` : 'Desconocido');
         
         if (!sales[sellerKey]) {
           sales[sellerKey] = 0;
         }
-        // 🟢 Mejorado: Asegura que si order.total_amount es nulo/undefined, usa 0
-        sales[sellerKey] += parseFloat(order.total_amount || 0);
+        sales[sellerKey] += parseFloat(order.total_amount_usd || 0);
       });
       return sales;
+    },
+    topSeller() {
+      let top = { name: '', sales: 0 };
+      Object.entries(this.salesBySeller).forEach(([name, sales]) => {
+        if (sales > top.sales) {
+          top = { name, sales };
+        }
+      });
+      return top;
     }
   },
   async created() {
     await this.fetchAllOrders();
   },
+  mounted() {
+    if (this.allOrders.length > 0) {
+      this.$nextTick(() => {
+        this.renderTopSellersChart();
+      });
+    }
+  },
+  beforeUnmount() {
+    if (this.topSellersChart) {
+      this.topSellersChart.destroy();
+    }
+  },
   methods: {
-    // 🚨 FUNCIÓN AÑADIDA PARA REGRESAR EN EL HISTORIAL DE NAVEGACIÓN
     goBack() {
       this.$router.go(-1);
     },
+    
     async fetchAllOrders() {
       this.isLoading = true;
       this.error = '';
       try {
-        const response = await axios.get('/api/sales'); 
+        const response = await axios.get('/api/sales');
         this.allOrders = response.data;
+        this.filteredOrders = [...this.allOrders];
       } catch (error) {
-        console.error('Error al obtener todos los reportes de ventas:', error);
-        this.error = error.response?.data?.msg || 'Error al cargar los reportes generales de ventas. Verifica tus permisos.';
+        console.error('Error al obtener reportes:', error);
+        this.error = error.response?.data?.msg || 
+                    'Error al cargar los reportes. Verifica tus permisos.';
       } finally {
         this.isLoading = false;
+        if (this.allOrders.length > 0) {
+          this.$nextTick(() => {
+            this.renderTopSellersChart();
+          });
+        }
       }
     },
-    formatDateTime(dateTimeString) {
-      const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
-      if (!dateTimeString) return 'Fecha desconocida';
+    
+    applyDateFilter() {
+      if (this.dateFilter === 'all') {
+        this.filteredOrders = [...this.allOrders];
+        return;
+      }
+      
+      const now = new Date();
+      let startDate = new Date();
+      
+      switch (this.dateFilter) {
+        case 'today':
+          startDate.setHours(0, 0, 0, 0);
+          break;
+        case 'yesterday': {  // ← Agrega llave de apertura aquí
+      startDate.setDate(now.getDate() - 1);
+      startDate.setHours(0, 0, 0, 0);
+      const yesterdayEnd = new Date(startDate);  // ← Ahora está dentro de un bloque
+      yesterdayEnd.setHours(23, 59, 59, 999);
+      this.filteredOrders = this.allOrders.filter(order => {
+        const orderDate = new Date(order.sale_date);
+        return orderDate >= startDate && orderDate <= yesterdayEnd;
+      });
+      return;
+    }  
+        case 'week':
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case 'month':
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+        case 'year':
+          startDate.setFullYear(now.getFullYear() - 1);
+          break;
+      }
+      
+      this.filteredOrders = this.allOrders.filter(order => {
+        const orderDate = new Date(order.sale_date);
+        return orderDate >= startDate && orderDate <= now;
+      });
+      
+      this.renderTopSellersChart();
+    },
+    
+    getDateFilterLabel() {
+      switch (this.dateFilter) {
+        case 'today': return 'Hoy';
+        case 'yesterday': return 'Ayer';
+        case 'week': return 'Esta semana';
+        case 'month': return 'Este mes';
+        case 'year': return 'Este año';
+        default: return 'Todas las fechas';
+      }
+    },
+    
+    renderTopSellersChart() {
+      if (this.topSellersChart) {
+        this.topSellersChart.destroy();
+      }
+      
+      const ctx = this.$refs.topSellersChart?.getContext('2d');
+      if (!ctx) return;
+      
+      // Preparar datos para el gráfico
+      const sellersData = Object.entries(this.salesBySeller)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5); // Top 5 vendedores
+      
+      this.topSellersChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sellersData.map(([name]) => 
+            name.length > 15 ? name.substring(0, 12) + '...' : name
+          ),
+          datasets: [{
+            label: 'Ingresos ($)',
+            data: sellersData.map(([, sales]) => sales),
+            backgroundColor: [
+              'rgba(102, 126, 234, 0.8)',
+              'rgba(118, 75, 162, 0.8)',
+              'rgba(59, 130, 246, 0.8)',
+              'rgba(16, 185, 129, 0.8)',
+              'rgba(245, 158, 11, 0.8)'
+            ],
+            borderColor: [
+              '#667eea',
+              '#764ba2',
+              '#3b82f6',
+              '#10b981',
+              '#f59e0b'
+            ],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              callbacks: {
+                label: (context) => `$${this.formatNumber(context.raw)}`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: (value) => `$${this.formatNumber(value)}`
+              }
+            }
+          }
+        }
+      });
+    },
+    
+    formatNumber(value) {
+      return new Intl.NumberFormat('es-ES', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(value);
+    },
+    
+    formatDate(dateString) {
+      if (!dateString) return 'N/A';
       try {
-        return new Date(dateTimeString).toLocaleDateString('es-ES', options);
+        return new Date(dateString).toLocaleDateString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        });
       } catch {
         return 'Fecha inválida';
       }
     },
+    
+    formatTime(dateString) {
+      if (!dateString) return '';
+      try {
+        return new Date(dateString).toLocaleTimeString('es-ES', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch {
+        return '';
+      }
+    },
+    
     getStatusClass(status) {
       return {
-        'status-pendiente': status === 'pendiente',
-        'status-completado': status === 'completado',
-        'status-cancelado': status === 'cancelado',
-      };
+        'pendiente': 'status-pending',
+        'completado': 'status-completed',
+        'cancelado': 'status-cancelled'
+      }[status] || 'status-unknown';
+    },
+    
+    getInitials(name) {
+      if (!name || name === 'Desconocido') return '?';
+      return name
+        .split(' ')
+        .map(part => part.charAt(0))
+        .join('')
+        .toUpperCase()
+        .substring(0, 2);
+    },
+    
+    getSellerOrdersCount(sellerName) {
+      return this.filteredOrders.filter(order => {
+        const sellerKey = order.seller_email || 
+                         (order.seller_id ? `Vendedor ID: ${order.seller_id}` : 'Desconocido');
+        return sellerKey === sellerName;
+      }).length;
     }
   }
-}
+};
 </script>
 
-
 <style scoped>
-/* El estilo se mantiene idéntico, ya está bien estructurado y diseñado. */
 .admin-general-reports {
-  padding: 20px;
-  max-width: 1000px;
-  margin: 30px auto;
-  background-color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-  color: #333;
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 0 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-h1 {
-  text-align: center;
-  color: #007bff;
+/* Header mejorado */
+.reports-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.back-btn {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  color: #495057;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.back-btn:hover {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+  transform: translateX(-3px);
+}
+
+.header-content h1 {
+  color: white;
+  margin: 0 0 5px 0;
+  font-size: 1.8rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-content h1 i {
+  color: #667eea;
+}
+
+.subtitle {
+  color: #dbe4f1;
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* Filtros */
+.filters-section {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   margin-bottom: 25px;
 }
 
-h2, h3, h4 {
-  color: #444;
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 15px;
   margin-bottom: 15px;
 }
 
-.loading-message, .error-message, .no-data-message {
-  text-align: center;
-  padding: 15px;
-  border-radius: 5px;
-  margin-top: 20px;
-}
-
-.loading-message {
-  background-color: #e0f7fa;
-  color: #007bff;
-}
-
-.error-message {
-  background-color: #ffe0e0;
-  color: #dc3545;
-  border: 1px solid #dc3545;
-}
-
-.no-data-message {
-  background-color: #f0f0f0;
-  color: #666;
-}
-
-.sales-summary {
-  background-color: #f8f9fa;
-  border: 1px solid #e2e6ea;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 30px;
-  text-align: center;
-}
-
-.sales-summary p {
-  font-size: 1.1em;
-  margin: 5px 0;
-}
-
-.sales-summary strong {
-  color: #007bff;
-}
-
-.sales-by-seller-list {
-  list-style: none;
-  padding: 0;
-  margin-top: 15px;
+.filter-group label {
+  font-weight: 600;
+  color: #4a5568;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 15px;
+  align-items: center;
+  gap: 8px;
 }
 
-.sales-by-seller-list li {
-  background-color: #e9ecef;
+.filter-group select {
   padding: 10px 15px;
-  border-radius: 5px;
-  font-size: 0.95em;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  background: white;
+  color: #4a5568;
+  font-size: 0.95rem;
+  cursor: pointer;
+  min-width: 200px;
+  transition: border-color 0.3s;
 }
 
-.orders-list {
-  margin-top: 30px;
+.filter-group select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.filter-summary {
+  margin-top: 10px;
+}
+
+.filter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #e8f4ff;
+  color: #667eea;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Estados */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e2e8f0;
+  border-top: 3px solid #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-alert {
+  background: #fed7d7;
+  border: 1px solid #fc8181;
+  border-radius: 8px;
+  padding: 15px;
+  margin: 20px 0;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  color: #c53030;
+}
+
+.error-alert i {
+  font-size: 1.2rem;
+}
+
+/* Tarjetas de resumen */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.summary-card {
+  background: white;
+  border-radius: 12px;
+  padding: 25px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.summary-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+}
+
+.card-icon {
+  width: 60px;
+  height: 60px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 15px;
+  font-size: 1.5rem;
+  color: white;
+}
+
+.total-orders {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.total-revenue {
+  background: linear-gradient(135deg, #4facfe, #00f2fe);
+}
+
+.top-seller {
+  background: linear-gradient(135deg, #f093fb, #f5576c);
+}
+
+.summary-card h3 {
+  font-size: 1.8rem;
+  margin: 0 0 8px 0;
+  color: #2d3748;
+}
+
+.summary-card p {
+  margin: 0 0 5px 0;
+  color: #718096;
+  font-weight: 500;
+}
+
+.summary-card small {
+  color: #a0aec0;
+  font-size: 0.9rem;
+}
+
+/* Gráfico */
+.chart-section {
+  background: white;
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 30px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.chart-section h3 {
+  margin: 0 0 20px 0;
+  color: #2d3748;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chart-section h3 i {
+  color: #f59e0b;
+}
+
+.chart-container {
+  position: relative;
+  height: 300px;
+  width: 100%;
+}
+
+/* Vendedores grid */
+.sales-summary {
+  background: white;
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 30px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.sales-summary h3 {
+  margin: 0 0 20px 0;
+  color: #2d3748;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sellers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.seller-card {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.3s ease;
+}
+
+.seller-card:hover {
+  background: white;
+  border-color: #cbd5e0;
+  transform: translateY(-3px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+}
+
+.seller-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.seller-info h4 {
+  margin: 0 0 5px 0;
+  color: #2d3748;
+  font-size: 1rem;
+}
+
+.seller-revenue {
+  margin: 0 0 3px 0;
+  color: #667eea;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.seller-orders {
+  margin: 0;
+  color: #718096;
+  font-size: 0.9rem;
+}
+
+/* Órdenes */
+.orders-section {
+  background: white;
+  border-radius: 12px;
+  padding: 25px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.section-header {
+  margin-bottom: 25px;
+}
+
+.section-header h3 {
+  margin: 0;
+  color: #2d3748;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.orders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
 }
 
 .order-card {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.order-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.order-header {
+  padding: 15px;
+  background: #f7fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.order-id {
+  font-weight: 600;
+  color: #4a5568;
+}
+
+.order-status {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-cancelled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-unknown {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.order-body {
   padding: 20px;
-  margin-bottom: 20px;
-  background-color: #fdfdfd;
-  box-shadow: 0 1px 5px rgba(0,0,0,0.05);
 }
 
-.order-card h3 {
-  color: #007bff;
-  margin-top: 0;
-  margin-bottom: 10px;
+.order-info h4 {
+  margin: 0 0 10px 0;
+  color: #2d3748;
 }
 
-.order-card p {
-  margin-bottom: 5px;
-  font-size: 0.95em;
+.order-seller, .order-date, .order-time {
+  margin: 0 0 8px 0;
+  color: #718096;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.order-seller i, .order-date i, .order-time i {
+  color: #a0aec0;
+  width: 16px;
+}
+
+.order-amount {
+  margin-top: 15px;
+  padding: 15px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.order-amount h3 {
+  margin: 0;
+  font-size: 1.5rem;
 }
 
 .order-items {
-  margin-top: 15px;
-  padding-top: 10px;
-  border-top: 1px dashed #eee;
+  padding: 15px;
+  border-top: 1px solid #e2e8f0;
 }
 
-.order-items h4 {
-  color: #555;
-  margin-bottom: 8px;
+.items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
-.order-items ul {
-  list-style-type: disc;
-  padding-left: 20px;
-  margin-top: 0;
+.item-tag {
+  background: #e8f4ff;
+  color: #667eea;
+  padding: 4px 10px;
+  border-radius: 15px;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
-.order-items li {
-  margin-bottom: 3px;
-  font-size: 0.9em;
+.item-tag.more {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
-.status-pendiente {
-  color: #ffc107; 
-  font-weight: bold;
+/* Sin datos */
+.no-data-message {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
-.status-completado {
-  color: #28a745; 
-  font-weight: bold;
+.no-data-message i {
+  font-size: 3rem;
+  color: #cbd5e0;
+  margin-bottom: 20px;
 }
 
-.status-cancelado {
-  color: #dc3545; 
-  font-weight: bold;
+.no-data-message h3 {
+  margin: 0 0 10px 0;
+  color: #4a5568;
+}
+
+.no-data-message p {
+  margin: 0;
+  color: #a0aec0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .admin-general-reports {
+    padding: 0 15px;
+  }
+  
+  .reports-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .filter-group {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .sellers-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .orders-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .chart-container {
+    height: 250px;
+  }
 }
 </style>
