@@ -1,7 +1,8 @@
-# En backend/utils/__init__.py
+# backend/utils/__init__.py
 from .helpers import (
     ADMIN_ROLE_ID, 
-    SELLER_ROLE_ID,          # <--- ¡Debe estar aquí!
+    SELLER_ROLE_ID,
+    WAREHOUSE_ROLE_ID,
     CUSTOMER_ROLE_ID,
     get_user_and_role, 
     check_admin_permission, 
