@@ -1,87 +1,69 @@
-from flask import jsonify
-from flask_jwt_extended import get_jwt_identity
+from flask import jsonify, request
+from flask_jwt_extended import get_jwt_identity, get_jwt
 from backend.db import get_db_cursor
-import uuid
 from functools import wraps
 import logging
 
 app_logger = logging.getLogger(__name__) 
 
-# --- Constantes de Roles (Alineadas con la DB) ---
-# 1: Admin (Control total)
-# 2: Seller/Vendedor (Ventas y Clientes)
-# 3: Warehouse/Almacenista (Gestión de Productos/Stock)
+# --- 1. Constantes de Roles ---
 ADMIN_ROLE_ID = 1
 SELLER_ROLE_ID = 2
 WAREHOUSE_ROLE_ID = 3
+CUSTOMER_ROLE_ID = 4
 
-# =========================================================
-# FUNCIONES DE USUARIO Y ROL
-# =========================================================
-
+# --- 2. Funciones de Identidad ---
 def get_user_and_role():
     """
-    Obtiene el ID del usuario y su role_id desde la DB.
+    Obtiene u_id, role_id y tenant_id desde el JWT y la DB.
     """
     current_user_id = get_jwt_identity() 
+    claims = get_jwt() # Obtenemos datos extra del token
     
     if not current_user_id:
-        return None, None
+        return None, None, None
         
     try:
-        # Asegurar formato string para el UUID en la consulta
-        u_id = str(current_user_id) 
+        u_id = str(current_user_id)
+        # Priorizamos el tenant_id que viene en el token (más rápido)
+        tenant_id = claims.get('tenant_id')
 
         with get_db_cursor() as cur:
-            cur.execute("SELECT role_id FROM users WHERE id = %s", (u_id,))
-            user_record = cur.fetchone()
-            if user_record:
-                return u_id, user_record['role_id']
-            return None, None
+            # Si no está en el token, lo buscamos en la DB una vez
+            cur.execute("SELECT role_id, tenant_id FROM users WHERE id = %s", (u_id,))
+            record = cur.fetchone()
+            if record:
+                return u_id, record['role_id'], record['tenant_id'] or tenant_id
+            
+        return None, None, None
     except Exception as e:
-        # En producción, usa logging en lugar de print
-        return None, None
+        app_logger.error(f"Error en get_user_and_role: {e}")
+        return None, None, None
 
-# =========================================================
-# FUNCIONES DE PERMISOS (Lógica de Negocio)
-# =========================================================
+# --- 3. Decoradores de Permisos ---
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        _, role_id, _ = get_user_and_role()
+        if role_id != ADMIN_ROLE_ID:
+            return jsonify({"msg": "Acceso restringido: Solo Administradores"}), 403
+        return f(*args, **kwargs)
+    return decorated_function
 
-def check_admin_permission(user_role_id):
-    """Solo el administrador principal."""
-    return user_role_id == ADMIN_ROLE_ID
-
-def check_seller_permission(user_role_id):
-    """Permiso para realizar ventas: Admin y Vendedores."""
-    return user_role_id in [ADMIN_ROLE_ID, SELLER_ROLE_ID]
-
-def check_product_manager_permission(user_role_id):
-    """Permiso para gestionar inventario: Admin y Almacenistas (y opcionalmente vendedores)."""
-    # Aquí incluimos al 1, 2 y 3 para que todos puedan ver/gestionar según tu requerimiento
-    allowed_roles = [ADMIN_ROLE_ID, SELLER_ROLE_ID, WAREHOUSE_ROLE_ID]
-    return user_role_id in allowed_roles
-
-# =========================================================
-# FUNCIONES DE VALIDACIÓN (Sin cambios)
-# =========================================================
-
+# --- 4. Validaciones de Datos ---
 def validate_required_fields(data, fields):
     """
     Valida que los campos existan y no estén vacíos.
-    Retorna el nombre del primer campo con error o None.
     """
     if not isinstance(data, dict):
         return "FORMATO_JSON_INVALIDO" 
 
     for field in fields:
-        if field not in data or data[field] is None:
+        value = data.get(field)
+        if value is None:
             return field
-        
-        value = data[field]
-        # Validar strings vacíos
         if isinstance(value, str) and not value.strip():
             return field
-        # Validar listas o dicts vacíos (como la lista de items en una venta)
         if isinstance(value, (list, dict)) and len(value) == 0:
             return field
-            
     return None
