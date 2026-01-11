@@ -13,7 +13,7 @@ def register():
     email = data.get('email')
     password = data.get('password')
     # En un sistema real, el tenant_id vendría del nombre de la empresa al registrarse
-    tenant_id = data.get('tenant_id', 'empresa-default') 
+    tenant_id = data.get('company_name') or data.get('tenant_id')
     role_id = data.get('role_id', 2) # 2: Vendedor por defecto
 
     if not email or not password:
