@@ -7,11 +7,11 @@ from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 from dotenv import load_dotenv
 from flask_apscheduler import APScheduler 
+from backend.utils.inventory_utils import verificar_tendencia_y_alertar
 
 # --- Importaciones de Módulos Locales (Absolutas) ---
 from backend.config import Config
-from backend.utils.inventory_utils import verificar_stock_y_alertar as verificar_tendencia_y_alertar
-# Blueprints (Rutas)
+
 from backend.auth import auth_bp
 from backend.routes.customer_routes import customer_bp
 from backend.routes.product_routes import product_bp
@@ -69,7 +69,7 @@ if not scheduler.running:
         id='verificar_alertas_estacionales',
         func=verificar_tendencia_y_alertar,
         trigger='cron',
-        hour=2,
+        hour=0,
         minute=0,
     )
     app_logger.info("Tarea de alertas estacionales programada para las 02:00 AM.")
