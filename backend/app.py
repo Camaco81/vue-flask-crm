@@ -66,11 +66,11 @@ if not scheduler.running:
 
     # Definición de la tarea programada: Verificar tendencias diarias a las 02:00 AM
     scheduler.add_job(
-        id='verificar_alertas_estacionales',
-        func=verificar_tendencia_y_alertar,
+       id='verificar_alertas_estacionales',
+        func=verificar_tendencia_y_alertar, # <--- Ahora SÍ existe en inventory_utils
         trigger='cron',
         hour=0,
-        minute=0,
+        minute=0
     )
     app_logger.info("Tarea de alertas estacionales programada para las 02:00 AM.")
 
