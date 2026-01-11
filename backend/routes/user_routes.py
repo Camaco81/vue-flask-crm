@@ -16,9 +16,9 @@ ADMIN_ROLE_ID = 1
 CONSULTOR_ROLE_ID = 2 
 ALLOWED_ROLES_FOR_ADMIN = (ADMIN_ROLE_ID, CONSULTOR_ROLE_ID, ALMACENISTA_ROLE_ID)
 
-# Definición de los dos Blueprints necesarios
-user_bp = Blueprint('user', __name__)  # Para /profile
-admin_bp = Blueprint('admin', __name__) # Para /users
+# Definición de Blueprints
+user_bp = Blueprint('user', __name__) 
+admin_bp = Blueprint('admin', __name__)
 
 def get_current_tenant():
     """Extrae el tenant_id del token JWT del Admin logueado."""
@@ -26,13 +26,14 @@ def get_current_tenant():
     return claims.get('tenant_id', 'default')
 
 # =========================================================
-# RUTAS DE USUARIO (user_bp) -> Prefijo /api en app.py
+# RUTAS DE USUARIO (user_bp)
 # =========================================================
 
 @user_bp.route('/profile', methods=['GET'])
 @jwt_required()
 def get_user_profile():
-    current_user_id, _ = get_user_and_role()
+    # AJUSTE: Usamos "_" para ignorar los valores adicionales que devuelve la función
+    current_user_id, user_role_id, *_ = get_user_and_role()
     tenant_id = get_current_tenant()
 
     try:
@@ -58,13 +59,14 @@ def get_user_profile():
         return jsonify({"msg": "Error interno"}), 500
 
 # =========================================================
-# GESTIÓN DE EMPLEADOS (admin_bp) -> Prefijo /admin en app.py
+# GESTIÓN DE EMPLEADOS (admin_bp)
 # =========================================================
 
 @admin_bp.route('/users', methods=['GET']) 
 @jwt_required()
 def admin_list_users():
-    current_user_id, user_role_id = get_user_and_role()
+    # AJUSTE: Se añade el desempaquetado extendido (*_) para evitar el ValueError
+    current_user_id, user_role_id, *_ = get_user_and_role()
     tenant_id = get_current_tenant()
     
     if not check_admin_permission(user_role_id):
@@ -91,7 +93,8 @@ def admin_list_users():
 @admin_bp.route('/users', methods=['POST']) 
 @jwt_required()
 def admin_create_user():
-    current_user_id, user_role_id = get_user_and_role()
+    # AJUSTE: Se aplica la corrección aquí también
+    current_user_id, user_role_id, *_ = get_user_and_role()
     tenant_id = get_current_tenant()
     
     if not check_admin_permission(user_role_id):
@@ -99,7 +102,7 @@ def admin_create_user():
 
     data = request.get_json()
     nombre = data.get('nombre')
-    cedula = data.get('cedula')
+    cedula = data.get('cedula') # Campo importante en tu DB 📇
     email = data.get('email')
     password_raw = data.get('password')
     role_id = data.get('role_id')
@@ -128,7 +131,8 @@ def admin_create_user():
 @admin_bp.route('/users/<uuid:user_id>', methods=['DELETE']) 
 @jwt_required()
 def admin_delete_user(user_id):
-    current_user_id, user_role_id = get_user_and_role()
+    # AJUSTE: Corrección final para mantener consistencia
+    current_user_id, user_role_id, *_ = get_user_and_role()
     tenant_id = get_current_tenant()
 
     if not check_admin_permission(user_role_id):

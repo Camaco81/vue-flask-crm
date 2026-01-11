@@ -88,8 +88,6 @@ app.register_blueprint( alert_bp)
 app.register_blueprint(rate_bp, url_prefix='/api')
 app.register_blueprint(user_bp, url_prefix='/api') # Contiene /profile
 
-# Rutas de administración (con prefijo /admin)
-# Ruta final: /admin/users
 app.register_blueprint(admin_bp, url_prefix='/admin')
 
 
