@@ -1,49 +1,41 @@
 from backend.db import get_db_cursor
-import uuid
 from datetime import date
+import uuid
 import logging
 
-STOCK_THRESHOLD = 10 
-
-# Configura tu logger si es necesario
+# Configuración de Logging
 inv_logger = logging.getLogger('backend.utils.inventory_utils')
 
-def create_notification(rol_destino: str, mensaje: str, tipo: str, referencia_id: str = None):
-    """Inserta una nueva notificación en la base de datos."""
+# Umbral por defecto para productos normales
+STOCK_THRESHOLD = 10 
+
+def create_notification(tenant_id, rol_destino, mensaje, tipo, referencia_id=None):
+    """
+    Inserta una nueva notificación en la base de datos vinculada a un tenant.
+    """
     try:
         new_id = str(uuid.uuid4())
         with get_db_cursor(commit=True) as cur:
             cur.execute(
                 """
-                INSERT INTO notifications (id, rol_destino, mensaje, tipo, referencia_id, is_read)
-                VALUES (%s, %s, %s, %s, %s, FALSE)
+                INSERT INTO notifications (id, tenant_id, rol_destino, mensaje, tipo, referencia_id, is_read, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, FALSE, CURRENT_TIMESTAMP)
                 """,
-                (new_id, rol_destino, mensaje, tipo, referencia_id)
+                (new_id, tenant_id, rol_destino, mensaje, tipo, referencia_id)
             )
-        print(f"Notificación creada: {mensaje}")
+        inv_logger.info(f"Notificación creada para tenant {tenant_id}: {tipo}")
     except Exception as e:
-        print(f"Error al crear notificación: {e}")
-
-# =========================================================
-# ARCHIVO: backend/utils/inventory_utils.py
-# =========================================================
-
-from backend.db import get_db_cursor
-import logging
-# ⚠️ IMPORTANTE: Importar la constante definida en el archivo de rutas
-
-
-# Configura tu logger si es necesario
-inv_logger = logging.getLogger('backend.utils.inventory_utils')
+        inv_logger.error(f"Error al crear notificación: {e}")
 
 def verificar_stock_y_alertar(product_id):
-    """Verifica el stock de un producto contra el umbral de alerta."""
-    
+    """
+    Verifica el stock de un producto individual. 
+    Retorna el mensaje de alerta si el stock es bajo, de lo contrario None.
+    """
     try:
         with get_db_cursor() as cur:
-            # Consulta corregida para usar 'stock'
             cur.execute(
-                "SELECT name, stock FROM products WHERE id = %s", 
+                "SELECT name, stock, tenant_id FROM products WHERE id = %s", 
                 (product_id,)
             )
             product = cur.fetchone()
@@ -53,82 +45,94 @@ def verificar_stock_y_alertar(product_id):
 
             current_stock = product['stock']
             product_name = product['name']
+            tenant_id = product['tenant_id']
 
             if current_stock <= STOCK_THRESHOLD:
-                return (
+                mensaje = (
                     f"ALERTA DE STOCK BAJO: El producto '{product_name}' "
-                    f"tiene solo {current_stock} unidades restantes (Umbral: {STOCK_THRESHOLD})."
+                    f"tiene solo {current_stock} unidades restantes."
                 )
+                
+                # Opcional: Crear la notificación persistente automáticamente
+                create_notification(
+                    tenant_id=tenant_id,
+                    rol_destino='almacenista',
+                    mensaje=mensaje,
+                    tipo='stock_bajo',
+                    referencia_id=product_id
+                )
+                
+                return mensaje
             
             return None 
             
     except Exception as e:
-        inv_logger.error(f"Error en verificar_stock_y_alertar (product_id: {product_id}): {e}", exc_info=True)
+        inv_logger.error(f"Error en verificar_stock_y_alertar (ID: {product_id}): {e}")
         return None
 
+# Configuración de estacionalidad para ferreterías
 ESTACIONALIDAD = [
     {
         'event': 'Navidad e Iluminación',
-        'months': [11, 12], # Noviembre y Diciembre
+        'months': [11, 12],
         'categories': ['Iluminación Decorativa', 'Extensiones', 'Herramientas Eléctricas'],
-        'stock_threshold': 50 # Umbral de stock MÁS ALTO para temporada
+        'stock_threshold': 50 
     },
     {
         'event': 'Reformas de Verano',
-        'months': [7, 8], # Julio y Agosto
+        'months': [7, 8],
         'categories': ['Pinturas', 'Brochas', 'Materiales Secos'],
         'stock_threshold': 80 
     },
     {
         'event': 'Mantenimiento de Jardín',
-        'months': [4, 5], # Abril y Mayo (Inicio de temporada de lluvias)
+        'months': [4, 5],
         'categories': ['Mangueras', 'Herramientas de Jardinería', 'Bombas de Agua'],
         'stock_threshold': 40
     }
 ]
 
-def verificar_tendencia_y_alertar():
+def verificar_tendencia_y_alertar(tenant_id=None):
     """
-    Verifica los productos en tendencia por temporada y genera una alerta si 
-    el stock está por debajo del umbral estacional para esas categorías.
+    Escanea el inventario buscando productos que deban reponerse según la temporada.
+    Si se pasa tenant_id, filtra por esa empresa; si no, procesa todo (para tareas programadas).
     """
     current_month = date.today().month
     
-    # 1. Iterar sobre las temporadas
     for season in ESTACIONALIDAD:
         if current_month in season['months']:
-            
-            # 2. Iterar sobre las categorías de la temporada activa
             for category in season['categories']:
                 
-                # 3. Consulta SQL: Busca productos de la categoría activa con stock bajo el umbral de temporada
+                # Query optimizada: busca productos con stock bajo el umbral estacional
                 query = """
-                SELECT id, name, stock_actual
-                FROM products
-                WHERE category = %s AND stock_actual < %s
+                    SELECT id, name, stock, tenant_id
+                    FROM products
+                    WHERE category = %s AND stock < %s
                 """
+                params = [category, season['stock_threshold']]
+                
+                if tenant_id:
+                    query += " AND tenant_id = %s"
+                    params.append(tenant_id)
                 
                 try:
                     with get_db_cursor() as cur:
-                        cur.execute(query, (category, season['stock_threshold']))
+                        cur.execute(query, tuple(params))
                         productos_criticos = cur.fetchall()
 
-                        # 4. Generar alertas para cada producto encontrado
                         for product in productos_criticos:
-                            
                             mensaje = (
-                                f"🔔 Aviso de Temporada ({season['event']}): El producto "
-                                f"'{product['name']}' (Cat: {category}) tiene stock bajo "
-                                f"({product['stock_actual']} unidades) para la demanda proyectada. ¡Reponer!"
+                                f"🔔 Temporada ({season['event']}): '{product['name']}' "
+                                f"tiene solo {product['stock']} unidades. "
+                                f"Se recomienda subir a {season['stock_threshold']} por alta demanda."
                             )
                             
                             create_notification(
+                                tenant_id=product['tenant_id'],
                                 rol_destino='almacenista',
                                 mensaje=mensaje,
                                 tipo='tendencia_alta',
                                 referencia_id=product['id']
                             )
-                            print(f"Alerta de Tendencia generada para: {product['name']}")
-
                 except Exception as e:
-                    print(f"Error en verificar_tendencia_y_alertar (SQL): {e}")
+                    inv_logger.error(f"Error en tarea de tendencia: {e}")

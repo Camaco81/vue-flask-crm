@@ -3,10 +3,13 @@ from flask_jwt_extended import get_jwt_identity
 from backend.db import get_db_cursor
 import uuid
 
-# --- Constantes de Roles ---
+# --- Constantes de Roles (Alineadas con la DB) ---
+# 1: Admin (Control total)
+# 2: Seller/Vendedor (Ventas y Clientes)
+# 3: Warehouse/Almacenista (Gestión de Productos/Stock)
 ADMIN_ROLE_ID = 1
-SELLER_ROLE_ID = 2 # El nuevo nombre para el rol de 'consultor' o 'vendedor'
-CUSTOMER_ROLE_ID = 3
+SELLER_ROLE_ID = 2
+WAREHOUSE_ROLE_ID = 3
 
 # =========================================================
 # FUNCIONES DE USUARIO Y ROL
@@ -14,8 +17,7 @@ CUSTOMER_ROLE_ID = 3
 
 def get_user_and_role():
     """
-    Obtiene el ID del usuario actual (UUID) y su role_id (entero) desde la base de datos.
-    Retorna (user_id: str, role_id: int) o (None, None).
+    Obtiene el ID del usuario y su role_id desde la DB.
     """
     current_user_id = get_jwt_identity() 
     
@@ -23,42 +25,36 @@ def get_user_and_role():
         return None, None
         
     try:
-        if not isinstance(current_user_id, uuid.UUID):
-            current_user_id = str(current_user_id) 
+        # Asegurar formato string para el UUID en la consulta
+        u_id = str(current_user_id) 
 
         with get_db_cursor() as cur:
-            cur.execute("SELECT role_id FROM users WHERE id = %s", (current_user_id,))
+            cur.execute("SELECT role_id FROM users WHERE id = %s", (u_id,))
             user_record = cur.fetchone()
             if user_record:
-                return current_user_id, user_record['role_id']
+                return u_id, user_record['role_id']
             return None, None
     except Exception as e:
-        print(f"Error en get_user_and_role: {e}") 
+        # En producción, usa logging en lugar de print
         return None, None
 
 # =========================================================
-# FUNCIONES DE PERMISOS
+# FUNCIONES DE PERMISOS (Lógica de Negocio)
 # =========================================================
 
 def check_admin_permission(user_role_id):
-    """
-    Verifica si el role_id del usuario es de administrador (ADMIN_ROLE_ID).
-    """
+    """Solo el administrador principal."""
     return user_role_id == ADMIN_ROLE_ID
 
 def check_seller_permission(user_role_id):
-    """
-    Verifica si el role_id del usuario tiene permisos de VENTA.
-    (Roles permitidos: Admin (1) y Vendedor (2)).
-    """
-    return user_role_id == ADMIN_ROLE_ID or user_role_id == SELLER_ROLE_ID
+    """Permiso para realizar ventas: Admin y Vendedores."""
+    return user_role_id in [ADMIN_ROLE_ID, SELLER_ROLE_ID]
 
-# Mantengo esta función para evitar romper otras dependencias que la usen.
 def check_product_manager_permission(user_role_id):
-    """
-    Alias. Verifica si el role_id del usuario tiene permisos de gestión de productos.
-    """
-    return check_seller_permission(user_role_id) 
+    """Permiso para gestionar inventario: Admin y Almacenistas (y opcionalmente vendedores)."""
+    # Aquí incluimos al 1, 2 y 3 para que todos puedan ver/gestionar según tu requerimiento
+    allowed_roles = [ADMIN_ROLE_ID, SELLER_ROLE_ID, WAREHOUSE_ROLE_ID]
+    return user_role_id in allowed_roles
 
 # =========================================================
 # FUNCIONES DE VALIDACIÓN
@@ -66,32 +62,22 @@ def check_product_manager_permission(user_role_id):
 
 def validate_required_fields(data, fields):
     """
-    Valida que los campos requeridos estén presentes, no sean None y no estén vacíos.
-    
-    :return: Nombre del campo faltante (str) si hay un error, o None si todo está bien.
+    Valida que los campos existan y no estén vacíos.
+    Retorna el nombre del primer campo con error o None.
     """
     if not isinstance(data, dict):
-        return "JSON_FORMAT_ERROR" 
+        return "FORMATO_JSON_INVALIDO" 
 
     for field in fields:
-        if field not in data:
+        if field not in data or data[field] is None:
             return field
         
         value = data[field]
-
-        if value is None:
-            return field
-
+        # Validar strings vacíos
         if isinstance(value, str) and not value.strip():
             return field
-            
-        if isinstance(value, (list, dict)) and not value:
+        # Validar listas o dicts vacíos (como la lista de items en una venta)
+        if isinstance(value, (list, dict)) and len(value) == 0:
             return field
             
     return None
-
-ALLOWED_PRODUCT_MANAGER_ROLES = [1, 2, 3] 
-
-def check_product_manager_permission(user_role_id):
-    """Verifica si el ID de rol tiene permiso para gestionar productos (crear/modificar/eliminar)."""
-    return user_role_id in ALLOWED_PRODUCT_MANAGER_ROLES
