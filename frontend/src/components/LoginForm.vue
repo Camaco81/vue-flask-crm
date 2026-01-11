@@ -60,64 +60,72 @@
     </div>
   </div>
 </template>
-
 <script>
-import axios from '../axios.js'; // Asegúrate de que esta ruta sea correcta para tu instancia de Axios
+import axios from '../axios.js';
 
 export default {
   data() {
     return {
       email: '',
       password: '',
-      error: ''
+      error: '',
+      isLoading: false
     };
   },
   methods: {
     async login() {
-      this.error = ''; // Limpiar errores anteriores
+      this.error = '';
+      this.isLoading = true;
+      
       try {
-        const response = await axios.post('/api/auth/login', { // Ruta corregida
+        const response = await axios.post('/api/auth/login', {
           email: this.email,
           password: this.password
         });
         
-        const { access_token, user } = response.data; // <--- ¡CORRECCIÓN CLAVE AQUÍ!
-                                                    // La API devuelve un objeto 'user'
-                                                    // con la info del rol y la imagen.
+        // El backend devuelve: { access_token, user: { id, email, role_id, tenant_id, profile_image ... } }
+        const { access_token, user } = response.data;
 
+        // 1. Guardamos el token para las cabeceras de Authorization
         localStorage.setItem('access_token', access_token);
-        // Guardamos todo el objeto user en localStorage como un string JSON
-        localStorage.setItem('user_info', JSON.stringify(user));  
         
-        // Ahora, la lógica de redirección usa la información del objeto 'user'
+        // 2. Guardamos la info del usuario y su TENANT (importante para multi-tenant)
+        localStorage.setItem('user_info', JSON.stringify(user));
+        
+        // 3. Opcional: Guardar el tenant_id por separado para acceso rápido en componentes
+        localStorage.setItem('tenant_id', user.tenant_id);
+
+        // Redirección basada en el rol
         this.redirectToRoleDashboard(user.role_id);
         
       } catch (error) {
-        if (error.response && error.response.data && error.response.data.msg) {
+        if (error.response?.data?.msg) {
           this.error = error.response.data.msg;
         } else {
-          this.error = 'Error al iniciar sesión. Intenta de nuevo.';
+          this.error = 'Credenciales inválidas o error de conexión.';
         }
-        console.error('Error durante el login:', error); // Log para depuración
+        console.error('Error durante el login:', error);
+      } finally {
+        this.isLoading = false;
       }
     },
+    
     redirectToRoleDashboard(roleId) {
-    if (roleId === 1) { // Rol 1: Administrador
-        this.$router.push('/dashboard');
-    } else if (roleId === 2) { // Rol 2: Vendedor
-        // Asegúrate de que esta ruta sea correcta, ej: '/vendedor/dashboard'
-        this.$router.push('/vendedor/vendedor-dasboard'); 
-    } else if (roleId === 3) { // Rol 3: Almacenista (Asumiendo que 3 es el almacén)
-        this.$router.push('/almacenista/dashboard');
-    } else if (roleId === 4) { // Rol 4: Visitante
-        this.$router.push('/visitor');
-    } 
-    // Si tienes otros roles (ej. consultor, o rol 3, si no lo tienes mapeado arriba)
-    else { 
-        console.warn(`Rol ID ${roleId} no mapeado. Redireccionando a Almacenista por defecto.`);
-        this.$router.push('/almacenista/dashboard'); 
+      const dashboards = {
+        1: '/dashboard',                   // Admin
+        2: '/vendedor/vendedor-dasboard',  // Vendedor
+        3: '/almacenista/dashboard',       // Almacenista
+        4: '/visitor'                      // Cliente/Visitante
+      };
+
+      const path = dashboards[roleId] || '/almacenista/dashboard';
+      
+      if (!dashboards[roleId]) {
+        console.warn(`Rol ID ${roleId} no reconocido, usando dashboard por defecto.`);
+      }
+      
+      this.$router.push(path);
     }
-}
   }
 };
 </script>

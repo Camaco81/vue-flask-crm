@@ -16,7 +16,22 @@
       </div>
       
       <form @submit.prevent="register" class="register-form">
-     
+        
+        <div class="form-group">
+          <div class="input-wrapper">
+            <span class="input-icon">🏢</span>
+            <input 
+              type="text"
+              v-model="companyName"
+              placeholder="Nombre de tu empresa/negocio"
+              required
+              class="form-control"
+              :class="{ 'error': companyError }"
+            />
+          </div>
+          <div v-if="companyError" class="field-error">{{ companyError }}</div>
+        </div>
+
         <div class="form-group">
           <div class="input-wrapper">
             <span class="input-icon">📧</span>
@@ -78,7 +93,6 @@
           <div v-if="confirmPasswordError" class="field-error">{{ confirmPasswordError }}</div>
         </div>
         
-        <!-- Password Strength Indicator -->
         <div v-if="password" class="password-strength">
           <div class="strength-label">Fortaleza de contraseña:</div>
           <div class="strength-bar">
@@ -122,17 +136,6 @@
           {{ successMessage }}
         </div>
         
-        <!-- <div class="divider">
-          <span>o</span>
-        </div>
-        
-        <div class="social-login">
-          <button type="button" class="btn btn-google">
-            <span class="social-icon">🔍</span>
-            Regístrate con Google
-          </button>
-        </div> -->
-        
         <div class="login-link">
           <p>¿Ya tienes una cuenta? 
             <router-link to="/login" class="login-btn">
@@ -144,13 +147,13 @@
     </div>
   </div>
 </template>
-
 <script>
 import axios from '../axios.js';
 
 export default {
   data() {
     return {
+      companyName: '', // Nueva propiedad
       email: '',
       password: '',
       confirmPassword: '',
@@ -160,6 +163,7 @@ export default {
       showConfirmPassword: false,
       acceptTerms: false,
       isLoading: false,
+      companyError: '', // Nueva propiedad
       emailError: '',
       passwordError: '',
       confirmPasswordError: ''
@@ -167,10 +171,12 @@ export default {
   },
   computed: {
     isFormValid() {
-      return this.email && 
+      return this.companyName && // Validar empresa
+             this.email && 
              this.password && 
              this.confirmPassword &&
              this.acceptTerms &&
+             !this.companyError &&
              !this.emailError &&
              !this.passwordError &&
              !this.confirmPasswordError;
@@ -178,75 +184,42 @@ export default {
     
     passwordStrength() {
       if (!this.password) return { width: '0%', class: '', text: '' };
-      
       let score = 0;
-      let checks = [];
+      if (this.password.length >= 8) score += 1;
+      if (/[A-Z]/.test(this.password)) score += 1;
+      if (/[a-z]/.test(this.password)) score += 1;
+      if (/[0-9]/.test(this.password)) score += 1;
+      if (/[^A-Za-z0-9]/.test(this.password)) score += 1;
       
-      // Length check
-      if (this.password.length >= 8) {
-        score += 1;
-        checks.push('8+ caracteres');
-      }
-      
-      // Uppercase check
-      if (/[A-Z]/.test(this.password)) {
-        score += 1;
-        checks.push('Mayúscula');
-      }
-      
-      // Lowercase check
-      if (/[a-z]/.test(this.password)) {
-        score += 1;
-        checks.push('Minúscula');
-      }
-      
-      // Number check
-      if (/[0-9]/.test(this.password)) {
-        score += 1;
-        checks.push('Número');
-      }
-      
-      // Special character check
-      if (/[^A-Za-z0-9]/.test(this.password)) {
-        score += 1;
-        checks.push('Símbolo');
-      }
-      
-      if (score <= 2) {
-        return { width: '33%', class: 'weak', text: 'Débil' };
-      } else if (score <= 3) {
-        return { width: '66%', class: 'medium', text: 'Media' };
-      } else {
-        return { width: '100%', class: 'strong', text: 'Fuerte' };
-      }
+      if (score <= 2) return { width: '33%', class: 'weak', text: 'Débil' };
+      if (score <= 3) return { width: '66%', class: 'medium', text: 'Media' };
+      return { width: '100%', class: 'strong', text: 'Fuerte' };
     }
   },
   
   methods: {
+    validateCompany() {
+      if (this.companyName.length < 3) {
+        this.companyError = 'El nombre de la empresa debe tener al menos 3 caracteres';
+      } else {
+        this.companyError = '';
+      }
+    },
+
     validateEmail() {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(this.email)) {
-        this.emailError = 'Email no válido';
-      } else {
-        this.emailError = '';
-      }
+      this.emailError = !emailRegex.test(this.email) ? 'Email no válido' : '';
     },
     
     validatePassword() {
-      if (this.password.length < 8) {
-        this.passwordError = 'La contraseña debe tener al menos 8 caracteres';
-      } else {
-        this.passwordError = '';
-      }
+      this.passwordError = this.password.length < 8 ? 'Mínimo 8 caracteres' : '';
       this.validateConfirmPassword();
     },
     
     validateConfirmPassword() {
-      if (this.confirmPassword && this.password !== this.confirmPassword) {
-        this.confirmPasswordError = 'Las contraseñas no coinciden';
-      } else {
-        this.confirmPasswordError = '';
-      }
+      this.confirmPasswordError = (this.confirmPassword && this.password !== this.confirmPassword) 
+        ? 'Las contraseñas no coinciden' 
+        : '';
     },
     
     async register() {
@@ -254,10 +227,8 @@ export default {
       this.successMessage = '';
       this.isLoading = true;
       
-      // Validate email
+      this.validateCompany();
       this.validateEmail();
-      
-      // Validate passwords
       this.validatePassword();
       this.validateConfirmPassword();
       
@@ -268,6 +239,7 @@ export default {
       
       try {
         await axios.post('/api/auth/register', {
+          company_name: this.companyName, // Enviamos el nombre de la empresa
           email: this.email,
           password: this.password
         });
@@ -280,10 +252,8 @@ export default {
         
       } catch (error) {
         console.error('Error de registro:', error);
-        if (error.response && error.response.data && error.response.data.msg) {
+        if (error.response?.data?.msg) {
           this.error = error.response.data.msg;
-        } else if (error.response && error.response.status === 400) {
-          this.error = 'Este email ya está registrado. Intenta con otro email.';
         } else {
           this.error = 'Error en el registro. Por favor, intenta de nuevo.';
         }
@@ -294,11 +264,8 @@ export default {
   },
   
   watch: {
-    email() {
-      if (this.emailError) {
-        this.validateEmail();
-      }
-    }
+    email() { if (this.emailError) this.validateEmail(); },
+    companyName() { if (this.companyError) this.validateCompany(); }
   }
 };
 </script>

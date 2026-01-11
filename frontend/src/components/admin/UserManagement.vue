@@ -7,9 +7,9 @@
       <div class="header-content">
         <h1 class="page-title">
           <i class="fas fa-users-cog"></i>
-          Gestión de Usuarios
+          Gestión de Empleaods
         </h1>
-        <p class="page-subtitle">Administra los usuarios del sistema</p>
+        <p class="page-subtitle">Administra los empleados del sistema</p>
       </div>
       <div class="header-actions">
         <button @click="openModal('create')" class="btn-add-user">
@@ -189,6 +189,31 @@
         <div class="modal-body">
           <form @submit.prevent="saveUser">
             <div class="form-group">
+  <label for="nombre">
+    <i class="fas fa-user"></i> Nombre Completo
+  </label>
+  <input 
+    type="text" 
+    id="nombre" 
+    v-model="currentUser.nombre" 
+    required
+    placeholder="Nombre del empleado"
+  >
+</div>
+
+<div class="form-group">
+  <label for="cedula">
+    <i class="fas fa-id-card"></i> Cédula / ID
+  </label>
+  <input 
+    type="text" 
+    id="cedula" 
+    v-model="currentUser.cedula" 
+    required
+    placeholder="Documento de identidad"
+  >
+</div>
+            <div class="form-group">
               <label for="email">
                 <i class="fas fa-envelope"></i>
                 Email
@@ -326,6 +351,8 @@ export default {
       modalMode: 'create',
       currentUser: {
         id: null,
+        nombre: '', // Nuevo
+        cedula: '', // Nuevo
         email: '',
         password: '',
         role_id: 2
@@ -465,30 +492,32 @@ export default {
     },
     
     async saveUser() {
-      this.isSaving = true;
-      try {
-        const dataToSend = { ...this.currentUser };
-        if (this.modalMode === 'create') {
-          await axios.post('/admin/users', dataToSend);
-        } else {
-          await axios.put(`/admin/users/${this.currentUser.id}`, { 
-            role_id: dataToSend.role_id 
-          });
-        }
-        
-        // CORRECCIÓN: Se usa alert nativo para evitar el error de $notify
-        alert(`Éxito: Usuario ${this.modalMode === 'create' ? 'creado' : 'actualizado'} correctamente.`);
-        
-        this.fetchUsers();
-        this.closeModal();
-      } catch (err) {
-        const errorMsg = err.response?.data?.msg || 'Error al guardar el usuario.';
-        alert(`Error: ${errorMsg}`);
-        console.error('Error al guardar:', err);
-      } finally {
-        this.isSaving = false;
-      }
-    },
+  if (this.isSaving) return;
+  this.isSaving = true;
+  
+  try {
+    if (this.modalMode === 'create') {
+      // Enviar todo el objeto incluyendo nombre y cedula
+      await axios.post('/admin/users', this.currentUser);
+      alert('Empleado creado con éxito');
+    } else {
+      // Para editar, enviamos los campos actualizables
+      await axios.put(`/admin/users/${this.currentUser.id}`, {
+        nombre: this.currentUser.nombre,
+        cedula: this.currentUser.cedula,
+        role_id: this.currentUser.role_id
+      });
+      alert('Empleado actualizado');
+    }
+    this.fetchUsers();
+    this.closeModal();
+  } catch (err) {
+    const errorMsg = err.response?.data?.msg || 'Error en el servidor';
+    alert('Error: ' + errorMsg);
+  } finally {
+    this.isSaving = false;
+  }
+},
     
     async deleteUser() {
       try {
@@ -506,20 +535,29 @@ export default {
       }
     },
     
-    openModal(mode, user = null) {
-      this.modalMode = mode;
-      if (mode === 'create') {
-        this.currentUser = { id: null, email: '', password: '', role_id: 2 };
-      } else {
-        this.currentUser = { 
-          id: user.id, 
-          email: user.email, 
-          role_id: user.role_id, 
-          password: '' 
-        };
-      }
-      this.isModalOpen = true;
-    },
+   openModal(mode, user = null) {
+  this.modalMode = mode;
+  if (mode === 'create') {
+    this.currentUser = { 
+      id: null, 
+      nombre: '', 
+      cedula: '', 
+      email: '', 
+      password: '', 
+      role_id: 2 
+    };
+  } else {
+    this.currentUser = { 
+      id: user.id, 
+      nombre: user.nombre || '', 
+      cedula: user.cedula || '',
+      email: user.email, 
+      role_id: user.role_id, 
+      password: '' 
+    };
+  }
+  this.isModalOpen = true;
+},
     
     closeModal() {
       this.isModalOpen = false;
