@@ -13,21 +13,18 @@ app_logger = logging.getLogger('backend.routes.product_routes')
 
 def get_current_tenant():
     """
-    Extrae el tenant_id del token JWT. 
-    En este caso, el tenant_id es el nombre del negocio (ej. 'Inv').
+    Extrae el tenant_id del token JWT.
     """
     return get_jwt().get('tenant_id', 'default-tenant')
 
 @product_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def products_collection():
-    # Obtener identidad del usuario y rol
     result = get_user_and_role()
     if not isinstance(result, (list, tuple)) or len(result) < 2:
         app_logger.error(f"Error en helper get_user_and_role: se recibió {result}")
         return jsonify({"msg": "Error de sesión"}), 401
     
-    current_user_id = result[0]
     user_role_id = result[1]
     tenant_id = get_current_tenant()
     
@@ -37,23 +34,23 @@ def products_collection():
             return jsonify({"msg": "Acceso denegado: permisos insuficientes"}), 403
         
         data = request.get_json()
-        if error := validate_required_fields(data, ['name', 'price', 'stock','category']):
+        # Validamos que 'category' esté presente
+        if error := validate_required_fields(data, ['name', 'price', 'stock', 'category']):
             return jsonify({"msg": f"Campos faltantes: {error}"}), 400
 
         try:
             name = data['name'].strip()
-            # Aseguramos tipos numéricos
+            category = data['category'].strip()
             price = float(data['price'])
             stock = int(data['stock'])
             
             with get_db_cursor(commit=True) as cur:
-                # Se eliminó ::uuid porque tenant_id es VARCHAR
-                # Se usa 'price' para coincidir con la columna de tu DB
+                # Corregido: Se agregaron los placeholders y la columna category
                 cur.execute(
                     """INSERT INTO products (name, price, stock, category, tenant_id) 
-                       VALUES (%s, %s, %s, %s) 
-                       RETURNING id, name, price, stock;""",
-                    (name, price, stock, tenant_id)
+                       VALUES (%s, %s, %s, %s, %s) 
+                       RETURNING id, name, price, stock, category;""",
+                    (name, price, stock, category, tenant_id)
                 )
                 new_product = cur.fetchone()
                 
@@ -66,16 +63,14 @@ def products_collection():
     elif request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                # Buscamos por tenant_id como string (VARCHAR)
                 cur.execute(
-                    """SELECT id, name, price, stock , category
+                    """SELECT id, name, price, stock, category
                        FROM products 
                        WHERE tenant_id = %s 
                        ORDER BY name;""",
                     (tenant_id,)
                 )
                 rows = cur.fetchall()
-                # Retornamos la lista de diccionarios
                 return jsonify([dict(p) for p in rows]), 200
         except Exception as e:
             app_logger.error(f"Error listando productos: {e}")
@@ -95,8 +90,9 @@ def product_single(product_id):
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
+                # Corregido: faltaba coma entre category y stock
                 cur.execute(
-                    "SELECT id, name, price,category stock FROM products WHERE id = %s AND tenant_id = %s;",
+                    "SELECT id, name, price, category, stock FROM products WHERE id = %s AND tenant_id = %s;",
                     (product_id, tenant_id)
                 )
                 product = cur.fetchone()
@@ -117,31 +113,28 @@ def product_single(product_id):
         data = request.get_json()
         try:
             with get_db_cursor(commit=True) as cur:
-                # Definimos qué campos se pueden actualizar y sus tipos
-                allowed_keys = {'name': str, 'price': float, 'stock': int}
+                # Agregamos 'category' a los campos permitidos para actualizar
+                allowed_keys = {'name': str, 'price': float, 'stock': int, 'category': str}
                 updates = []
                 params = []
                 
                 for key, val in data.items():
-                    # Si el front manda price_usd, lo tratamos como price
                     actual_key = 'price' if key == 'price_usd' else key
                     
                     if actual_key in allowed_keys:
                         updates.append(f"{actual_key} = %s")
-                        # Casteo dinámico según el diccionario allowed_keys
                         params.append(allowed_keys[actual_key](val))
                 
                 if not updates:
                     return jsonify({"msg": "No hay datos válidos para actualizar"}), 400
                 
-                # Agregamos los filtros del WHERE
                 params.extend([product_id, tenant_id])
                 
                 query = f"""
                     UPDATE products 
                     SET {', '.join(updates)} 
                     WHERE id = %s AND tenant_id = %s 
-                    RETURNING id, name, price, stock,category;
+                    RETURNING id, name, price, stock, category;
                 """
                 
                 cur.execute(query, tuple(params))
