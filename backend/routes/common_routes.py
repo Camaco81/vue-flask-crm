@@ -3,7 +3,7 @@
 from flask import Blueprint, jsonify
 from backend.utils.bcv_api import get_dolarvzla_rate
 from flask_cors import cross_origin
-
+import time
 rate_bp = Blueprint('rate_bp', __name__)
 
 @rate_bp.route('/exchange-rate', methods=['GET'])
@@ -15,7 +15,7 @@ def get_current_exchange_rate():
         return jsonify({
             "rate": rate,
             "source": "DolarVzla",
-            "timestamp": int(rate) # En un sistema real usarías time.time()
+            "timestamp": int(time.time()) # En un sistema real usarías time.time()
         }), 200
     except Exception as e:
         # En caso de error crítico en el servidor, devuelve una tasa de respaldo con error
