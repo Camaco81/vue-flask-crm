@@ -1,35 +1,55 @@
 import requests
 import logging
 
+# Configuración de logging para diagnóstico
 api_logger = logging.getLogger('backend.utils.bcv_api')
+
+# URL de la API proporcionada por el usuario
 DOLAR_VZLA_API_URL = "https://api.dolarvzla.com/public/exchange-rate" 
-DEFAULT_RATE = 36.5 # Tasa de respaldo
+
+# Tasa de respaldo en caso de caída total de la API
+DEFAULT_RATE = 36.5 
 
 def get_dolarvzla_rate():
+    """
+    Obtiene la tasa de cambio actual desde DolarVzla API.
+    Estructura esperada: {"current": {"usd": 341.74, ...}, ...}
+    """
     try:
-        response = requests.get(DOLAR_VZLA_API_URL, timeout=10) 
+        # Realizamos la petición con un timeout prudencial (10 segundos)
+        response = requests.get(DOLAR_VZLA_API_URL, timeout=10)
+        
+        # Lanza una excepción si el status code no es 2xx
         response.raise_for_status()
+        
         data = response.json()
         
-        # 🚨 CORRECCIÓN CLAVE: Buscar la tasa en la nueva estructura JSON
-        # La tasa está en data['current']['usd'] y es float, no string.
-        rate_float = data.get('current', {}).get('usd') # Usamos .get({}, {}) para manejo seguro
+        # Log para depuración: Ver qué está llegando exactamente al servidor
+        api_logger.info(f"Estructura recibida de la API: {data}")
 
-        # 🚨 Log de diagnóstico (Mantenemos el log por si cambia de nuevo)
-        api_logger.info(f"Respuesta JSON de DolarVzla: {data}")
+        # Extracción segura: Accedemos a data['current']['usd']
+        current_data = data.get('current')
         
-        if rate_float and isinstance(rate_float, (int, float)):
-            rate = float(rate_float)
-            api_logger.info(f"Tasa de DolarVzla obtenida con éxito: {rate}")
-            return rate
+        if current_data and 'usd' in current_data:
+            rate_val = current_data.get('usd')
+            
+            # Verificamos que el valor sea numérico
+            if isinstance(rate_val, (int, float)):
+                rate = float(rate_val)
+                api_logger.info(f"Tasa extraída con éxito: {rate}")
+                return rate
+            else:
+                api_logger.error(f"El campo 'usd' no es un número: {rate_val} (tipo: {type(rate_val)})")
         else:
-            api_logger.error(f"La API de DolarVzla no devolvió el campo 'current.usd'. Usando tasa predeterminada.")
-            return DEFAULT_RATE
+            api_logger.error("No se encontró la clave 'current' o 'usd' en la respuesta de la API.")
 
+    except requests.exceptions.Timeout:
+        api_logger.error("Timeout al conectar con la API de DolarVzla.")
     except requests.exceptions.RequestException as e:
-        api_logger.error(f"Error de conexión/HTTP al obtener la tasa: {e}. Usando tasa predeterminada de {DEFAULT_RATE}.", exc_info=True)
-        return DEFAULT_RATE
-    
+        api_logger.error(f"Error de red o HTTP: {e}")
     except Exception as e:
-        api_logger.error(f"Error inesperado al procesar la respuesta: {e}. Usando tasa predeterminada de {DEFAULT_RATE}.", exc_info=True)
-        return DEFAULT_RATE
+        api_logger.error(f"Error inesperado al procesar la tasa: {e}", exc_info=True)
+
+    # Si llegamos aquí, algo falló. Retornamos la tasa por defecto.
+    api_logger.warning(f"Se utilizará la tasa por defecto: {DEFAULT_RATE}")
+    return DEFAULT_RATE
