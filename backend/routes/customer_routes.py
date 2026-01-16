@@ -19,7 +19,7 @@ def get_current_tenant():
 @customer_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def customers_collection():
-    current_user_id, user_role = get_user_and_role()
+    current_user_id, tenant_id,user_role = get_user_and_role()
     tenant_id = get_current_tenant()
     
     if not current_user_id:
