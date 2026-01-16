@@ -37,7 +37,7 @@ def products_collection():
             return jsonify({"msg": "Acceso denegado: permisos insuficientes"}), 403
         
         data = request.get_json()
-        if error := validate_required_fields(data, ['name', 'price', 'stock']):
+        if error := validate_required_fields(data, ['name', 'price', 'stock','category']):
             return jsonify({"msg": f"Campos faltantes: {error}"}), 400
 
         try:
@@ -50,7 +50,7 @@ def products_collection():
                 # Se eliminó ::uuid porque tenant_id es VARCHAR
                 # Se usa 'price' para coincidir con la columna de tu DB
                 cur.execute(
-                    """INSERT INTO products (name, price, stock, tenant_id) 
+                    """INSERT INTO products (name, price, stock, category, tenant_id) 
                        VALUES (%s, %s, %s, %s) 
                        RETURNING id, name, price, stock;""",
                     (name, price, stock, tenant_id)
@@ -68,7 +68,7 @@ def products_collection():
             with get_db_cursor() as cur:
                 # Buscamos por tenant_id como string (VARCHAR)
                 cur.execute(
-                    """SELECT id, name, price, stock 
+                    """SELECT id, name, price, stock , category
                        FROM products 
                        WHERE tenant_id = %s 
                        ORDER BY name;""",
@@ -96,7 +96,7 @@ def product_single(product_id):
         try:
             with get_db_cursor() as cur:
                 cur.execute(
-                    "SELECT id, name, price, stock FROM products WHERE id = %s AND tenant_id = %s;",
+                    "SELECT id, name, price,category stock FROM products WHERE id = %s AND tenant_id = %s;",
                     (product_id, tenant_id)
                 )
                 product = cur.fetchone()
@@ -141,7 +141,7 @@ def product_single(product_id):
                     UPDATE products 
                     SET {', '.join(updates)} 
                     WHERE id = %s AND tenant_id = %s 
-                    RETURNING id, name, price, stock;
+                    RETURNING id, name, price, stock,category;
                 """
                 
                 cur.execute(query, tuple(params))
