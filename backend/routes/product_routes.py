@@ -12,25 +12,21 @@ product_bp = Blueprint('product', __name__, url_prefix='/api/products')
 app_logger = logging.getLogger('backend.routes.product_routes')
 
 def get_current_tenant():
-    """Extrae el tenant_id del token JWT."""
+    """Extrae el tenant_id del token JWT. En tu caso es el nombre del negocio."""
     return get_jwt().get('tenant_id', 'default-tenant')
 
 @product_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def products_collection():
-    # CORRECCIÓN: Manejo flexible del desempaquetado. 
-    # Si get_user_and_role devuelve más de 2 valores, capturamos los extras en '_'
+    # Manejo de desempaquetado robusto para evitar el ValueError anterior
     result = get_user_and_role()
-    if not result or len(result) < 2:
-        return jsonify({"msg": "Error de autenticación interna"}), 401
+    if not isinstance(result, (list, tuple)) or len(result) < 2:
+        app_logger.error(f"Error en helper get_user_and_role: se recibió {result}")
+        return jsonify({"msg": "Error de sesión"}), 401
     
     current_user_id = result[0]
     user_role_id = result[1]
-    
     tenant_id = get_current_tenant()
-    
-    if not current_user_id:
-        return jsonify({"msg": "Usuario no encontrado"}), 401
     
     # ------------------ POST (Crear Producto) ------------------
     if request.method == 'POST':
@@ -46,40 +42,36 @@ def products_collection():
             price = float(data['price'])
             stock = int(data['stock'])
             
-            if price <= 0 or stock < 0:
-                return jsonify({"msg": "Precio debe ser positivo y Stock no negativo"}), 400
-
             with get_db_cursor(commit=True) as cur:
-                # Usamos alias 'price_usd' para que el frontend lo reconozca de inmediato
+                # Eliminado ::uuid porque el tenant es un string ("Maye")
                 cur.execute(
                     """INSERT INTO products (name, price, stock, tenant_id) 
-                       VALUES (%s, %s, %s, %s) 
-                       RETURNING id, name, price AS price_usd, stock;""",
+                       VALUES (%s, %s, %s, %s) """,
                     (name, price, stock, tenant_id)
                 )
                 new_product = cur.fetchone()
                 
             return jsonify(dict(new_product)), 201
-
-        except (ValueError, TypeError):
-            return jsonify({"msg": "Formato de datos inválido"}), 400
         except Exception as e:
             app_logger.error(f"Error creando producto: {e}")
-            return jsonify({"msg": "Error interno"}), 500
+            return jsonify({"msg": "Error interno al crear"}), 500
 
-    # ------------------ GET (Listar Productos del Tenant) ------------------
+    # ------------------ GET (Listar Productos) ------------------
     elif request.method == 'GET':
         try:
             with get_db_cursor() as cur:
-                # IMPORTANTE: Agregamos alias 'price_usd' para compatibilidad con el front
+                # Comparamos como string normal. 
+                # Si en la DB la columna fuera UUID real, esto daría error, 
+                # pero si el tenant es "Maye", la columna debe ser VARCHAR/TEXT.
                 cur.execute(
                     """SELECT id, name, price AS price_usd, stock 
                        FROM products 
-                       WHERE tenant_id = %s::uuid 
+                       WHERE tenant_id = %s 
                        ORDER BY name;""",
                     (tenant_id,)
                 )
-                return jsonify([dict(p) for p in cur.fetchall()]), 200
+                rows = cur.fetchall()
+                return jsonify([dict(p) for p in rows]), 200
         except Exception as e:
             app_logger.error(f"Error listando productos: {e}")
             return jsonify({"msg": "Error al obtener productos"}), 500
@@ -88,25 +80,21 @@ def products_collection():
 @jwt_required()
 def product_single(product_id):
     result = get_user_and_role()
-    current_user_id = result[0]
-    user_role_id = result[1]
+    current_user_id, user_role_id = result[0], result[1]
     tenant_id = get_current_tenant()
-
-    if not current_user_id:
-        return jsonify({"msg": "Usuario no encontrado"}), 401
 
     # ------------------ GET (Producto Único) ------------------
     if request.method == 'GET':
         try:
             with get_db_cursor() as cur:
                 cur.execute(
-                    "SELECT id, name, price AS price_usd, stock FROM products WHERE id = %s AND tenant_id = %s::uuid;",
+                    "SELECT id, name, price AS price_usd, stock FROM products WHERE id = %s AND tenant_id = %s;",
                     (product_id, tenant_id)
                 )
                 product = cur.fetchone()
             return jsonify(dict(product)) if product else (jsonify({"msg": "Producto no encontrado"}), 404)
         except Exception as e:
-            return jsonify({"msg": "Error"}), 500
+            return jsonify({"msg": "Error servidor"}), 500
 
     # ------------------ PUT (Actualizar Producto) ------------------
     elif request.method == 'PUT':
@@ -114,9 +102,6 @@ def product_single(product_id):
             return jsonify({"msg": "Acceso denegado"}), 403
         
         data = request.get_json()
-        if not data:
-            return jsonify({"msg": "No hay datos para actualizar"}), 400
-        
         try:
             with get_db_cursor(commit=True) as cur:
                 allowed_keys = {'name': str, 'price': float, 'stock': int}
@@ -124,39 +109,33 @@ def product_single(product_id):
                 params = []
                 
                 for key, val in data.items():
-                    if key in allowed_keys:
-                        # Si el front manda 'price_usd', lo mapeamos a 'price' de la DB
-                        db_key = 'price' if key == 'price_usd' else key
-                        clean_val = val.strip() if key == 'name' else allowed_keys[key](val)
-                        
-                        updates.append(f"{db_key} = %s")
-                        params.append(clean_val)
+                    # Mapeo de price_usd del front a price de la DB
+                    actual_key = 'price' if key == 'price_usd' else key
+                    if actual_key in allowed_keys:
+                        updates.append(f"{actual_key} = %s")
+                        params.append(val)
                 
                 if not updates:
-                    return jsonify({"msg": "Nada que actualizar"}), 400
+                    return jsonify({"msg": "No hay datos válidos"}), 400
                 
                 params.extend([product_id, tenant_id])
-                query = f"""UPDATE products SET {', '.join(updates)} 
-                           WHERE id = %s AND tenant_id = %s::uuid 
-                           RETURNING id, name, price AS price_usd, stock;"""
+                query = f"UPDATE products SET {', '.join(updates)} WHERE id = %s AND tenant_id = %s RETURNING id, name, price AS price_usd, stock;"
                 
                 cur.execute(query, tuple(params))
                 updated = cur.fetchone()
-                
-                return jsonify(dict(updated)) if updated else (jsonify({"msg": "Producto no encontrado"}), 404)
-
+                return jsonify(dict(updated)) if updated else (jsonify({"msg": "No encontrado"}), 404)
         except Exception as e:
-            app_logger.error(f"Error en PUT producto: {e}")
+            app_logger.error(f"Error en PUT: {e}")
             return jsonify({"msg": "Error al actualizar"}), 500
 
-    # ------------------ DELETE (Eliminar Producto) ------------------
+    # ------------------ DELETE (Eliminar) ------------------
     elif request.method == 'DELETE':
         if not check_product_manager_permission(user_role_id):
             return jsonify({"msg": "Acceso denegado"}), 403
         try:
             with get_db_cursor(commit=True) as cur:
                 cur.execute(
-                    "DELETE FROM products WHERE id = %s AND tenant_id = %s::uuid RETURNING id;",
+                    "DELETE FROM products WHERE id = %s AND tenant_id = %s RETURNING id;",
                     (product_id, tenant_id)
                 )
                 return jsonify({"msg": "Eliminado"}), 200 if cur.fetchone() else (jsonify({"msg": "No encontrado"}), 404)
