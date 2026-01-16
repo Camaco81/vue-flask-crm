@@ -23,6 +23,7 @@ from backend.routes.common_routes import rate_bp
 from backend.routes.alert_routes import alert_bp
 
 
+
 # --- 1. CONFIGURACIÓN INICIAL (LOAD ENV) ---
 load_dotenv()
 
@@ -85,7 +86,7 @@ app.register_blueprint(product_bp, url_prefix='/api/products')
 app.register_blueprint(sale_bp, url_prefix='/api/sales') 
 app.register_blueprint( alert_bp)
 # Rutas que están directamente bajo /api (ej. /api/profile, /api/rate)
-app.register_blueprint(rate_bp, url_prefix='/api')
+app.register_blueprint(rate_bp, url_prefix='/api/exchange-rate')
 app.register_blueprint(user_bp, url_prefix='/api') # Contiene /profile
 
 app.register_blueprint(admin_bp, url_prefix='/admin')
