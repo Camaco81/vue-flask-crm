@@ -1,6 +1,5 @@
 <template>
   <div class="almacenista-container">
-    <!-- Header con navegación -->
     <header class="almacenista-header">
       <div class="header-content">
         <div class="user-info">
@@ -17,12 +16,8 @@
       </div>
     </header>
 
-    <!-- Contenido principal -->
     <main class="almacenista-main">
-      <!-- Sección de estadísticas rápidas -->
       <div class="stats-section">
-        
-        
         <div class="stat-card warning">
           <div class="stat-icon">
             <i class="fas fa-exclamation-triangle"></i>
@@ -34,14 +29,12 @@
         </div>
       </div>
 
-      <!-- Gestión de productos -->
       <div class="management-section">
         <div class="section-header">
           <h2><i class="fas fa-box-open"></i> Gestión de Productos</h2>
-          <p>Administra tu inventario desde aquí</p>
+          <p>Administra tu inventario por negocio</p>
         </div>
 
-        <!-- Formulario para agregar producto -->
         <div class="add-product-card">
           <h3><i class="fas fa-plus-circle"></i> Agregar Nuevo Producto</h3>
           
@@ -49,26 +42,26 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="product-name">
-                  <i class="fas fa-tag"></i> Nombre del Producto *
+                  <i class="fas fa-tag"></i> Nombre *
                 </label>
                 <input
                   id="product-name"
                   type="text"
                   v-model="newProduct.name"
-                  placeholder="Ej: Harina cali"
+                  placeholder="Ej: Harina Cali"
                   required
                   class="form-input"
                 />
               </div>
               <div class="form-group">
                 <label for="product-category">
-                  <i class="fas fa-tag"></i> Categoria del Producto *
+                  <i class="fas fa-folder"></i> Categoría *
                 </label>
                 <input
                   id="product-category"
                   type="text"
                   v-model="newProduct.category"
-                  placeholder="Ej: Canasta basica"
+                  placeholder="Ej: Canasta básica"
                   required
                   class="form-input"
                 />
@@ -92,7 +85,7 @@
               
               <div class="form-group">
                 <label for="product-stock">
-                  <i class="fas fa-warehouse"></i> Stock Inicial *
+                  <i class="fas fa-warehouse"></i> Stock *
                 </label>
                 <input
                   id="product-stock"
@@ -118,124 +111,72 @@
             </div>
           </form>
 
-          <!-- Alertas de formulario -->
           <div v-if="addError" class="alert alert-error">
-            <i class="fas fa-exclamation-circle"></i>
-            {{ addError }}
+            <i class="fas fa-exclamation-circle"></i> {{ addError }}
           </div>
-          
           <div v-if="addSuccess" class="alert alert-success">
-            <i class="fas fa-check-circle"></i>
-            {{ addSuccess }}
+            <i class="fas fa-check-circle"></i> {{ addSuccess }}
           </div>
         </div>
 
-        <!-- Lista de productos -->
         <div class="products-list-card">
           <div class="list-header">
-            <h3><i class="fas fa-list"></i> Lista de Productos</h3>
+            <h3><i class="fas fa-list"></i> Inventario del Negocio</h3>
             <div class="list-controls">
               <div class="search-box">
                 <i class="fas fa-search"></i>
                 <input
                   type="text"
                   v-model="searchTerm"
-                  placeholder="Buscar productos..."
+                  placeholder="Filtrar por nombre..."
                   class="search-input"
                 />
-                <button v-if="searchTerm" @click="searchTerm = ''" class="clear-btn">
-                  <i class="fas fa-times"></i>
-                </button>
               </div>
               <button @click="fetchProducts" class="btn btn-refresh" :disabled="loading">
                 <i class="fas fa-sync-alt" :class="{ 'fa-spin': loading }"></i>
-                {{ loading ? 'Cargando...' : 'Actualizar' }}
               </button>
             </div>
           </div>
 
-          <!-- Estados de carga -->
           <div v-if="loading" class="loading-state">
             <div class="spinner"></div>
             <p>Cargando productos...</p>
           </div>
           
-          <div v-else-if="error" class="error-state">
-            <i class="fas fa-exclamation-triangle"></i>
-            <p>{{ error }}</p>
-            <button @click="fetchProducts" class="btn btn-primary">
-              Reintentar
-            </button>
-          </div>
-          
-          <div v-else-if="products.length === 0" class="empty-state">
-            <i class="fas fa-boxes"></i>
-            <p>No hay productos registrados</p>
-            <p class="sub-text">Comienza agregando tu primer producto</p>
-          </div>
-          
-          <!-- Tabla de productos -->
           <div v-else class="products-table">
             <table>
               <thead>
                 <tr>
                   <th>Producto</th>
-                  <th>Categoria</th>
+                  <th>Categoría</th>
                   <th>Precio</th>
                   <th>Stock</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="product in filteredProducts" :key="product.id">
-                  <td class="product-name">
-                    <i class="fas fa-box"></i>
-                    {{ product.name }}
-                  </td>
-                    <td class="product-category">
-                    <i class="fas fa-box"></i>
-                    {{ product.category }}
-                  </td>
-                  <td class="product-price">
-                    ${{ parseFloat(product.price).toFixed(2) }}
-                  </td>
-                  <td class="product-stock" :class="{ 'low-stock': product.stock < 10 }">
+                <tr v-for="product in paginatedProducts" :key="product.id">
+                  <td class="product-name">{{ product.name }}</td>
+                  <td>{{ product.category }}</td>
+                  <td>${{ parseFloat(product.price).toFixed(2) }}</td>
+                  <td :class="{ 'low-stock': product.stock < 10 }">
                     {{ product.stock }}
-                    <span v-if="product.stock < 10" class="stock-warning">
-                      <i class="fas fa-exclamation-circle"></i>
-                    </span>
+                    <i v-if="product.stock < 10" class="fas fa-exclamation-circle"></i>
                   </td>
                   <td class="product-actions">
-                    <button @click="openEditModal(product)" class="btn-icon btn-edit" title="Editar">
-                      <i class="fas fa-edit"></i>
-                    </button>
-                    <button @click="confirmDelete(product)" class="btn-icon btn-delete" title="Eliminar">
-                      <i class="fas fa-trash"></i>
-                    </button>
+                    <button @click="openEditModal(product)" class="btn-icon btn-edit"><i class="fas fa-edit"></i></button>
+                    <button @click="confirmDelete(product)" class="btn-icon btn-delete"><i class="fas fa-trash"></i></button>
                   </td>
                 </tr>
               </tbody>
             </table>
-            
-            <!-- Paginación -->
-            <div v-if="filteredProducts.length > itemsPerPage" class="pagination">
-              <button 
-                @click="prevPage" 
-                :disabled="currentPage === 1" 
-                class="page-btn"
-              >
+
+            <div v-if="totalPages > 1" class="pagination">
+              <button @click="currentPage--" :disabled="currentPage === 1" class="page-btn">
                 <i class="fas fa-chevron-left"></i>
               </button>
-              
-              <span class="page-info">
-                Página {{ currentPage }} de {{ totalPages }}
-              </span>
-              
-              <button 
-                @click="nextPage" 
-                :disabled="currentPage === totalPages" 
-                class="page-btn"
-              >
+              <span class="page-info">Página {{ currentPage }} de {{ totalPages }}</span>
+              <button @click="currentPage++" :disabled="currentPage === totalPages" class="page-btn">
                 <i class="fas fa-chevron-right"></i>
               </button>
             </div>
@@ -244,75 +185,38 @@
       </div>
     </main>
 
-    <!-- Modal de edición -->
     <div v-if="showEditModal" class="modal-overlay" @click.self="closeEditModal">
       <div class="modal-content">
         <div class="modal-header">
           <h3><i class="fas fa-edit"></i> Editar Producto</h3>
-          <button @click="closeEditModal" class="btn-close">
-            <i class="fas fa-times"></i>
-          </button>
+          <button @click="closeEditModal" class="btn-close"><i class="fas fa-times"></i></button>
         </div>
         
         <form @submit.prevent="updateProduct" class="modal-form">
           <div class="form-group">
-            <label>Nombre del Producto</label>
-            <input 
-              type="text" 
-              v-model="editingProduct.name" 
-              required 
-              class="form-input"
-            />
+            <label>Nombre</label>
+            <input type="text" v-model="editingProduct.name" required class="form-input" />
           </div>
-
           <div class="form-group">
-            <label>Categoria del producto</label>
-            <input 
-              type="text" 
-              v-model="editingProduct.category" 
-              required 
-              class="form-input"
-            />
+            <label>Categoría</label>
+            <input type="text" v-model="editingProduct.category" required class="form-input" />
           </div>
-          
           <div class="form-group">
             <label>Precio</label>
-            <input 
-              type="number" 
-              v-model.number="editingProduct.price" 
-              required 
-              min="0" 
-              step="0.01" 
-              class="form-input"
-            />
+            <input type="number" v-model.number="editingProduct.price" step="0.01" required class="form-input" />
           </div>
-          
           <div class="form-group">
             <label>Stock</label>
-            <input 
-              type="number" 
-              v-model.number="editingProduct.stock" 
-              required 
-              min="0" 
-              class="form-input"
-            />
+            <input type="number" v-model.number="editingProduct.stock" required class="form-input" />
           </div>
           
-          
           <div class="modal-actions">
-            <button type="button" @click="closeEditModal" class="btn btn-secondary">
-              Cancelar
-            </button>
+            <button type="button" @click="closeEditModal" class="btn btn-secondary">Cancelar</button>
             <button type="submit" class="btn btn-primary" :disabled="isUpdating">
-              <span v-if="isUpdating">Actualizando...</span>
-              <span v-else>Guardar Cambios</span>
+              {{ isUpdating ? 'Guardando...' : 'Guardar Cambios' }}
             </button>
           </div>
         </form>
-        
-        <div v-if="editError" class="alert alert-error">
-          {{ editError }}
-        </div>
       </div>
     </div>
   </div>
@@ -324,201 +228,150 @@ import apiClient from '../../axios';
 
 export default {
   name: 'AlmacenistaDashboard',
-  components: {
-    NotificationBell
-  },
+  components: { NotificationBell },
   data() {
     return {
       products: [],
-      newProduct: {
-        name: '',
-        price: 0,
-        stock: 0,
-        category: ''
-      },
+      newProduct: { name: '', price: 0, stock: 0, category: '' },
       loading: false,
-      error: null,
-      addError: null,
-      addSuccess: null,
       isSubmitting: false,
+      isUpdating: false,
       searchTerm: '',
       currentPage: 1,
       itemsPerPage: 8,
       showEditModal: false,
       editingProduct: null,
-      editError: null,
-      isUpdating: false
+      addError: null,
+      addSuccess: null,
+      error: null
     };
   },
   computed: {
+    // 1. Obtener tenant_id del usuario logeado
+    tenantId() {
+      const userInfo = JSON.parse(localStorage.getItem('user_info'));
+      return userInfo ? userInfo.tenant_id : null;
+    },
     filteredProducts() {
       if (!this.searchTerm) return this.products;
       const term = this.searchTerm.toLowerCase();
-      return this.products.filter(product => 
-        product.name.toLowerCase().includes(term)
-      );
+      return this.products.filter(p => p.name.toLowerCase().includes(term));
     },
     totalPages() {
       return Math.ceil(this.filteredProducts.length / this.itemsPerPage);
     },
+    paginatedProducts() {
+      const start = (this.currentPage - 1) * this.itemsPerPage;
+      return this.filteredProducts.slice(start, start + this.itemsPerPage);
+    },
     lowStockCount() {
-      return this.products.filter(product => product.stock < 10).length;
+      return this.products.filter(p => p.stock < 10).length;
     }
   },
   methods: {
-    logout() {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user_info'); 
-      this.$router.push('/login');
+    async fetchProducts() {
+      this.loading = true;
+      try {
+        // El backend debe filtrar por tenant_id usando el token
+        const { data } = await apiClient.get('/api/products');
+        this.products = data.map(p => ({
+          ...p,
+          price: Number(p.price),
+          stock: parseInt(p.stock),
+          category : p.category
+        }));
+      } catch (err) {
+        this.error = 'No se pudieron cargar los productos';
+      } finally {
+        this.loading = false;
+      }
     },
 
     async addProduct() {
-      this.addError = null;
-      this.addSuccess = null;
-      
-      // 1. Validaciones básicas de campos vacíos
-      if (!this.newProduct.name?.trim() || !this.newProduct.category?.trim()) {
-        this.addError = "Nombre y Categoría son obligatorios";
-        return;
-      }
-
-      // 2. Limpieza estricta de tipos de datos
-      const priceValue = Number(this.newProduct.price);
-      const stockValue = Math.floor(Number(this.newProduct.stock));
-
-      // 3. Validar que no sean NaN y cumplan reglas de negocio
-      if (isNaN(priceValue) || priceValue <= 0) {
-        this.addError = "El precio debe ser un número válido mayor a 0";
-        return;
-      }
-      if (isNaN(stockValue) || stockValue < 0) {
-        this.addError = "El stock debe ser un número entero (0 o más)";
+      if (!this.tenantId) {
+        this.addError = "Error: Sesión inválida (Falta Tenant ID)";
         return;
       }
 
       this.isSubmitting = true;
+      this.addError = null;
 
-      const productToSend = {
-        name: this.newProduct.name.trim(),
-        category: this.newProduct.category.trim(),
-        price: priceValue, // Enviamos el número puro
-        stock: stockValue  // Enviamos el entero puro
+      const payload = {
+        ...this.newProduct,
+        tenant_id: this.tenantId // 🔑 Enviamos el ID del negocio
       };
 
       try {
-        const { data } = await apiClient.post('/api/products', productToSend);
-        
-        this.addSuccess = `Producto "${data.name}" agregado exitosamente`;
-        
-        // Aseguramos que el nuevo producto en la lista local también sea numérico
+        const { data } = await apiClient.post('/api/products', payload);
         this.products.unshift({
           ...data,
           price: Number(data.price),
-          stock: parseInt(data.stock)
+          stock: parseInt(data.stock),
+          category:data.category
         });
-        
+        this.addSuccess = "Producto registrado";
         this.resetForm();
         setTimeout(() => this.addSuccess = null, 3000);
-      } catch (error) {
-        this.addError = error.response?.data?.msg || 'Error al agregar el producto';
+      } catch (err) {
+        this.addError = err.response?.data?.msg || 'Error al guardar';
       } finally {
         this.isSubmitting = false;
       }
     },
 
     async updateProduct() {
-      this.editError = null;
-
-      // Limpieza de datos para la edición
-      const priceValue = Number(this.editingProduct.price);
-      const stockValue = Math.floor(Number(this.editingProduct.stock));
-
-      if (isNaN(priceValue) || priceValue <= 0 || isNaN(stockValue) || stockValue < 0) {
-        this.editError = "Verifica que el precio y stock sean números válidos";
-        return;
-      }
-
       this.isUpdating = true;
-
-      const productUpdate = {
-        name: this.editingProduct.name.trim(),
-        category: this.editingProduct.category.trim(),
-        price: priceValue,
-        stock: stockValue
-      };
-
       try {
-        const productId = this.editingProduct.id;
-        const { data } = await apiClient.put(`/api/products/${productId}`, productUpdate);
+        const payload = { 
+          ...this.editingProduct, 
+          tenant_id: this.tenantId // Aseguramos que se mantenga en el negocio
+        };
+        const { data } = await apiClient.put(`/api/products/${this.editingProduct.id}`, payload);
         
         const index = this.products.findIndex(p => p.id === data.id);
         if (index !== -1) {
           this.products.splice(index, 1, {
             ...data,
             price: Number(data.price),
-            stock: parseInt(data.stock)
+            stock: parseInt(data.stock),
+            category: data.category,
+
           });
         }
-        
         this.closeEditModal();
-      } catch (error) {
-        this.editError = error.response?.data?.msg || 'Error al actualizar';
+      } catch (err) {
+        alert("Error al actualizar");
       } finally {
         this.isUpdating = false;
       }
     },
 
-    async fetchProducts() {
-      this.loading = true;
-      this.error = null;
-      try {
-        const { data } = await apiClient.get('/api/products');
-        this.products = data.map(p => ({
-          ...p,
-          price: Number(p.price),
-          stock: parseInt(p.stock)
-        }));
-      } catch (error) {
-        this.error = 'Error al cargar los productos';
-      } finally {
-        this.loading = false;
+    async confirmDelete(product) {
+      if (confirm(`¿Eliminar ${product.name}?`)) {
+        try {
+          await apiClient.delete(`/api/products/${product.id}`);
+          this.products = this.products.filter(p => p.id !== product.id);
+        } catch (err) {
+          alert("No se pudo eliminar");
+        }
       }
-    },
-
-    resetForm() {
-      this.newProduct = { 
-        name: '', 
-        price: 0, 
-        stock: 0, 
-        category: '' 
-      };
-      this.addError = null;
     },
 
     openEditModal(product) {
       this.editingProduct = { ...product };
       this.showEditModal = true;
-      this.editError = null;
     },
-
     closeEditModal() {
       this.showEditModal = false;
       this.editingProduct = null;
     },
-
-    async confirmDelete(product) {
-      if (confirm(`¿Eliminar producto "${product.name}"?`)) {
-        try {
-          await apiClient.delete(`/api/products/${product.id}`);
-          this.products = this.products.filter(p => p.id !== product.id);
-        } catch (error) {
-          alert('Error al eliminar el producto');
-        }
-      }
+    resetForm() {
+      this.newProduct = { name: '', price: 0, stock: 0, category: '' };
     },
-
-    prevPage() { if (this.currentPage > 1) this.currentPage--; },
-    nextPage() { if (this.currentPage < this.totalPages) this.currentPage++; }
+    logout() {
+      localStorage.clear();
+      this.$router.push('/login');
+    }
   },
   mounted() {
     this.fetchProducts();

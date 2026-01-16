@@ -2,7 +2,7 @@
   <div class="sales-container">
     <h1 class="page-title text-white">Gestión de Ventas</h1>
     <BackButton />
-    
+
     <!-- Panel principal con dos columnas -->
     <div class="dashboard-grid">
       <!-- Columna izquierda: Registrar venta -->
@@ -12,7 +12,7 @@
             <i class="fas fa-cart-plus"></i>
             Registrar Nueva Venta
           </h2>
-          
+
           <div v-if="localStockAlerts.length > 0" class="alert-box warning-alert">
             <p><i class="fas fa-exclamation-triangle"></i> <strong>Advertencia de Stock Bajo:</strong></p>
             <ul>
@@ -25,15 +25,8 @@
             <!-- Sección rápida de cliente -->
             <div class="quick-section">
               <label class="section-label"><i class="fas fa-user"></i> Cliente</label>
-              <AutocompleteSearch
-                :items="customers"
-                placeholder="Buscar cliente..."
-                labelKey="fullSearchKey"
-                valueKey="id"
-                v-model="newSale.customer_id"
-                :secondaryLabelKey="null"
-                class="compact-autocomplete"
-              />
+              <AutocompleteSearch :items="customers" placeholder="Buscar cliente..." labelKey="fullSearchKey"
+                valueKey="id" v-model="newSale.customer_id" :secondaryLabelKey="null" class="compact-autocomplete" />
               <span v-if="newSale.customer_id" class="selected-info">
                 Cliente seleccionado
               </span>
@@ -43,69 +36,45 @@
             <div class="quick-section">
               <div class="section-header" @click="showProductsSection = !showProductsSection">
                 <label class="section-label">
-                  <i class="fas fa-boxes"></i> Productos ({{ newSale.items.filter(i => i.product_id).length }})
+                  <i class="fas fa-boxes"></i> Productos ({{newSale.items.filter(i => i.product_id).length}})
                 </label>
                 <i class="fas" :class="showProductsSection ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
               </div>
-              
+
               <div v-show="showProductsSection" class="products-section">
                 <div class="product-item-group" v-for="(item, index) in newSale.items" :key="index">
                   <div class="product-row">
-                    <AutocompleteSearch
-                      :items="products"
-                      placeholder="Producto..."
-                      labelKey="name"
-                      valueKey="id"
-                      secondaryLabelKey="stock"
-                      :modelValue="item.product_id"
-                      @update:modelValue="handleProductSelection(item, $event)"
-                      class="product-autocomplete"
-                    />
-                    
+                    <AutocompleteSearch :items="products" placeholder="Producto..." labelKey="name" valueKey="id"
+                      secondaryLabelKey="stock" :modelValue="item.product_id"
+                      @update:modelValue="handleProductSelection(item, $event)" class="product-autocomplete" />
+
                     <div class="quantity-controls">
-                      <button 
-                        type="button" 
-                        @click="item.quantity > 1 ? item.quantity-- : null"
-                        class="qty-btn"
-                        :disabled="item.quantity <= 1"
-                      >-</button>
-                      <input
-                        type="number"
-                        v-model.number="item.quantity"
-                        min="1"
-                        :max="getProductStock(item.product_id)"
-                        class="qty-input"
-                        @input="checkLocalStockAlert(item)"
-                      >
-                      <button 
-                        type="button" 
+                      <button type="button" @click="item.quantity > 1 ? item.quantity-- : null" class="qty-btn"
+                        :disabled="item.quantity <= 1">-</button>
+                      <input type="number" v-model.number="item.quantity" min="1"
+                        :max="getProductStock(item.product_id)" class="qty-input" @input="checkLocalStockAlert(item)">
+                      <button type="button"
                         @click="item.quantity < getProductStock(item.product_id) ? item.quantity++ : null"
                         class="qty-btn"
-                        :disabled="!item.product_id || item.quantity >= getProductStock(item.product_id)"
-                      >+</button>
+                        :disabled="!item.product_id || item.quantity >= getProductStock(item.product_id)">+</button>
                     </div>
-                    
+
                     <span class="price-display" v-if="item.product_id">
                       ${{ (getProductPrice(item.product_id) * item.quantity).toFixed(2) }}
                     </span>
-                    
-                    <button 
-                      type="button" 
-                      @click="removeItem(index)" 
-                      class="remove-btn-icon"
-                      :disabled="newSale.items.length <= 1"
-                      title="Quitar producto"
-                    >
+
+                    <button type="button" @click="removeItem(index)" class="remove-btn-icon"
+                      :disabled="newSale.items.length <= 1" title="Quitar producto">
                       <i class="fas fa-times"></i>
                     </button>
                   </div>
-                  
+
                   <div v-if="item.product_id" class="product-info">
-                    <small>Stock: {{ getProductStock(item.product_id) }} | 
+                    <small>Stock: {{ getProductStock(item.product_id) }} |
                       Precio: ${{ getProductPrice(item.product_id).toFixed(2) }}</small>
                   </div>
                 </div>
-                
+
                 <button type="button" @click="addItem" class="add-item-btn">
                   <i class="fas fa-plus"></i> Agregar Producto
                 </button>
@@ -132,104 +101,67 @@
             <div class="quick-section">
               <label class="section-label"><i class="fas fa-credit-card"></i> Pago</label>
               <div class="payment-methods">
-                <button
-                  type="button"
-                  v-for="method in paymentMethods"
-                  :key="method.value"
-                  @click="selectPaymentMethod(method.value)"
-                  class="payment-method-btn"
-                  :class="{ active: newSale.payment.method === method.value }"
-                >
+                <button type="button" v-for="method in paymentMethods" :key="method.value"
+                  @click="selectPaymentMethod(method.value)" class="payment-method-btn"
+                  :class="{ active: newSale.payment.method === method.value }">
                   <i :class="method.icon"></i>
                   {{ method.label }}
                 </button>
               </div>
-              
+
               <!-- Campos de pago dinámicos -->
               <div class="payment-fields" v-if="newSale.payment.method !== 'CREDIT'">
                 <div class="payment-input" v-if="newSale.payment.method !== 'VES'">
                   <label>USD Pagado:</label>
-                  <input
-                    type="number"
-                    v-model.number="newSale.payment.usd_paid"
-                    min="0"
-                    step="0.01"
-                    :placeholder="`Máx: $${calculateTotalAmountUSD().toFixed(2)}`"
-                    class="compact-input"
-                  >
+                  <input type="number" v-model.number="newSale.payment.usd_paid" min="0" step="0.01"
+                    :placeholder="`Máx: $${calculateTotalAmountUSD().toFixed(2)}`" class="compact-input">
                 </div>
-                
+
                 <div class="payment-input" v-if="newSale.payment.method !== 'USD'">
                   <label>Bs Pagados:</label>
-                  <input
-                    type="number"
-                    v-model.number="newSale.payment.ves_paid"
-                    min="0"
-                    step="0.01"
-                    :placeholder="`Req: Bs. ${calculateVesRequired().toFixed(2)}`"
-                    class="compact-input"
-                  >
+                  <input type="number" v-model.number="newSale.payment.ves_paid" min="0" step="0.01" readonly
+                    :placeholder="`Req: Bs. ${calculateVesRequired()}`" class="compact-input">
                 </div>
               </div>
-              
+
               <!-- Campos para crédito -->
               <div v-if="newSale.payment.method === 'CREDIT'" class="credit-fields">
                 <div class="form-group-inline">
                   <label>Días:</label>
-                  <input
-                    type="number"
-                    v-model.number="newSale.credit_days"
-                    min="1"
-                    max="365"
-                    class="compact-input"
-                  >
+                  <input type="number" v-model.number="newSale.credit_days" min="1" max="365" class="compact-input">
                 </div>
-                
+
                 <div class="form-group-inline">
                   <label>Código:</label>
-                  <input
-                    type="text"
-                    v-model="newSale.cancellation_code"
-                    placeholder="Código de cancelación"
-                    class="compact-input"
-                    readonly
-                  >
+                  <input type="text" v-model="newSale.cancellation_code" placeholder="Código de cancelación"
+                    class="compact-input" readonly>
                   <button type="button" @click="openCancellationModal" class="icon-btn-small">
                     <i class="fas fa-tag"></i>
                   </button>
                 </div>
-                               <div class="form-group-inline full-width">
-    <label><i class="fas fa-user-shield"></i> Código Admin:</label>
-    <input
-      type="text"
-      v-model="newSale.admin_auth_code"
-      placeholder="Ingrese código de autorización del administrador"
-      class="compact-input"
-      maxlength="10"
-    >
-    <button type="button" @click="fetchAdminCode" class="icon-btn-small" title="Obtener código del día">
-      <i class="fas fa-sync"></i>
-    </button>
-  </div>
+                <div class="form-group-inline full-width">
+                  <label><i class="fas fa-user-shield"></i> Código Admin:</label>
+                  <input type="text" v-model="newSale.admin_auth_code"
+                    placeholder="Ingrese código de autorización del administrador" class="compact-input" maxlength="10">
+                  <button type="button" @click="fetchAdminCode" class="icon-btn-small" title="Obtener código del día">
+                    <i class="fas fa-sync"></i>
+                  </button>
+                </div>
 
               </div>
 
-              
+
               <div v-if="!isPaymentValid() && newSale.payment.method !== 'CREDIT'" class="error-message">
                 <i class="fas fa-exclamation-circle"></i> Monto pagado insuficiente
               </div>
-              
+
               <div v-if="newSale.payment.method === 'CREDIT' && calculateBalanceDue() > 0" class="credit-warning">
                 <i class="fas fa-handshake"></i> Crédito: Saldo ${{ calculateBalanceDue().toFixed(2) }}
               </div>
             </div>
 
             <!-- Botón de registro -->
-            <button
-              type="submit"
-              :disabled="creating || !isFormValid()"
-              class="submit-btn-primary"
-            >
+            <button type="submit" :disabled="creating || !isFormValid()" class="submit-btn-primary">
               <i class="fas" :class="creating ? 'fa-spinner fa-spin' : 'fa-check-circle'"></i>
               {{ creating ? 'Procesando...' : 'Registrar Venta' }}
             </button>
@@ -242,19 +174,14 @@
         <div class="card sales-list-card">
           <div class="list-header">
             <h2><i class="fas fa-history"></i> Ventas Registradas</h2>
-            
+
             <!-- Filtros rápidos -->
             <div class="filters-bar">
               <div class="search-box">
                 <i class="fas fa-search"></i>
-                <input 
-                  type="text" 
-                  v-model="searchQuery" 
-                  placeholder="Buscar cliente o ID..."
-                  class="search-input"
-                >
+                <input type="text" v-model="searchQuery" placeholder="Buscar cliente o ID..." class="search-input">
               </div>
-              
+
               <select v-model="statusFilter" class="filter-select">
                 <option value="">Todos los estados</option>
                 <option value="Completado">Completado</option>
@@ -263,7 +190,7 @@
                 <option value="Pagado">Pagado</option>
                 <option value="Pendiente">Pendiente</option>
               </select>
-              
+
               <select v-model="paymentFilter" class="filter-select">
                 <option value="">Todos los pagos</option>
                 <option value="Contado">Contado</option>
@@ -276,24 +203,19 @@
           <div v-if="loading" class="loading-state">
             <i class="fas fa-spinner fa-spin"></i> Cargando ventas...
           </div>
-          
+
           <div v-else-if="filteredSales.length === 0" class="no-sales-state">
             <i class="fas fa-shopping-cart"></i>
             <p>No hay ventas registradas</p>
             <small v-if="searchQuery || statusFilter || paymentFilter">Intenta con otros filtros</small>
           </div>
-          
+
           <div v-else class="sales-list-scroll">
-            <div 
-              v-for="sale in filteredSales" 
-              :key="sale.id" 
-              class="sale-card"
-              :class="{
-                'credit-sale': sale.payment_method === 'Crédito',
-                'paid-sale': sale.status === 'Pagado',
-                'partial-sale': sale.status === 'Abonado'
-              }"
-            >
+            <div v-for="sale in filteredSales" :key="sale.id" class="sale-card" :class="{
+              'credit-sale': sale.payment_method === 'Crédito',
+              'paid-sale': sale.status === 'Pagado',
+              'partial-sale': sale.status === 'Abonado'
+            }">
               <div class="sale-card-header">
                 <div class="sale-title">
                   <h3>{{ sale.customer_name }}</h3>
@@ -304,7 +226,7 @@
                   <small>Bs. {{ sale.total_amount_ves.toFixed(2) }}</small>
                 </div>
               </div>
-              
+
               <div class="sale-card-body">
                 <div class="sale-info">
                   <span class="sale-date">
@@ -317,7 +239,7 @@
                     <i class="fas fa-money-bill-wave"></i> {{ sale.payment_method }}
                   </span>
                 </div>
-                
+
                 <!-- Resumen de crédito -->
                 <div v-if="sale.payment_method === 'Crédito'" class="credit-summary-compact">
                   <div class="credit-row">
@@ -331,45 +253,30 @@
                     <span>${{ sale.paid_amount_usd.toFixed(2) }}</span>
                   </div>
                 </div>
-                
+
                 <!-- Acciones rápidas -->
                 <div class="sale-actions-compact">
-                  <button 
-                    v-if="sale.payment_method === 'Crédito' && sale.balance_due_usd > 0" 
-                    @click="openCreditPayment(sale)" 
-                    class="action-btn pay-btn"
-                    title="Registrar pago"
-                  >
+                  <button v-if="sale.payment_method === 'Crédito' && sale.balance_due_usd > 0"
+                    @click="openCreditPayment(sale)" class="action-btn pay-btn" title="Registrar pago">
                     <i class="fas fa-hand-holding-dollar"></i>
                     <span>Pagar</span>
                   </button>
-                  
-                  <button 
-                    @click="generateInvoicePdf(sale)" 
-                    class="action-btn pdf-btn"
-                    title="Factura PDF"
-                  >
+
+                  <button @click="generateInvoicePdf(sale)" class="action-btn pdf-btn" title="Factura PDF">
                     <i class="fas fa-file-pdf"></i>
                   </button>
-                  
-                  <button 
-                    v-if="sale.status !== 'Pagado' && sale.status !== 'Completado' && sale.status !== 'Cancelado'" 
-                    @click="confirmCancellation(sale)" 
-                    class="action-btn cancel-btn"
-                    title="Cancelar venta"
-                  >
+
+                  <button v-if="sale.status !== 'Pagado' && sale.status !== 'Completado' && sale.status !== 'Cancelado'"
+                    @click="confirmCancellation(sale)" class="action-btn cancel-btn" title="Cancelar venta">
                     <i class="fas fa-ban"></i>
                   </button>
-                  
-                  <button 
-                    @click="toggleSaleDetails(sale.id)" 
-                    class="action-btn details-btn"
-                    :title="expandedSale === sale.id ? 'Ocultar detalles' : 'Ver detalles'"
-                  >
+
+                  <button @click="toggleSaleDetails(sale.id)" class="action-btn details-btn"
+                    :title="expandedSale === sale.id ? 'Ocultar detalles' : 'Ver detalles'">
                     <i class="fas" :class="expandedSale === sale.id ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
                   </button>
                 </div>
-                
+
                 <!-- Detalles expandibles -->
                 <div v-if="expandedSale === sale.id" class="sale-details-expanded">
                   <div class="detail-section">
@@ -381,7 +288,7 @@
                       </div>
                     </div>
                   </div>
-                  
+
                   <div class="detail-section">
                     <h4><i class="fas fa-info-circle"></i> Información</h4>
                     <div class="info-grid">
@@ -399,22 +306,14 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Paginación -->
           <div v-if="filteredSales.length > 0" class="pagination">
-            <button 
-              @click="currentPage--" 
-              :disabled="currentPage === 1"
-              class="page-btn"
-            >
+            <button @click="currentPage--" :disabled="currentPage === 1" class="page-btn">
               <i class="fas fa-chevron-left"></i>
             </button>
             <span class="page-info">Página {{ currentPage }} de {{ totalPages }}</span>
-            <button 
-              @click="currentPage++" 
-              :disabled="currentPage >= totalPages"
-              class="page-btn"
-            >
+            <button @click="currentPage++" :disabled="currentPage >= totalPages" class="page-btn">
               <i class="fas fa-chevron-right"></i>
             </button>
           </div>
@@ -423,21 +322,14 @@
     </div>
 
     <!-- Modales -->
-    <CodeGeneratorModal 
-      :show="showCancellationModal" 
-      @close="showCancellationModal = false"
-      @codeGenerated="handleCodeGenerated"
-      ref="cancellationModalRef"
-    />
+    <CodeGeneratorModal :show="showCancellationModal" @close="showCancellationModal = false"
+      @codeGenerated="handleCodeGenerated" ref="cancellationModalRef" />
 
-    <CreditPayment 
-      :show="showCreditPaymentModal"
-      :sale="selectedSaleForPayment"
-      @close="showCreditPaymentModal = false"
-      @paymentSuccess="handlePaymentSuccess"
-    />
+    <CreditPayment :show="showCreditPaymentModal" :sale="selectedSaleForPayment" @close="showCreditPaymentModal = false"
+      @paymentSuccess="handlePaymentSuccess" />
   </div>
 </template>
+
 
 <script>
 import AutocompleteSearch from './AutocompleteSearch.vue';
@@ -503,33 +395,33 @@ export default {
   computed: {
     filteredSales() {
       let filtered = this.sales;
-      
+
       if (this.searchQuery) {
         const query = this.searchQuery.toLowerCase();
-        filtered = filtered.filter(sale => 
+        filtered = filtered.filter(sale =>
           sale.customer_name.toLowerCase().includes(query) ||
-          sale.id.toLowerCase().includes(query) ||
-          (sale.customer_email && sale.customer_email.toLowerCase().includes(query))
+          sale.id.toLowerCase().includes(query)
         );
+        // console.log(filtered)
       }
-      
+
       if (this.statusFilter) {
         filtered = filtered.filter(sale => sale.status === this.statusFilter);
       }
-      
+
       if (this.paymentFilter) {
         filtered = filtered.filter(sale => sale.payment_method === this.paymentFilter);
       }
-      
+
       return filtered;
     },
-    
+
     paginatedSales() {
       const start = (this.currentPage - 1) * ITEMS_PER_PAGE;
       const end = start + ITEMS_PER_PAGE;
       return this.filteredSales.slice(start, end);
     },
-    
+
     totalPages() {
       return Math.ceil(this.filteredSales.length / ITEMS_PER_PAGE);
     }
@@ -546,17 +438,17 @@ export default {
     }
   },
   methods: {
-    
+
     selectPaymentMethod(method) {
       this.newSale.payment.method = method;
       this.handlePaymentMethodChange();
     },
-    
+
     getProductPrice(productId) {
       const product = this.products.find(p => p.id === productId);
       return product ? Number(product.price) : 0;
     },
-    
+
     formatDateShort(date) {
       const d = new Date(date);
       if (isNaN(d)) return 'Fecha inválida';
@@ -567,19 +459,19 @@ export default {
         minute: '2-digit'
       }).format(d);
     },
-    
+
     toggleSaleDetails(saleId) {
       this.expandedSale = this.expandedSale === saleId ? null : saleId;
     },
-    
-     confirmCancellation(sale) {
+
+    confirmCancellation(sale) {
       if (confirm(`¿Estás seguro de que quieres cancelar la Venta #${sale.id.substring(0, 8)}? Esta acción es irreversible.`)) {
         // TODO: Implementar la lógica real para llamar a la API de cancelación
         // this.cancelSale(sale.id); 
         alert(`Venta ${sale.id.substring(0, 8)} marcada para cancelación. Por favor, implementa la llamada a la API de cancelación.`);
       }
     },
-    
+
     openCreditPayment(sale) {
       this.selectedSaleForPayment = sale;
       this.showCreditPaymentModal = true;
@@ -599,117 +491,123 @@ export default {
         console.log(`Tasa BCV obtenida: Bs. ${this.bcvRate.toFixed(2)}`);
       } catch (error) {
         console.error("Error fetching BCV rate. Using default rate of 36.5.", error);
-        this.bcvRate = 36.5;
       }
     },
 
     async fetchData() {
-  this.loading = true;
-  try {
-    await this.fetchBcvRate();
+      this.loading = true;
+      try {
+        await this.fetchBcvRate();
 
-    const [salesResponse, customersResponse, productsResponse] = await Promise.all([
-      axios.get('/api/sales'),
-      axios.get('/api/customers'),
-      axios.get('/api/products')
-    ]);
+        const [salesResponse, customersResponse, productsResponse] = await Promise.all([
+          axios.get('/api/sales'),
+          axios.get('/api/customers'),
+          axios.get('/api/products')
+        ]);
 
-    const customersMap = new Map(customersResponse.data.map(c => [c.id, c]));
+        const customersMap = new Map(customersResponse.data.map(c => [c.id, c]));
 
-    this.sales = salesResponse.data.map(sale => {
-      const customer = customersMap.get(sale.customer_id) || { name: 'Cliente Desconocido', email: '', address: '' };
-      
-      // Calcular valores importantes
-      const totalAmount = parseFloat(sale.total_amount_usd || sale.total_usd || 0);
-      const balanceDue = parseFloat(sale.balance_due_usd || 0);
-      const paidAmount = parseFloat(sale.paid_amount_usd || 0);
-      const isCreditSale = sale.tipo_pago === 'Crédito' || sale.payment_method === 'Crédito';
-      
-      console.log(`Procesando venta ${sale.id}:`, {
-        totalAmount,
-        balanceDue,
-        paidAmount,
-        isCreditSale,
-        tipo_pago: sale.tipo_pago,
-        status_from_db: sale.status
-      }); 
-      
-     
-// Determinar el estado correcto - LÓGICA CORREGIDA
+        this.sales = salesResponse.data.map(sale => {
+          const customerId = sale.customer_id || sale.customer_name;
+          const customer = customersMap.get(customerId) || {
+            name: sale.customer_name || 'Cliente Desconocido',
+            email: 'N/A',
+            address: 'N/A'
+          };
 
-let status;
 
-if (isCreditSale) {
-  // Usar toFixed(2) para asegurar la verificación de cero
-  const balanceDueCheck = balanceDue.toFixed(2); 
-  
-  // Si el saldo es menor o igual a la tolerancia, está Pagado
-  if (balanceDueCheck <= PAYMENT_TOLERANCE) {
-    status = 'Pagado';
-  } else if (paidAmount > 0) {
-    status = 'Abonado';
-  } else {
-    status = 'Crédito'; // Crédito recién creado sin abonos
-  }
-} else {
-  // Para ventas normales (contado/mixto)
-  status = 'Completado';
-}
-    
-      return {
-        ...sale,
-        customer_name: customer.name,
-        customer_email: customer.email,
-        customer_address: customer.address,
-        total_usd: totalAmount,
-        total_amount_ves: parseFloat(sale.total_amount_ves || totalAmount * this.bcvRate),
-        exchange_rate_used: parseFloat(sale.exchange_rate_used || this.bcvRate),
-        usd_paid: parseFloat(sale.usd_paid || 0),
-        ves_paid: parseFloat(sale.ves_paid || 0),
-        payment_method: sale.tipo_pago || 'Contado',
-        balance_due_usd: balanceDue,
-        paid_amount_usd: paidAmount,
-        status: status,
-        cancellation_code: sale.cancellation_code || null,
-        items: sale.items ? sale.items.map(item => ({
-          ...item,
-          price_usd: parseFloat(item.price_usd || item.price || 0)
-        })) : []
-      };
-    });
+          // Calcular valores importantes
+          const totalAmount = parseFloat(sale.total_amount_usd || sale.total_usd || 0);
+          const balanceDue = parseFloat(sale.balance_due_usd || 0);
+          const paidAmount = parseFloat(sale.paid_amount_usd || 0);
+          const isCreditSale = sale.tipo_pago === 'Crédito' || sale.payment_method === 'Crédito';
 
-    this.customers = customersResponse.data.map(c => ({
-      ...c,
-      cedula: c.cedula || 'N/A', 
-      fullSearchKey: `${c.name} - Cédula: ${c.cedula || 'N/A'}`
-    }));
+          console.log(`Procesando venta ${sale.id}:`, {
+            totalAmount,
+            balanceDue,
+            name_client: sale.customer_name,
+            paidAmount,
+            isCreditSale,
+            tipo_pago: sale.tipo_pago,
+            status_from_db: sale.status
+          });
 
-    this.products = productsResponse.data.map(p => ({
-      ...p,
-      stock: Number(p.stock) || 0,
-      price: Number(p.price) || 0
-    }));
 
-    // Debug: Verificar todas las ventas a crédito
-    console.log('=== RESUMEN VENTAS A CRÉDITO ===');
-    this.sales.filter(s => s.payment_method === 'Crédito').forEach(sale => {
-      console.log(`Venta ${sale.id.substring(0, 8)}:`, {
-        estado: sale.status,
-        total: sale.total_usd,
-        saldo: sale.balance_due_usd,
-        pagado: sale.paid_amount_usd,
-        deberiaSer: sale.balance_due_usd > 0 ? 'Crédito/Abonado' : 'Pagado'
-      });
-    });
+          // Determinar el estado correcto - LÓGICA CORREGIDA
 
-  } catch (error) {
-    console.error("Error fetching data:", error);
-    alert('Error al cargar ventas o clientes/productos. Verifique la consola.');
-  } finally {
-    this.loading = false;
-  }
-},
-    
+          let status;
+
+          if (isCreditSale) {
+            // Usar toFixed(2) para asegurar la verificación de cero
+            const balanceDueCheck = balanceDue.toFixed(2);
+
+            // Si el saldo es menor o igual a la tolerancia, está Pagado
+            if (balanceDueCheck <= PAYMENT_TOLERANCE) {
+              status = 'Pagado';
+            } else if (paidAmount > 0) {
+              status = 'Abonado';
+            } else {
+              status = 'Crédito'; // Crédito recién creado sin abonos
+            }
+          } else {
+            // Para ventas normales (contado/mixto)
+            status = 'Completado';
+          }
+
+          return {
+            ...sale,
+            customer_name: customer.name,
+            customer_email: customer.email,
+            customer_address: customer.address,
+            total_usd: totalAmount,
+            total_amount_ves: parseFloat(sale.total_amount_ves || totalAmount * this.bcvRate),
+            exchange_rate_used: parseFloat(sale.exchange_rate_used || this.bcvRate),
+            usd_paid: parseFloat(sale.usd_paid || 0),
+            ves_paid: parseFloat(sale.ves_paid || 0),
+            payment_method: sale.tipo_pago || 'Contado',
+            balance_due_usd: balanceDue,
+            paid_amount_usd: paidAmount,
+            status: status,
+            cancellation_code: sale.cancellation_code || null,
+            items: sale.items ? sale.items.map(item => ({
+              ...item,
+              price_usd: parseFloat(item.price_usd || item.price || 0)
+            })) : []
+          };
+        });
+
+        this.customers = customersResponse.data.map(c => ({
+          ...c,
+          cedula: c.cedula || 'N/A',
+          fullSearchKey: `${c.name} - Cédula: ${c.cedula || 'N/A'}`
+        }));
+
+        this.products = productsResponse.data.map(p => ({
+          ...p,
+          stock: Number(p.stock) || 0,
+          price: Number(p.price) || 0
+        }));
+
+        // Debug: Verificar todas las ventas a crédito
+        console.log('=== RESUMEN VENTAS A CRÉDITO ===');
+        this.sales.filter(s => s.payment_method === 'Crédito').forEach(sale => {
+          console.log(`Venta ${sale.id.substring(0, 8)}:`, {
+            estado: sale.status,
+            total: sale.total_usd,
+            saldo: sale.balance_due_usd,
+            pagado: sale.paid_amount_usd,
+            deberiaSer: sale.balance_due_usd > 0 ? 'Crédito/Abonado' : 'Pagado'
+          });
+        });
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        alert('Error al cargar ventas o clientes/productos. Verifique la consola.');
+      } finally {
+        this.loading = false;
+      }
+    },
+
     calculateTotalAmountUSD() {
       return this.newSale.items.reduce((total, item) => {
         const product = this.products.find(p => p.id === item.product_id);
@@ -718,7 +616,7 @@ if (isCreditSale) {
         return total + (price * quantity);
       }, 0);
     },
-    
+
     calculateBalanceDue() {
       const totalUSD = this.calculateTotalAmountUSD();
       const usdPaid = Number(this.newSale.payment.usd_paid) || 0;
@@ -737,16 +635,26 @@ if (isCreditSale) {
 
       let remainingUSD = totalUSD - usdPaid;
 
-      if (remainingUSD <= PAYMENT_TOLERANCE) {
+      // Usamos la constante de tolerancia que ya definiste
+      if (remainingUSD <= 0.01) {
         return 0;
       }
 
-      return remainingUSD * this.bcvRate;
+      // Calculamos el monto en VES
+      const totalVES = remainingUSD * this.bcvRate;
+
+      /**
+       * CORRECCIÓN: 
+       * 1. toFixed(2) redondea y convierte a string "XX.XX"
+       * 2. Number() lo convierte de nuevo a valor numérico para que el 
+       * input type="number" lo acepte sin errores de validación.
+       */
+      return Number(totalVES.toFixed(2));
     },
 
     isPaymentValid() {
       if (this.newSale.payment.method === 'CREDIT') {
-        return true; 
+        return true;
       }
 
       const totalUSD = this.calculateTotalAmountUSD();
@@ -762,29 +670,29 @@ if (isCreditSale) {
     },
 
     isFormValid() {
-  // Validación básica
-  if (!this.newSale.customer_id || 
-      this.newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > this.getProductStock(i.product_id)) ||
-      !this.isPaymentValid()) {
-    return false;
-  }
+      // Validación básica
+      if (!this.newSale.customer_name ||
+        this.newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > this.getProductStock(i.product_id)) ||
+        !this.isPaymentValid()) {
+        return false;
+      }
 
-  // Validación específica para crédito
-  if (this.newSale.payment.method === 'CREDIT') {
-    if (!this.newSale.cancellation_code) {
-      return false;
-    }
-    if (!this.newSale.credit_days || this.newSale.credit_days < 1) {
-      return false;
-    }
-    // NUEVO: Validar código del administrador
-    if (!this.newSale.admin_auth_code || this.newSale.admin_auth_code.trim().length < 4) {
-      return false;
-    }
-  }
+      // Validación específica para crédito
+      if (this.newSale.payment.method === 'CREDIT') {
+        if (!this.newSale.cancellation_code) {
+          return false;
+        }
+        if (!this.newSale.credit_days || this.newSale.credit_days < 1) {
+          return false;
+        }
+        // NUEVO: Validar código del administrador
+        if (!this.newSale.admin_auth_code || this.newSale.admin_auth_code.trim().length < 4) {
+          return false;
+        }
+      }
 
-  return true;
-},
+      return true;
+    },
 
     handlePaymentMethodChange() {
       this.newSale.payment.usd_paid = 0;
@@ -808,7 +716,7 @@ if (isCreditSale) {
       const product = this.products.find(p => p.id === productId);
       return product ? product.stock : 0;
     },
-    
+
     checkLocalStockAlert(item) {
       const product = this.products.find(p => p.id === item.product_id);
       if (!product || item.quantity < 1) return;
@@ -828,7 +736,7 @@ if (isCreditSale) {
         const product = this.products.find(p => p.id === item.product_id);
         if (product) {
           const remaining_stock = product.stock - item.quantity;
-          
+
           if (remaining_stock <= STOCK_THRESHOLD) {
             let alert_msg;
             if (remaining_stock < 0) {
@@ -885,7 +793,7 @@ if (isCreditSale) {
         if (this.$refs.cancellationModalRef) {
           this.$refs.cancellationModalRef.generateInitialCode();
         }
-      }); 
+      });
     },
 
     handleCodeGenerated(generatedCode) {
@@ -911,41 +819,41 @@ if (isCreditSale) {
 
         let tipoPagoValue = 'Contado';
         let creditDaysValue = undefined;
-        
+
         if (this.newSale.payment.method === 'CREDIT') {
-          tipoPagoValue = 'Crédito'; 
-          creditDaysValue = Number(this.newSale.credit_days); 
+          tipoPagoValue = 'Crédito';
+          creditDaysValue = Number(this.newSale.credit_days);
         }
-        
+
         const salePayload = {
           customer_id: this.newSale.customer_id,
           items: validItems,
-          tipo_pago: tipoPagoValue, 
-          dias_credito: creditDaysValue, 
+          tipo_pago: tipoPagoValue,
+          dias_credito: creditDaysValue,
           usd_paid: Number(this.newSale.payment.usd_paid),
           ves_paid: Number(this.newSale.payment.ves_paid),
           cancellation_code: this.newSale.cancellation_code,
-           admin_auth_code: this.newSale.admin_auth_code
+          admin_auth_code: this.newSale.admin_auth_code
         };
-        
+
         const response = await axios.post('/api/sales', salePayload);
         const responseData = response.data;
 
         let successMessage = `Venta #${responseData.sale_id.substring(0, 8)}... registrada exitosamente!`;
-        
+
         if (this.newSale.payment.method === 'CREDIT') {
           successMessage += `\n\n🔐 **VENTA A CRÉDITO REGISTRADA**\nCódigo de Cancelación: ${this.newSale.cancellation_code}\nGuarde este código para futuras cancelaciones.`;
         }
-        
+
         if (responseData.stock_alerts && responseData.stock_alerts.length > 0) {
           successMessage += "\n\n⚠️ **ATENCIÓN INVENTARIO:**\n" + responseData.stock_alerts.join('\n');
         }
 
         alert(successMessage);
-        
+
         this.resetForm();
         await this.fetchData();
-        
+
       } catch (error) {
         console.error('Error al registrar la venta:', error.response ? error.response.data : error.message);
         let errorMessage = 'Error al registrar la venta. Por favor, inténtalo de nuevo.';
@@ -965,14 +873,14 @@ if (isCreditSale) {
       this.newSale = {
         customer_id: null,
         items: [{ product_id: null, quantity: 1, price: 0 }],
-        payment: { 
-          method: 'USD', 
-          usd_paid: 0, 
-          ves_paid: 0 
+        payment: {
+          method: 'USD',
+          usd_paid: 0,
+          ves_paid: 0
         },
         credit_days: 30,
         cancellation_code: '',
-         admin_auth_code: ''
+        admin_auth_code: ''
       };
       this.localStockAlerts = [];
     },
@@ -981,9 +889,9 @@ if (isCreditSale) {
       const bcvRate = parseFloat(sale.exchange_rate_used);
       const totalAmountUSD = parseFloat(sale.total_usd);
       const totalAmountVES = parseFloat(sale.total_amount_ves);
-      
-      const balanceDueUSD = sale.balance_due_usd || 0; 
-      const balanceDueVES = balanceDueUSD * bcvRate; 
+
+      const balanceDueUSD = sale.balance_due_usd || 0;
+      const balanceDueVES = balanceDueUSD * bcvRate;
       const paidAmountUSD = sale.paid_amount_usd || 0;
 
       const itemsWithVES = sale.items.map(item => {
@@ -997,7 +905,7 @@ if (isCreditSale) {
       });
 
       const doc = new jsPDF();
-      let y = 10; 
+      let y = 10;
 
       doc.setFontSize(18);
       doc.text("Factura de Venta", 105, y, null, null, "center");
@@ -1056,7 +964,7 @@ if (isCreditSale) {
       doc.setFont(undefined, 'bold');
 
       doc.text("Producto", 12, y + 5);
-      doc.text("Cantidad", 70, y + 5, null, null, "right"); 
+      doc.text("Cantidad", 70, y + 5, null, null, "right");
       doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
       doc.text("P. Unitario BS", 140, y + 5, null, null, "right");
       doc.text("TOTAL BS", 185, y + 5, null, null, "right");
@@ -1069,7 +977,7 @@ if (isCreditSale) {
 
       itemsWithVES.forEach(item => {
         doc.text(item.product_name.substring(0, 30), 12, y + 5);
-        doc.text(String(item.quantity), 70, y + 5, null, null, "right"); 
+        doc.text(String(item.quantity), 70, y + 5, null, null, "right");
         doc.text(`$${item.price_usd.toFixed(2)}`, 105, y + 5, null, null, "right");
         doc.text(`Bs. ${item.price_ves.toFixed(2)}`, 140, y + 5, null, null, "right");
         doc.text(`Bs. ${item.total_ves.toFixed(2)}`, 185, y + 5, null, null, "right");
@@ -1104,7 +1012,7 @@ if (isCreditSale) {
       doc.setFont(undefined, 'bold');
       doc.text("TOTAL VENTA (Bs):", 120, y);
       doc.text(`Bs. ${totalAmountVES.toFixed(2)}`, 185, y, null, null, "right");
-      y += 7; 
+      y += 7;
 
       // Mostrar información de crédito mejorada
       if (sale.status === 'Crédito' || sale.status === 'Abonado' || sale.status === 'Pagado') {
@@ -1112,12 +1020,12 @@ if (isCreditSale) {
         doc.setFont(undefined, 'normal');
         doc.text(`Estado del Crédito: ${sale.status}`, 120, y);
         y += 5;
-        
+
         if (paidAmountUSD > 0) {
           doc.text(`Abonado (USD): $${paidAmountUSD.toFixed(2)}`, 120, y);
           y += 5;
         }
-        
+
         if (balanceDueUSD > 0) {
           doc.setFontSize(12);
           doc.setFont(undefined, 'bold');
@@ -1144,7 +1052,7 @@ if (isCreditSale) {
         y += 5;
         doc.text(`Pagado en BS: Bs. ${sale.ves_paid.toFixed(2)}`, 120, y);
       }
-      
+
       y += 10;
 
       doc.setFontSize(8);
@@ -1154,7 +1062,7 @@ if (isCreditSale) {
 
       doc.save(`Factura_Venta_${sale.id.substring(0, 8)}.pdf`);
     },
-    
+
     formatDate(date) {
       const d = new Date(date);
       if (isNaN(d)) {
@@ -1718,6 +1626,7 @@ if (isCreditSale) {
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1837,16 +1746,16 @@ if (isCreditSale) {
   .payment-methods {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .sale-card-header {
     flex-direction: column;
     gap: 10px;
   }
-  
+
   .sale-total {
     text-align: left;
   }
-  
+
   .quick-summary {
     grid-template-columns: 1fr;
     gap: 15px;
@@ -1857,25 +1766,25 @@ if (isCreditSale) {
   .sales-container {
     padding: 10px;
   }
-  
+
   .card {
     padding: 15px;
   }
-  
+
   .filters-bar {
     flex-direction: column;
   }
-  
+
   .search-box,
   .filter-select {
     min-width: 100%;
   }
-  
+
   .product-row {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .product-autocomplete {
     min-width: 100%;
   }
@@ -1921,4 +1830,36 @@ if (isCreditSale) {
 .balance-paid {
   color: #27ae60;
 }
+
+.exchange-rate-badge {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  border: 1px solid var(--primary-color);
+  display: inline-block;
+  color: #fff;
+}
+
+.summary-row.highlight {
+  color: var(--secondary-color);
+  font-size: 1.1rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.2);
+  padding-top: 10px;
+}
+
+.credit-sale {
+  border-left: 4px solid #f1c40f;
+}
+
+.paid-sale {
+  border-left: 4px solid #2ecc71;
+}
+
+.void-sale {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+/* Estilos adicionales de tus archivos anteriores omitidos por brevedad pero implícitos */
 </style>

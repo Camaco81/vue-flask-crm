@@ -1,17 +1,15 @@
 <template>
   <div class="admin-general-reports">
-    <!-- Header mejorado -->
     <div class="reports-header">
       <button @click="goBack" class="back-btn">
-        <i class="fas fa-arrow-left">⬅️</i>
+        <i class="fas fa-arrow-left"></i> Volver
       </button>
       <div class="header-content">
         <h1><i class="fas fa-chart-line"></i> Reportes Generales de Ventas</h1>
-        <p class="subtitle">Monitoreo completo del rendimiento del sistema</p>
+        <p class="subtitle">Monitoreo completo del rendimiento del negocio (Tenant)</p>
       </div>
     </div>
 
-    <!-- Filtros de fecha -->
     <div class="filters-section">
       <div class="filter-group">
         <label for="date-filter"><i class="fas fa-calendar-alt"></i> Filtrar por fecha:</label>
@@ -31,7 +29,6 @@
       </div>
     </div>
 
-    <!-- Estados -->
     <div v-if="isLoading" class="loading-container">
       <div class="spinner"></div>
       <p>Cargando reportes...</p>
@@ -42,17 +39,8 @@
       <p>{{ error }}</p>
     </div>
 
-    <!-- Contenido principal -->
     <div v-if="!isLoading && !error" class="reports-content">
-      <!-- Gráfico de mejor vendedor -->
-      <div v-if="allOrders.length > 0" class="chart-section">
-        <h3><i class="fas fa-trophy"></i> Ranking de Vendedores</h3>
-        <div class="chart-container">
-          <canvas ref="topSellersChart"></canvas>
-        </div>
-      </div>
-
-      <!-- Resumen mejorado -->
+      
       <div v-if="allOrders.length > 0" class="summary-cards">
         <div class="summary-card">
           <div class="card-icon total-orders">
@@ -74,13 +62,19 @@
           <div class="card-icon top-seller">
             <i class="fas fa-crown"></i>
           </div>
-          <h3>{{ topSeller.name || 'N/A' }}</h3>
+          <h3>{{ topSeller.name || 'Sin ventas' }}</h3>
           <p>Mejor Vendedor</p>
-          <small>${{ formatNumber(topSeller.sales || 0) }}</small>
+          <small v-if="topSeller.sales > 0">${{ formatNumber(topSeller.sales) }}</small>
         </div>
       </div>
 
-      <!-- Ventas por vendedor mejorada -->
+      <div v-if="allOrders.length > 0" class="chart-section">
+        <h3><i class="fas fa-trophy"></i> Ranking de Vendedores</h3>
+        <div class="chart-container">
+          <canvas ref="topSellersChart"></canvas>
+        </div>
+      </div>
+
       <div v-if="allOrders.length > 0" class="sales-summary">
         <h3><i class="fas fa-users"></i> Desempeño por Vendedor</h3>
         <div class="sellers-grid">
@@ -89,7 +83,7 @@
               {{ getInitials(seller) }}
             </div>
             <div class="seller-info">
-              <h4>{{ seller === 'Desconocido' ? 'Vendedor Desconocido' : seller }}</h4>
+              <h4>{{ seller }}</h4>
               <p class="seller-revenue">${{ formatNumber(sales) }}</p>
               <p class="seller-orders">
                 {{ getSellerOrdersCount(seller) }} órdenes
@@ -99,7 +93,6 @@
         </div>
       </div>
 
-      <!-- Lista de órdenes mejorada -->
       <div v-if="filteredOrders.length > 0" class="orders-section">
         <div class="section-header">
           <h3><i class="fas fa-list-alt"></i> Detalle de Órdenes ({{ filteredOrders.length }})</h3>
@@ -108,7 +101,7 @@
         <div class="orders-grid">
           <div v-for="order in filteredOrders" :key="order.id" class="order-card">
             <div class="order-header">
-              <span class="order-id">#{{ order.id }}</span>
+              <span class="order-id">#{{ order.id.substring(0,8) }}</span>
               <span :class="['order-status', getStatusClass(order.status)]">
                 {{ order.status }}
               </span>
@@ -118,44 +111,25 @@
               <div class="order-info">
                 <h4>{{ order.customer_name }}</h4>
                 <p class="order-seller">
-                  <i class="fas fa-user-tie"></i>
-                  {{ order.seller_email || `ID: ${order.seller_id}` || 'N/A' }}
+                  <i class="fas fa-id-badge"></i> 
+                  <strong>Vendedor:</strong> {{ order.seller_name || order.seller_email || 'Personal del Sistema' }}
                 </p>
                 <p class="order-date">
-                  <i class="fas fa-calendar"></i>
-                  {{ formatDate(order.sale_date) }}
-                </p>
-                <p class="order-time">
-                  <i class="fas fa-clock"></i>
-                  {{ formatTime(order.sale_date) }}
+                  <i class="fas fa-calendar"></i> {{ formatDate(order.sale_date) }}
                 </p>
               </div>
-              
               <div class="order-amount">
                 <h3>${{ formatNumber(order.total_amount_usd) }}</h3>
-              </div>
-            </div>
-            
-            <div v-if="order.items && order.items.length > 0" class="order-items">
-              <p><strong>Productos:</strong></p>
-              <div class="items-list">
-                <span v-for="(item, index) in order.items.slice(0, 2)" :key="index" class="item-tag">
-                  {{ item.product_name }} (x{{ item.quantity }})
-                </span>
-                <span v-if="order.items.length > 2" class="item-tag more">
-                  +{{ order.items.length - 2 }} más
-                </span>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Mensaje sin datos -->
       <div v-if="allOrders.length === 0" class="no-data-message">
         <i class="fas fa-chart-pie"></i>
         <h3>Aún no hay órdenes registradas</h3>
-        <p>No se han registrado ventas en el sistema</p>
+        <p>No se han registrado ventas en el sistema para este negocio.</p>
       </div>
     </div>
   </div>
@@ -188,9 +162,8 @@ export default {
     salesBySeller() {
       const sales = {};
       this.filteredOrders.forEach(order => {
-        const sellerKey = order.seller_email || 
-                         (order.seller_id ? `Vendedor ID: ${order.seller_id}` : 'Desconocido');
-        
+        // Priorizamos el nombre real del vendedor enviado por el backend
+        const sellerKey = order.seller_name || order.seller_email || 'Personal del Sistema';
         if (!sales[sellerKey]) {
           sales[sellerKey] = 0;
         }
@@ -208,26 +181,10 @@ export default {
       return top;
     }
   },
-  async created() {
-    await this.fetchAllOrders();
-  },
-  mounted() {
-    if (this.allOrders.length > 0) {
-      this.$nextTick(() => {
-        this.renderTopSellersChart();
-      });
-    }
-  },
-  beforeUnmount() {
-    if (this.topSellersChart) {
-      this.topSellersChart.destroy();
-    }
-  },
   methods: {
     goBack() {
       this.$router.go(-1);
     },
-    
     async fetchAllOrders() {
       this.isLoading = true;
       this.error = '';
@@ -235,194 +192,118 @@ export default {
         const response = await axios.get('/api/sales');
         this.allOrders = response.data;
         this.filteredOrders = [...this.allOrders];
+        this.$nextTick(() => {
+          this.renderTopSellersChart();
+        });
       } catch (error) {
-        console.error('Error al obtener reportes:', error);
-        this.error = error.response?.data?.msg || 
-                    'Error al cargar los reportes. Verifica tus permisos.';
+        this.error = 'No se pudieron cargar los reportes. Verifica tus permisos.';
       } finally {
         this.isLoading = false;
-        if (this.allOrders.length > 0) {
-          this.$nextTick(() => {
-            this.renderTopSellersChart();
-          });
-        }
       }
     },
-    
     applyDateFilter() {
-      if (this.dateFilter === 'all') {
-        this.filteredOrders = [...this.allOrders];
-        return;
-      }
-      
       const now = new Date();
       let startDate = new Date();
-      
+
+      if (this.dateFilter === 'all') {
+        this.filteredOrders = [...this.allOrders];
+        this.renderTopSellersChart();
+        return;
+      }
+
       switch (this.dateFilter) {
-        case 'today':
+        case 'today': {
           startDate.setHours(0, 0, 0, 0);
           break;
-        case 'yesterday': {  // ← Agrega llave de apertura aquí
-      startDate.setDate(now.getDate() - 1);
-      startDate.setHours(0, 0, 0, 0);
-      const yesterdayEnd = new Date(startDate);  // ← Ahora está dentro de un bloque
-      yesterdayEnd.setHours(23, 59, 59, 999);
-      this.filteredOrders = this.allOrders.filter(order => {
-        const orderDate = new Date(order.sale_date);
-        return orderDate >= startDate && orderDate <= yesterdayEnd;
-      });
-      return;
-    }  
-        case 'week':
+        }
+        case 'yesterday': {
+          startDate.setDate(now.getDate() - 1);
+          startDate.setHours(0, 0, 0, 0);
+          const yesterdayEnd = new Date(startDate);
+          yesterdayEnd.setHours(23, 59, 59, 999);
+          this.filteredOrders = this.allOrders.filter(order => {
+            const d = new Date(order.sale_date);
+            return d >= startDate && d <= yesterdayEnd;
+          });
+          this.renderTopSellersChart();
+          return;
+        }
+        case 'week': {
           startDate.setDate(now.getDate() - 7);
           break;
-        case 'month':
+        }
+        case 'month': {
           startDate.setMonth(now.getMonth() - 1);
           break;
-        case 'year':
+        }
+        case 'year': {
           startDate.setFullYear(now.getFullYear() - 1);
           break;
+        }
       }
-      
+
       this.filteredOrders = this.allOrders.filter(order => {
         const orderDate = new Date(order.sale_date);
         return orderDate >= startDate && orderDate <= now;
       });
-      
       this.renderTopSellersChart();
     },
-    
-    getDateFilterLabel() {
-      switch (this.dateFilter) {
-        case 'today': return 'Hoy';
-        case 'yesterday': return 'Ayer';
-        case 'week': return 'Esta semana';
-        case 'month': return 'Este mes';
-        case 'year': return 'Este año';
-        default: return 'Todas las fechas';
-      }
-    },
-    
     renderTopSellersChart() {
-      if (this.topSellersChart) {
-        this.topSellersChart.destroy();
-      }
-      
+      if (this.topSellersChart) this.topSellersChart.destroy();
       const ctx = this.$refs.topSellersChart?.getContext('2d');
-      if (!ctx) return;
-      
-      // Preparar datos para el gráfico
+      if (!ctx || this.filteredOrders.length === 0) return;
+
       const sellersData = Object.entries(this.salesBySeller)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5); // Top 5 vendedores
-      
+        .slice(0, 5);
+
       this.topSellersChart = new Chart(ctx, {
         type: 'bar',
         data: {
-          labels: sellersData.map(([name]) => 
-            name.length > 15 ? name.substring(0, 12) + '...' : name
-          ),
+          labels: sellersData.map(([name]) => name.split(' ')[0]), 
           datasets: [{
             label: 'Ingresos ($)',
             data: sellersData.map(([, sales]) => sales),
-            backgroundColor: [
-              'rgba(102, 126, 234, 0.8)',
-              'rgba(118, 75, 162, 0.8)',
-              'rgba(59, 130, 246, 0.8)',
-              'rgba(16, 185, 129, 0.8)',
-              'rgba(245, 158, 11, 0.8)'
-            ],
-            borderColor: [
-              '#667eea',
-              '#764ba2',
-              '#3b82f6',
-              '#10b981',
-              '#f59e0b'
-            ],
-            borderWidth: 1
+            backgroundColor: 'rgba(102, 126, 234, 0.8)',
+            borderColor: '#667eea',
+            borderWidth: 1,
+            borderRadius: 5
           }]
         },
         options: {
           responsive: true,
-          plugins: {
-            legend: {
-              display: false
-            },
-            tooltip: {
-              callbacks: {
-                label: (context) => `$${this.formatNumber(context.raw)}`
-              }
-            }
-          },
-          scales: {
-            y: {
-              beginAtZero: true,
-              ticks: {
-                callback: (value) => `$${this.formatNumber(value)}`
-              }
-            }
-          }
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
         }
       });
     },
-    
-    formatNumber(value) {
-      return new Intl.NumberFormat('es-ES', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }).format(value);
+    getDateFilterLabel() {
+      const labels = { today: 'Hoy', yesterday: 'Ayer', week: 'Esta semana', month: 'Este mes', year: 'Este año' };
+      return labels[this.dateFilter] || 'Filtrado';
     },
-    
-    formatDate(dateString) {
-      if (!dateString) return 'N/A';
-      try {
-        return new Date(dateString).toLocaleDateString('es-ES', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        });
-      } catch {
-        return 'Fecha inválida';
-      }
+    formatNumber(val) {
+      return parseFloat(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     },
-    
-    formatTime(dateString) {
-      if (!dateString) return '';
-      try {
-        return new Date(dateString).toLocaleTimeString('es-ES', {
-          hour: '2-digit',
-          minute: '2-digit'
-        });
-      } catch {
-        return '';
-      }
+    formatDate(date) {
+      return new Date(date).toLocaleDateString();
     },
-    
-    getStatusClass(status) {
-      return {
-        'pendiente': 'status-pending',
-        'completado': 'status-completed',
-        'cancelado': 'status-cancelled'
-      }[status] || 'status-unknown';
-    },
-    
     getInitials(name) {
-      if (!name || name === 'Desconocido') return '?';
-      return name
-        .split(' ')
-        .map(part => part.charAt(0))
-        .join('')
-        .toUpperCase()
-        .substring(0, 2);
+      if (!name || name === 'Personal del Sistema') return 'PS';
+      return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
     },
-    
     getSellerOrdersCount(sellerName) {
-      return this.filteredOrders.filter(order => {
-        const sellerKey = order.seller_email || 
-                         (order.seller_id ? `Vendedor ID: ${order.seller_id}` : 'Desconocido');
-        return sellerKey === sellerName;
-      }).length;
+      return this.filteredOrders.filter(order => (order.seller_name || order.seller_email || 'Personal del Sistema') === sellerName).length;
+    },
+    getStatusClass(status) {
+      const s = status.toLowerCase();
+      if (s.includes('completado') || s.includes('pagado')) return 'status-completed';
+      if (s.includes('pendiente') || s.includes('espera')) return 'status-pending';
+      return 'status-cancelled';
     }
+  },
+  async mounted() {
+    await this.fetchAllOrders();
   }
 };
 </script>
