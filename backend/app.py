@@ -1,3 +1,10 @@
+try:
+    from gevent import monkey
+    monkey.patch_all()
+except ImportError:
+    pass
+# --------------------------------------------------------------------
+
 from flask import Flask, jsonify, request
 import logging
 import os 
@@ -86,7 +93,7 @@ app.register_blueprint(product_bp, url_prefix='/api/products')
 app.register_blueprint(sale_bp, url_prefix='/api/sales') 
 app.register_blueprint( alert_bp)
 
-app.register_blueprint(rate_bp, url_prefix='/api')
+app.register_blueprint(rate_bp, url_prefix='/api/exchange-rate')
 app.register_blueprint(user_bp, url_prefix='/api') # Contiene /profile
 
 app.register_blueprint(admin_bp, url_prefix='/admin')
