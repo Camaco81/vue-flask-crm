@@ -24,28 +24,20 @@ PAYMENT_TOLERANCE = 0.01
 DEFAULT_CREDIT_DAYS = 30
 
 def get_current_tenant():
-    """Extrae el tenant_id del token JWT."""
-    return get_jwt().get('tenant_id', 'default-tenant')
-
-def get_daily_security_code_server():
-    """Genera el código de seguridad de 6 dígitos."""
-    today = datetime.now().date()
-    date_string = today.isoformat() 
-    combined_string = date_string + SECRET_SEED
-    hash_value = 0
-    for char in combined_string:
-        hash_value = ((hash_value << 5) - hash_value) + ord(char)
-        hash_value &= 0xFFFFFFFF
-    return str(abs(hash_value % 1000000)).zfill(6)
+    """Extrae el tenant_id del token JWT del usuario logeado."""
+    return get_jwt().get('tenant_id')
 
 @sale_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def sales_collection():
-    """Maneja la creación de una nueva venta (POST) y el listado de ventas (GET)."""
-    # CORRECCIÓN: Se añade *_ para evitar el ValueError de desempaquetado
+    """Maneja la creación de una nueva venta y el listado de ventas filtrado por tenant."""
     current_user_id, user_role, *_ = get_user_and_role() 
+    # 🚨 CAMBIO CLAVE: Obtenemos el tenant_id del token JWT
     tenant_id = get_current_tenant()
     
+    if not tenant_id:
+        return jsonify({"msg": "Token inválido: Falta identificador de empresa (tenant_id)"}), 401
+
     if not current_user_id:
         return jsonify({"msg": "Usuario no encontrado"}), 401
     
@@ -81,11 +73,12 @@ def sales_collection():
                 total_amount_usd = 0.0
                 validated_items = []
 
-                # PASO 1: Validar Stock y Pertenencia al Tenant
+                # PASO 1: Validar Stock y Pertenencia al Tenant del usuario logeado
                 for item in items:
                     product_id = item.get('product_id')
                     quantity = int(item.get('quantity', 0))
                     
+                    # Verificamos que el producto exista y sea del mismo tenant que el vendedor
                     cur.execute(
                         "SELECT name, price, stock FROM products WHERE id = %s AND tenant_id = %s FOR UPDATE", 
                         (product_id, tenant_id)
@@ -94,7 +87,7 @@ def sales_collection():
                     
                     if not product:
                         cur.connection.rollback()
-                        return jsonify({"msg": f"Producto ID {product_id} no pertenece a su empresa"}), 404
+                        return jsonify({"msg": f"Producto ID {product_id} no encontrado o no pertenece a su empresa"}), 404
                     
                     if product['stock'] < quantity:
                         cur.connection.rollback()
@@ -121,6 +114,7 @@ def sales_collection():
                 fecha_vencimiento = None
 
                 if is_credit_sale:
+                    # Validar crédito con tenant_id del usuario logeado
                     cur.execute(
                         "SELECT credit_limit_usd, balance_pendiente_usd FROM customers WHERE id = %s AND tenant_id = %s FOR UPDATE",
                         (customer_id, tenant_id)
@@ -128,12 +122,12 @@ def sales_collection():
                     cust_data = cur.fetchone()
                     if not cust_data:
                         cur.connection.rollback()
-                        return jsonify({"msg": "Cliente no encontrado"}), 404
+                        return jsonify({"msg": "Cliente no encontrado o no pertenece a su empresa"}), 404
 
                     nuevo_balance = float(cust_data['balance_pendiente_usd']) + saldo_pendiente
                     if nuevo_balance > float(cust_data['credit_limit_usd']):
                         cur.connection.rollback()
-                        return jsonify({"msg": "Límite de crédito excedido"}), 400
+                        return jsonify({"msg": "Límite de crédito excedido para este cliente"}), 400
                     
                     cur.execute(
                         "UPDATE customers SET balance_pendiente_usd = %s WHERE id = %s AND tenant_id = %s",
@@ -141,7 +135,7 @@ def sales_collection():
                     )
                     fecha_vencimiento = datetime.now().date() + timedelta(days=dias_credito)
 
-                # PASO 3: Insertar Venta
+                # PASO 3: Insertar Venta con el tenant_id del usuario logeado
                 new_sale_id = str(uuid.uuid4())
                 fields = [
                     "id", "customer_id", "user_id", "tenant_id", "sale_date", 
@@ -163,7 +157,6 @@ def sales_collection():
                 cur.execute(query_insert, values)
 
                 # PASO 4: Items e Inventario
-                stock_alerts = []
                 for item in validated_items:
                     cur.execute(
                         "INSERT INTO sale_items (sale_id, product_id, quantity, price, tenant_id) VALUES (%s, %s, %s, %s, %s)",
@@ -174,8 +167,7 @@ def sales_collection():
                         (item['quantity'], item['product_id'], tenant_id)
                     )
                     if (item['current_stock'] - item['quantity']) <= STOCK_THRESHOLD:
-                        msg = verificar_stock_y_alertar(item['product_id'])
-                        if msg: stock_alerts.append(msg)
+                        verificar_stock_y_alertar(item['product_id'])
 
                 cur.connection.commit()
                 return jsonify({"msg": "Venta exitosa", "sale_id": new_sale_id}), 201
@@ -183,16 +175,15 @@ def sales_collection():
         except Exception as e:
             if cur: cur.connection.rollback()
             app_logger.error(f"Error en Venta: {e}", exc_info=True)
-            return jsonify({"msg": "Error interno"}), 500
+            return jsonify({"msg": "Error interno del servidor al procesar la venta"}), 500
 
     elif request.method == "GET":
         try:
             with get_db_cursor() as cur:
-                # Se añade u.nombre para que el reporte sepa quién vendió
                 query = """
                     SELECT s.id, c.name as customer_name, s.sale_date, s.status, 
                            s.total_amount_usd, s.balance_due_usd, s.tipo_pago,
-                           u.nombre as seller_name, u.email as seller_email,
+                           u.nombre as seller_name,
                            json_agg(json_build_object('name', p.name, 'qty', si.quantity)) as items
                     FROM sales s
                     JOIN customers c ON s.customer_id = c.id
@@ -206,58 +197,9 @@ def sales_collection():
                     query += " AND s.user_id = %s"
                     params.append(current_user_id)
                 
-                query += " GROUP BY s.id, c.name, u.nombre, u.email ORDER BY s.sale_date DESC"
+                query += " GROUP BY s.id, c.name, u.nombre ORDER BY s.sale_date DESC"
                 cur.execute(query, params)
                 return jsonify([dict(r) for r in cur.fetchall()]), 200
         except Exception as e:
-            return jsonify({"msg": "Error al listar"}), 500
-
-@sale_bp.route('/<uuid:sale_id>', methods=["GET", "DELETE"])
-@jwt_required()
-def sales_single(sale_id):
-    # CORRECCIÓN: Se añade *_ aquí también
-    current_user_id, user_role, *_ = get_user_and_role()
-    tenant_id = get_current_tenant()
-    sale_id_str = str(sale_id)
-
-    if request.method == "GET":
-        try:
-            with get_db_cursor() as cur:
-                cur.execute("""
-                    SELECT s.*, c.name as customer_name, u.nombre as seller_name, u.email as seller_email,
-                           json_agg(json_build_object('product', p.name, 'qty', si.quantity, 'price', si.price)) as items
-                    FROM sales s
-                    JOIN customers c ON s.customer_id = c.id
-                    JOIN users u ON s.user_id = u.id
-                    JOIN sale_items si ON s.id = si.sale_id
-                    JOIN products p ON si.product_id = p.id
-                    WHERE s.id = %s AND s.tenant_id = %s
-                    GROUP BY s.id, c.name, u.nombre, u.email
-                """, (sale_id_str, tenant_id))
-                res = cur.fetchone()
-                return jsonify(dict(res)) if res else (jsonify({"msg": "No encontrada"}), 404)
-        except Exception as e:
-            return jsonify({"msg": "Error"}), 500
-
-    elif request.method == "DELETE":
-        try:
-            with get_db_cursor(commit=False) as cur:
-                cur.execute("SELECT * FROM sales WHERE id = %s AND tenant_id = %s FOR UPDATE", (sale_id_str, tenant_id))
-                sale = cur.fetchone()
-                if not sale: return jsonify({"msg": "No encontrada"}), 404
-
-                if sale['status'] == 'Crédito' and float(sale['balance_due_usd']) > 0:
-                    cur.execute("UPDATE customers SET balance_pendiente_usd = balance_pendiente_usd - %s WHERE id = %s",
-                               (sale['balance_due_usd'], sale['customer_id']))
-
-                cur.execute("SELECT product_id, quantity FROM sale_items WHERE sale_id = %s", (sale_id_str,))
-                for item in cur.fetchall():
-                    cur.execute("UPDATE products SET stock = stock + %s WHERE id = %s AND tenant_id = %s",
-                               (item['quantity'], item['product_id'], tenant_id))
-
-                cur.execute("DELETE FROM sales WHERE id = %s AND tenant_id = %s", (sale_id_str, tenant_id))
-                cur.connection.commit()
-                return jsonify({"msg": "Venta revertida"}), 200
-        except Exception as e:
-            if cur: cur.connection.rollback()
-            return jsonify({"msg": "Error al eliminar"}), 500
+            app_logger.error(f"Error al listar ventas: {e}")
+            return jsonify({"msg": "Error al listar ventas"}), 500
