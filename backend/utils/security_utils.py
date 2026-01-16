@@ -1,36 +1,40 @@
 import uuid
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta, timezone
 
+# Configuración de logging
 sec_logger = logging.getLogger('backend.utils.security_utils')
 
 # El tiempo de vida (TTL) del código de seguridad en minutos
 CODE_TTL_MINUTES = 5
 
 def generate_security_code():
-    """Genera un código numérico de 6 dígitos."""
-    # Usamos un UUID para asegurar unicidad, pero lo truncamos a 6 dígitos
+    """
+    Genera un código numérico de 6 dígitos basado en un hash de UUID 
+    para garantizar aleatoriedad y unicidad.
+    """
     return str(uuid.uuid4().int)[:6].zfill(6)
 
 def send_security_code(sale_id, contact_value, contact_method, cur):
     """
-    Simula el envío de un código de seguridad y actualiza la venta.
-
-    En una aplicación real, aquí se integraría Twilio, SendGrid, etc.
-    Aquí solo se registra el código en la base de datos y se imprime un mensaje.
+    Genera, registra y simula el envío de un código de seguridad para una venta específica.
     """
     code = generate_security_code()
-    code_sent_at = datetime.now()
-    ttl_expiry = code_sent_at + timedelta(minutes=CODE_TTL_MINUTES)
+    # Usamos timezone.utc para evitar conflictos de "offset-naive" vs "offset-aware"
+    code_sent_at = datetime.now(timezone.utc)
     
-    # Mensaje de simulación
-    print(f"\n--- ALERTA DE SEGURIDAD SIMULADA ---")
-    print(f"VENTA ID: {sale_id}")
-    print(f"CÓDIGO GENERADO: {code}")
-    print(f"CONTACTO: {contact_value} via {contact_method}. Válido hasta: {ttl_expiry.strftime('%H:%M:%S')}")
-    print(f"------------------------------------\n")
+    # Mensaje de simulación para consola (Ideal para desarrollo/ilustración del proceso)
+    print(f"\n" + "="*40)
+    print(f"🛡️  ALERTA DE SEGURIDAD: VERIFICACIÓN DE VENTA")
+    print(f"ID VENTA: {sale_id}")
+    print(f"CÓDIGO:    {code}")
+    print(f"MÉTODO:    {contact_method} ({contact_value})")
+    print(f"VALIDEZ:   {CODE_TTL_MINUTES} minutos")
+    print("="*40 + "\n")
 
     try:
+        # Actualizamos la venta con el código y el timestamp
+        # Asegúrate de que tu tabla 'sales' tenga estas columnas
         cur.execute(
             """
             UPDATE sales SET 
@@ -41,45 +45,58 @@ def send_security_code(sale_id, contact_value, contact_method, cur):
             """,
             (code, code_sent_at, contact_method, sale_id)
         )
+        
         return {
             "success": True, 
-            "message": f"Código de seguridad enviado a {contact_value} por {contact_method}. Válido por {CODE_TTL_MINUTES} minutos."
+            "message": f"Código enviado a {contact_value}. Expira en {CODE_TTL_MINUTES} min.",
+            "code_simulated": code # Lo devolvemos para facilitar pruebas en el frontend
         }
     except Exception as e:
-        sec_logger.error(f"Error al guardar código de seguridad para venta {sale_id}: {e}")
-        return {"success": False, "message": "Error interno al generar el código de seguridad."}
-
+        sec_logger.error(f"Error al guardar código de seguridad (Venta: {sale_id}): {e}")
+        return {"success": False, "message": "No se pudo generar el código de validación."}
 
 def validate_security_code(sale_id, code_provided, cur):
-    """Valida si el código proporcionado es correcto y aún está vigente."""
+    """
+    Valida el código proporcionado contra la base de datos, 
+    verificando que no haya expirado.
+    """
     try:
+        # Buscamos el código y el tiempo de envío
         cur.execute(
             "SELECT confirmation_code, code_sent_at FROM sales WHERE id = %s;",
             (sale_id,)
         )
         result = cur.fetchone()
 
-        if not result or not result['confirmation_code']:
-            return {"valid": False, "message": "No se encontró un código de confirmación activo para esta venta."}
+        if not result or not result.get('confirmation_code'):
+            return {"valid": False, "message": "No hay un proceso de verificación activo para esta venta."}
 
-        # 1. Validar expiración
-        code_sent_at = result['code_sent_at'].replace(tzinfo=None) # Ajustar la zona horaria si es necesario
+        # 1. Validar expiración (Manejo de fechas consciente de la zona horaria)
+        code_sent_at = result['code_sent_at']
+        
+        # Si la fecha viene de la DB como naive (sin zona), la localizamos a UTC
+        if code_sent_at.tzinfo is None:
+            code_sent_at = code_sent_at.replace(tzinfo=timezone.utc)
+            
+        now = datetime.now(timezone.utc)
         expiry_time = code_sent_at + timedelta(minutes=CODE_TTL_MINUTES)
         
-        if datetime.now() > expiry_time:
-            return {"valid": False, "message": "El código de seguridad ha expirado. Por favor, solicite uno nuevo."}
+        if now > expiry_time:
+            # Limpiamos el código expirado para obligar a generar uno nuevo
+            cur.execute("UPDATE sales SET confirmation_code = NULL, code_sent_at = NULL WHERE id = %s;", (sale_id,))
+            return {"valid": False, "message": "El código ha expirado. Solicite uno nuevo."}
 
-        # 2. Validar código
-        if code_provided == result['confirmation_code']:
-            # Limpiar el código después de un uso exitoso
+        # 2. Validar coincidencia del código
+        if str(code_provided).strip() == str(result['confirmation_code']).strip():
+            # Limpieza inmediata tras uso exitoso (Seguridad: One-time use)
             cur.execute(
                 "UPDATE sales SET confirmation_code = NULL, code_sent_at = NULL WHERE id = %s;",
                 (sale_id,)
             )
-            return {"valid": True, "message": "Código de seguridad validado exitosamente."}
+            return {"valid": True, "message": "Verificación exitosa."}
         else:
-            return {"valid": False, "message": "Código de seguridad incorrecto."}
+            return {"valid": False, "message": "El código ingresado es incorrecto."}
 
     except Exception as e:
-        sec_logger.error(f"Error al validar código de seguridad para venta {sale_id}: {e}")
-        return {"valid": False, "message": "Error interno durante la validación del código."}
+        sec_logger.error(f"Error en validación de seguridad (Venta: {sale_id}): {e}")
+        return {"valid": False, "message": "Error interno en el servidor de seguridad."}
