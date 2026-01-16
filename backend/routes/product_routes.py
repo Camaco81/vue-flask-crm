@@ -18,11 +18,18 @@ def get_current_tenant():
 @product_bp.route('', methods=['GET', 'POST'])
 @jwt_required()
 def products_collection():
-    current_user_id, user_role_id = get_user_and_role()
+    # CORRECCIÓN: Manejo flexible del desempaquetado. 
+    # Si get_user_and_role devuelve más de 2 valores, capturamos los extras en '_'
+    result = get_user_and_role()
+    if not result or len(result) < 2:
+        return jsonify({"msg": "Error de autenticación interna"}), 401
+    
+    current_user_id = result[0]
+    user_role_id = result[1]
+    
     tenant_id = get_current_tenant()
     
     if not current_user_id:
-        return jsonify({"msg": "Usuario no encontrado"}), 401
         return jsonify({"msg": "Usuario no encontrado"}), 401
     
     # ------------------ POST (Crear Producto) ------------------
@@ -43,11 +50,11 @@ def products_collection():
                 return jsonify({"msg": "Precio debe ser positivo y Stock no negativo"}), 400
 
             with get_db_cursor(commit=True) as cur:
-                # CORRECCIÓN: Se agregaron los 4 placeholders (%s) para los 4 campos
+                # Usamos alias 'price_usd' para que el frontend lo reconozca de inmediato
                 cur.execute(
                     """INSERT INTO products (name, price, stock, tenant_id) 
                        VALUES (%s, %s, %s, %s) 
-                       RETURNING id, name, price, stock;""",
+                       RETURNING id, name, price AS price_usd, stock;""",
                     (name, price, stock, tenant_id)
                 )
                 new_product = cur.fetchone()
@@ -64,8 +71,12 @@ def products_collection():
     elif request.method == 'GET':
         try:
             with get_db_cursor() as cur:
+                # IMPORTANTE: Agregamos alias 'price_usd' para compatibilidad con el front
                 cur.execute(
-                    "SELECT id, name, price, stock FROM products WHERE tenant_id = %s ORDER BY name;",
+                    """SELECT id, name, price AS price_usd, stock 
+                       FROM products 
+                       WHERE tenant_id = %s::uuid 
+                       ORDER BY name;""",
                     (tenant_id,)
                 )
                 return jsonify([dict(p) for p in cur.fetchall()]), 200
@@ -76,7 +87,9 @@ def products_collection():
 @product_bp.route('/<string:product_id>', methods=['GET', 'PUT', 'DELETE'])
 @jwt_required()
 def product_single(product_id):
-    current_user_id, user_role_id = get_user_and_role()
+    result = get_user_and_role()
+    current_user_id = result[0]
+    user_role_id = result[1]
     tenant_id = get_current_tenant()
 
     if not current_user_id:
@@ -87,7 +100,7 @@ def product_single(product_id):
         try:
             with get_db_cursor() as cur:
                 cur.execute(
-                    "SELECT id, name, price, stock FROM products WHERE id = %s AND tenant_id = %s;",
+                    "SELECT id, name, price AS price_usd, stock FROM products WHERE id = %s AND tenant_id = %s::uuid;",
                     (product_id, tenant_id)
                 )
                 product = cur.fetchone()
@@ -106,26 +119,26 @@ def product_single(product_id):
         
         try:
             with get_db_cursor(commit=True) as cur:
-                # Construcción dinámica de la consulta para actualizar solo lo enviado
                 allowed_keys = {'name': str, 'price': float, 'stock': int}
                 updates = []
                 params = []
                 
                 for key, val in data.items():
                     if key in allowed_keys:
-                        # Validaciones rápidas
+                        # Si el front manda 'price_usd', lo mapeamos a 'price' de la DB
+                        db_key = 'price' if key == 'price_usd' else key
                         clean_val = val.strip() if key == 'name' else allowed_keys[key](val)
-                        if key == 'price' and clean_val <= 0: continue
-                        if key == 'stock' and clean_val < 0: continue
                         
-                        updates.append(f"{key} = %s")
+                        updates.append(f"{db_key} = %s")
                         params.append(clean_val)
                 
                 if not updates:
                     return jsonify({"msg": "Nada que actualizar"}), 400
                 
                 params.extend([product_id, tenant_id])
-                query = f"UPDATE products SET {', '.join(updates)} WHERE id = %s AND tenant_id = %s RETURNING id, name, price, stock;"
+                query = f"""UPDATE products SET {', '.join(updates)} 
+                           WHERE id = %s AND tenant_id = %s::uuid 
+                           RETURNING id, name, price AS price_usd, stock;"""
                 
                 cur.execute(query, tuple(params))
                 updated = cur.fetchone()
@@ -143,7 +156,7 @@ def product_single(product_id):
         try:
             with get_db_cursor(commit=True) as cur:
                 cur.execute(
-                    "DELETE FROM products WHERE id = %s AND tenant_id = %s RETURNING id;",
+                    "DELETE FROM products WHERE id = %s AND tenant_id = %s::uuid RETURNING id;",
                     (product_id, tenant_id)
                 )
                 return jsonify({"msg": "Eliminado"}), 200 if cur.fetchone() else (jsonify({"msg": "No encontrado"}), 404)
