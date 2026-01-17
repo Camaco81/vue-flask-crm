@@ -271,7 +271,7 @@ def get_pending_credits():
     
     @sale_bp.route('/admin/security-code', methods=['GET'])
     @jwt_required()
-    def generate_daily_admin_code():
+    def generate_daily_admin_code_enpoind():
           """
     Endpoint para que el Panel de Admin obtenga el código 
     que debe dictarle al vendedor hoy.
@@ -279,16 +279,15 @@ def get_pending_credits():
     current_user_id, user_role, *_ = get_user_and_role()
     tenant_id = get_current_tenant()
 
-    # Validar que solo un ADMIN pueda pedir este código
     if not check_admin_permission(user_role):
-        app_logger.warning(f"Intento de acceso no autorizado al código admin por usuario {current_user_id}")
+        app_logger.warning(f"Acceso no autorizado: {current_user_id}")
         return jsonify({"msg": "Acceso denegado: Se requiere rol de Administrador"}), 403
 
-    # Generar el código usando la utilidad
+    # Aquí llamamos a la función IMPORTADA de security_utils
     code, date_str = generate_daily_admin_code(tenant_id, SECRET_SEED)
     
     if not code:
-        return jsonify({"msg": "Error al generar el código de seguridad"}), 500
+        return jsonify({"msg": "Error al generar el código"}), 500
 
     return jsonify({
         "security_code": code,
