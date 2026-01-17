@@ -11,6 +11,7 @@ from backend.utils.helpers import (
 )
 from backend.utils.bcv_api import get_dolarvzla_rate 
 from backend.utils.inventory_utils import verificar_stock_y_alertar, STOCK_THRESHOLD
+from backend.utils.security_utils import generate_daily_admin_code
 import logging
 from datetime import datetime, timedelta
 import uuid
@@ -203,3 +204,94 @@ def sales_collection():
         except Exception as e:
             app_logger.error(f"Error al listar ventas: {e}")
             return jsonify({"msg": "Error al listar ventas"}), 500
+        
+        
+@sale_bp.route('/credits/pending', methods=['GET'])
+@jwt_required()
+def get_pending_credits():
+    """
+    Lista todas las ventas que tienen saldo pendiente (créditos)
+    filtrado por el tenant_id del usuario actual.
+    """
+    tenant_id = get_current_tenant()
+    current_user_id, user_role, *_ = get_user_and_role()
+
+    if not tenant_id:
+        return jsonify({"msg": "Token inválido: Falta tenant_id"}), 401
+
+    try:
+        with get_db_cursor() as cur:
+            # Seleccionamos las ventas donde el balance_due_usd > 0
+            # y el tipo de pago sea 'Crédito'
+            query = """
+                SELECT 
+                    s.id as sale_id,
+                    c.name as customer_name,
+                    c.cedula as customer_cedula,
+                    s.sale_date,
+                    s.fecha_vencimiento,
+                    s.total_amount_usd,
+                    s.balance_due_usd,
+                    s.usd_paid,
+                    s.ves_paid,
+                    u.nombre as seller_name,
+                    u.email as seller_email,
+                    -- Calculamos los días de mora (diferencia entre hoy y vencimiento)
+                    (CURRENT_DATE - s.fecha_vencimiento::date) as dias_en_mora,
+                    -- Información de auditoría
+                    s.admin_auth_code as admin_approver_email
+                FROM sales s
+                JOIN customers c ON s.customer_id = c.id
+                JOIN users u ON s.user_id = u.id
+                WHERE s.tenant_id = %s 
+                  AND s.balance_due_usd > 0.01
+                  AND (s.tipo_pago = 'Crédito' OR s.status = 'Crédito')
+            """
+            params = [tenant_id]
+
+            # Si el usuario no es admin, opcionalmente podrías filtrar 
+            # para que solo vea sus propios créditos pendientes, 
+            # pero usualmente los vendedores ven todos los del local.
+            if not check_admin_permission(user_role):
+                # Descomenta la siguiente línea si quieres restricción estricta:
+                # query += " AND s.user_id = %s"
+                # params.append(current_user_id)
+                pass
+
+            query += " ORDER BY dias_en_mora DESC, s.fecha_vencimiento ASC"
+            
+            cur.execute(query, params)
+            credits = cur.fetchall()
+            
+            return jsonify([dict(r) for r in credits]), 200
+
+    except Exception as e:
+        app_logger.error(f"Error al consultar créditos pendientes: {e}")
+        return jsonify({"msg": "Error interno al obtener cartera de créditos"}), 500
+    
+    @sale_bp.route('/admin/security-code', methods=['GET'])
+    @jwt_required()
+    def generate_daily_admin_code():
+          """
+    Endpoint para que el Panel de Admin obtenga el código 
+    que debe dictarle al vendedor hoy.
+    """
+    current_user_id, user_role, *_ = get_user_and_role()
+    tenant_id = get_current_tenant()
+
+    # Validar que solo un ADMIN pueda pedir este código
+    if not check_admin_permission(user_role):
+        app_logger.warning(f"Intento de acceso no autorizado al código admin por usuario {current_user_id}")
+        return jsonify({"msg": "Acceso denegado: Se requiere rol de Administrador"}), 403
+
+    # Generar el código usando la utilidad
+    code, date_str = generate_daily_admin_code(tenant_id, SECRET_SEED)
+    
+    if not code:
+        return jsonify({"msg": "Error al generar el código de seguridad"}), 500
+
+    return jsonify({
+        "security_code": code,
+        "date": date_str,
+        "msg": "Código diario obtenido correctamente"
+    }), 200
