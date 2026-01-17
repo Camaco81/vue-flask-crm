@@ -49,15 +49,12 @@ def sales_collection():
         if error := validate_required_fields(data, ['customer_id', 'items']):
             return jsonify({"msg": f"Campos faltantes: {error}"}), 400
         
+        # 🛠️ CORRECCIÓN 1: Normalización robusta para detectar crédito
         tipo_pago_raw = data.get('tipo_pago', 'Contado')
-        dias_credito = int(data.get('dias_credito', DEFAULT_CREDIT_DAYS))
+        tipo_pago_clean = tipo_pago_raw.lower().strip().replace('é', 'e').replace('á', 'a')
+        
         usd_paid = float(data.get('usd_paid', 0) or 0)
         ves_paid = float(data.get('ves_paid', 0) or 0)
-        
-        # Normalización para evitar errores de tildes
-        tipo_pago_norm = tipo_pago_raw.lower().replace('é', 'e')
-        is_credit_sale = 'credito' in tipo_pago_norm
-        
         customer_id = data.get("customer_id")
         items = data.get("items")
 
@@ -73,86 +70,59 @@ def sales_collection():
                 total_amount_usd = 0.0
                 validated_items = []
 
-                # PASO 1: Validar Stock (tenant_id como VARCHAR)
+                # PASO 1: Validar Stock
                 for item in items:
-                    product_id = item.get('product_id')
-                    quantity = int(item.get('quantity', 0))
-                    
                     cur.execute(
                         "SELECT name, price, stock FROM products WHERE id = %s AND tenant_id = %s::text FOR UPDATE", 
-                        (product_id, tenant_id)
+                        (item.get('product_id'), tenant_id)
                     )
                     product = cur.fetchone()
-                    
                     if not product:
-                        cur.connection.rollback()
-                        return jsonify({"msg": f"Producto ID {product_id} no encontrado"}), 404
+                        raise Exception(f"Producto ID {item.get('product_id')} no encontrado")
                     
-                    if product['stock'] < quantity:
-                        cur.connection.rollback()
-                        return jsonify({"msg": f"Stock insuficiente para {product['name']}"}), 400
+                    if product['stock'] < int(item.get('quantity', 0)):
+                        raise Exception(f"Stock insuficiente para {product['name']}")
                     
                     price_usd = float(product['price'])
-                    total_amount_usd += (price_usd * quantity)
-                    validated_items.append({
-                        'product_id': product_id, 'quantity': quantity, 
-                        'price': price_usd, 'current_stock': product['stock']
-                    })
+                    total_amount_usd += (price_usd * int(item.get('quantity')))
+                    validated_items.append({**item, 'price': price_usd, 'current_stock': product['stock']})
 
-                # PASO 2: Cálculo de Totales
+                # PASO 2: Cálculo de Totales y Saldo
                 total_amount_ves = total_amount_usd * exchange_rate
-                usd_from_ves = ves_paid / exchange_rate if exchange_rate > 0 else 0
-                total_paid_usd = usd_paid + usd_from_ves
+                total_paid_usd = usd_paid + (ves_paid / exchange_rate if exchange_rate > 0 else 0)
                 saldo_pendiente = max(0.0, round(total_amount_usd - total_paid_usd, 2))
 
-                if not is_credit_sale and saldo_pendiente > PAYMENT_TOLERANCE:
-                    cur.connection.rollback()
-                    return jsonify({"msg": f"Pago insuficiente. Faltan ${saldo_pendiente}"}), 400
-
-                status = 'Crédito' if is_credit_sale else 'Completado'
-                fecha_vencimiento = None
-
-                if is_credit_sale:
-                    cur.execute(
-                        "SELECT credit_limit_usd, balance_pendiente_usd FROM customers WHERE id = %s AND tenant_id = %s::text FOR UPDATE",
-                        (customer_id, tenant_id)
-                    )
-                    cust_data = cur.fetchone()
-                    if not cust_data:
-                        cur.connection.rollback()
-                        return jsonify({"msg": "Cliente no encontrado"}), 404
-
-                    nuevo_balance = float(cust_data['balance_pendiente_usd']) + saldo_pendiente
-                    if nuevo_balance > float(cust_data['credit_limit_usd']):
-                        cur.connection.rollback()
-                        return jsonify({"msg": "Límite de crédito excedido"}), 400
-                    
-                    cur.execute(
-                        "UPDATE customers SET balance_pendiente_usd = %s WHERE id = %s AND tenant_id = %s::text",
-                        (nuevo_balance, customer_id, tenant_id)
-                    )
+                # 🛠️ CORRECCIÓN 2: Lógica automática de crédito por saldo
+                if 'credito' in tipo_pago_clean or saldo_pendiente > 0.05:
+                    status = 'Crédito'
+                    dias_credito = int(data.get('dias_credito', DEFAULT_CREDIT_DAYS))
                     fecha_vencimiento = datetime.now().date() + timedelta(days=dias_credito)
+                    
+                    # Actualizar balance del cliente (usando tenant_id)
+                    cur.execute(
+                        "UPDATE customers SET balance_pendiente_usd = balance_pendiente_usd + %s WHERE id = %s AND tenant_id = %s::text",
+                        (saldo_pendiente, customer_id, tenant_id)
+                    )
+                else:
+                    status = 'Completado'
+                    fecha_vencimiento = None
+                    dias_credito = 0
 
-                # PASO 3: Insertar Venta
+                # PASO 3: Insertar Venta (Asegúrate que la tabla tenga tenant_id)
                 new_sale_id = str(uuid.uuid4())
-                fields = [
-                    "id", "customer_id", "user_id", "tenant_id", "sale_date", 
-                    "total_amount_usd", "total_amount_ves", "exchange_rate_used", 
-                    "status", "tipo_pago", "usd_paid", "ves_paid", "balance_due_usd", 
-                    "fecha_vencimiento", "dias_credito"
-                ]
-                values = [
+                cur.execute("""
+                    INSERT INTO sales (
+                        id, customer_id, user_id, tenant_id, sale_date, 
+                        total_amount_usd, total_amount_ves, exchange_rate_used, 
+                        status, tipo_pago, usd_paid, ves_paid, balance_due_usd, 
+                        fecha_vencimiento, dias_credito
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
                     new_sale_id, customer_id, current_user_id, tenant_id, datetime.now(),
                     total_amount_usd, total_amount_ves, exchange_rate,
                     status, tipo_pago_raw, usd_paid, ves_paid, saldo_pendiente,
-                    fecha_vencimiento, (dias_credito if is_credit_sale else 0)
-                ]
-                
-                placeholders = sql.SQL(', ').join(sql.Placeholder() * len(fields))
-                query_insert = sql.SQL("INSERT INTO sales ({}) VALUES ({})").format(
-                    sql.SQL(', ').join(map(sql.Identifier, fields)), placeholders
-                )
-                cur.execute(query_insert, values)
+                    fecha_vencimiento, dias_credito
+                ))
 
                 # PASO 4: Items e Inventario
                 for item in validated_items:
@@ -164,16 +134,13 @@ def sales_collection():
                         "UPDATE products SET stock = stock - %s WHERE id = %s AND tenant_id = %s::text",
                         (item['quantity'], item['product_id'], tenant_id)
                     )
-                    if (item['current_stock'] - item['quantity']) <= STOCK_THRESHOLD:
-                        verificar_stock_y_alertar(item['product_id'])
 
                 cur.connection.commit()
                 return jsonify({"msg": "Venta exitosa", "sale_id": new_sale_id}), 201
 
         except Exception as e:
             if cur: cur.connection.rollback()
-            app_logger.error(f"Error en Venta: {e}", exc_info=True)
-            return jsonify({"msg": "Error interno al procesar la venta"}), 500
+            return jsonify({"msg": str(e)}), 500
 
     elif request.method == "GET":
         try:
@@ -206,13 +173,12 @@ def sales_collection():
 @jwt_required()
 def get_pending_credits():
     tenant_id = get_current_tenant()
-    _, user_role, *_ = get_user_and_role()
-
     if not tenant_id:
-        return jsonify({"msg": "Token inválido: Falta tenant_id"}), 401
+        return jsonify({"msg": "Falta tenant_id"}), 401
 
     try:
         with get_db_cursor() as cur:
+            # 🛠️ CORRECCIÓN 3: Uso del campo 'cedula' y filtro estricto de tenant
             query = """
                 SELECT 
                     s.id::text as sale_id,
@@ -222,26 +188,41 @@ def get_pending_credits():
                     s.fecha_vencimiento::text,
                     s.total_amount_usd,
                     s.balance_due_usd,
-                    s.usd_paid,
-                    s.ves_paid,
-                    u.nombre as seller_name,
-                    u.email as seller_email,
-                    (CURRENT_DATE - s.fecha_vencimiento::date) as dias_en_mora,
-                    COALESCE(s.admin_auth_code, 'N/A') as admin_approver_email
+                    (CURRENT_DATE - s.fecha_vencimiento::date) as dias_en_mora
                 FROM sales s
                 JOIN customers c ON s.customer_id = c.id
-                JOIN users u ON s.user_id = u.id
                 WHERE s.tenant_id = %s::text 
-                  AND s.balance_due_usd > 0.01
-                  AND (LOWER(s.tipo_pago) LIKE 'credito%%' OR LOWER(s.status) = 'credito')
-                ORDER BY dias_en_mora DESC, s.fecha_vencimiento ASC
+                  AND s.balance_due_usd > 0.05
+                  AND (s.fecha_vencimiento IS NOT NULL OR s.status ILIKE '%%credito%%')
+                ORDER BY s.fecha_vencimiento ASC
             """
             cur.execute(query, [tenant_id])
-            credits = cur.fetchall()
-            return jsonify([dict(r) for r in credits]), 200
+            return jsonify([dict(r) for r in cur.fetchall()]), 200
     except Exception as e:
-        app_logger.error(f"Error cartera créditos: {e}")
-        return jsonify({"msg": "Error interno al obtener cartera de créditos"}), 500
+        return jsonify({"msg": "Error al obtener créditos"}), 500
+
+@sale_bp.route('/customer/<customer_id>/credit-sales', methods=['GET'])
+@jwt_required()
+def get_customer_credit_sales(customer_id):
+    tenant_id = get_current_tenant()
+    try:
+        with get_db_cursor() as cur:
+            # Buscamos ventas con saldo pendiente para este cliente específico
+            query = """
+                SELECT id::text, sale_date::text, total_amount_usd, 
+                       balance_due_usd, fecha_vencimiento::text, status
+                FROM sales 
+                WHERE customer_id = %s 
+                  AND tenant_id = %s::text 
+                  AND balance_due_usd > 0.05
+                ORDER BY sale_date DESC
+            """
+            cur.execute(query, (customer_id, tenant_id))
+            sales = cur.fetchall()
+            return jsonify([dict(r) for r in sales]), 200
+    except Exception as e:
+        app_logger.error(f"Error al obtener créditos del cliente: {e}")
+        return jsonify({"msg": "Error interno del servidor"}), 500
 
 @sale_bp.route('/admin/security-code', methods=['GET'])
 @jwt_required()
