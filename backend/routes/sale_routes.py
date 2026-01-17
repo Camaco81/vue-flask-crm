@@ -204,8 +204,7 @@ def sales_collection():
         except Exception as e:
             app_logger.error(f"Error al listar ventas: {e}")
             return jsonify({"msg": "Error al listar ventas"}), 500
-        
-        
+            
 @sale_bp.route('/credits/pending', methods=['GET'])
 @jwt_required()
 def get_pending_credits():
