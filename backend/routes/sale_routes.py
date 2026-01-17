@@ -224,6 +224,85 @@ def get_customer_credit_sales(customer_id):
         app_logger.error(f"Error al obtener créditos del cliente: {e}")
         return jsonify({"msg": "Error interno del servidor"}), 500
 
+@sale_bp.route('/pay-credit', methods=['POST'])
+@jwt_required()
+def pay_credit():
+    current_user_id, user_role, *_ = get_user_and_role()
+    tenant_id = get_current_tenant()
+    data = request.get_json()
+
+    # 1. Validar campos requeridos
+    fields = ['customer_id', 'sale_id', 'payment_amount', 'payment_currency', 'cancellation_code', 'admin_auth_code']
+    if error := validate_required_fields(data, fields):
+        return jsonify({"msg": f"Faltan campos: {error}"}), 400
+
+    # 2. Verificar código de seguridad del Admin (Seguridad de ingeniería)
+    expected_code, _ = generate_daily_admin_code(tenant_id, SECRET_SEED)
+    if data.get('admin_auth_code') != expected_code:
+        return jsonify({"msg": "Código de autorización administrativo incorrecto"}), 403
+
+    cur = None
+    try:
+        with get_db_cursor(commit=False) as cur:
+            # 3. Obtener la venta y verificar el código de cancelación original
+            cur.execute("""
+                SELECT id, balance_due_usd, cancellation_code 
+                FROM sales 
+                WHERE id = %s AND tenant_id = %s::text FOR UPDATE
+            """, (data['sale_id'], tenant_id))
+            sale = cur.fetchone()
+
+            if not sale:
+                raise Exception("La factura no existe")
+            
+            # (Opcional) Validar que el código del cliente coincida si lo guardaste al vender
+            # if sale['cancellation_code'] and sale['cancellation_code'] != data['cancellation_code']:
+            #    raise Exception("Código de cliente inválido")
+
+            # 4. Calcular el monto en USD
+            payment_amount = float(data['payment_amount'])
+            exchange_rate = float(data.get('exchange_rate', 1))
+            
+            amount_in_usd = payment_amount if data['payment_currency'] == 'USD' else (payment_amount / exchange_rate)
+            
+            new_balance = max(0.0, float(sale['balance_due_usd']) - amount_in_usd)
+
+            # 5. Registrar el movimiento en la tabla de pagos (credit_payments)
+            # Nota: Asegúrate de que esta tabla exista en tu DB
+            cur.execute("""
+                INSERT INTO credit_payments (
+                    id, sale_id, customer_id, user_id, amount_paid_usd, 
+                    exchange_rate, payment_method, tenant_id, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                str(uuid.uuid4()), sale['id'], data['customer_id'], 
+                current_user_id, amount_in_usd, exchange_rate, 
+                data['payment_currency'], tenant_id, datetime.now()
+            ))
+
+            # 6. Actualizar la venta
+            status = 'Completado' if new_balance < 0.05 else 'Crédito'
+            cur.execute("""
+                UPDATE sales 
+                SET balance_due_usd = %s, status = %s, updated_at = %s 
+                WHERE id = %s
+            """, (new_balance, status, datetime.now(), sale['id']))
+
+            # 7. Actualizar el saldo global del cliente
+            cur.execute("""
+                UPDATE customers 
+                SET balance_pendiente_usd = balance_pendiente_usd - %s 
+                WHERE id = %s AND tenant_id = %s::text
+            """, (amount_in_usd, data['customer_id'], tenant_id))
+
+            cur.connection.commit()
+            return jsonify({"msg": "Pago registrado con éxito", "nuevo_saldo": new_balance}), 200
+
+    except Exception as e:
+        if cur: cur.connection.rollback()
+        app_logger.error(f"Error en pay_credit: {e}")
+        return jsonify({"msg": str(e)}), 500
+
 @sale_bp.route('/admin/security-code', methods=['GET'])
 @jwt_required()
 def generate_daily_admin_code_endpoint():
