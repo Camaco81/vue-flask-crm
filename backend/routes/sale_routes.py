@@ -182,6 +182,7 @@ def get_pending_credits():
             query = """
                 SELECT 
                     s.id::text as sale_id,
+                    s.customer_id::text as customer_id,
                     c.name as customer_name,
                     c.cedula as customer_cedula,
                     s.sale_date::text,
