@@ -253,7 +253,7 @@ def pay_credit():
     cur = None
     try:
         with get_db_cursor(commit=False) as cur:
-            # 3. Obtener la venta y bloquear fila para evitar condiciones de carrera
+            # 3. Obtener la venta
             cur.execute("""
                 SELECT id, balance_due_usd, cancellation_code 
                 FROM sales 
@@ -262,35 +262,44 @@ def pay_credit():
             sale = cur.fetchone()
 
             if not sale:
-                return jsonify({"msg": "La factura no existe o no pertenece a su empresa"}), 404
+                return jsonify({"msg": "La factura no existe"}), 404
             
-            # 4. Procesar montos (Conversión de moneda)
+            # 4. Procesar montos
             payment_amount = float(data['payment_amount'])
             exchange_rate = float(data.get('exchange_rate', 1))
-            
-            # Convertir a USD para la base de datos si el pago es en Bs
             amount_in_usd = (payment_amount if data['payment_currency'] == 'USD' 
                             else round(payment_amount / exchange_rate, 2))
             
-            current_balance = float(sale['balance_due_usd'])
-            new_balance = max(0.0, current_balance - amount_in_usd)
+            new_balance = max(0.0, float(sale['balance_due_usd']) - amount_in_usd)
 
-            # 5. Registrar el movimiento en el historial de pagos
+            # 5. REGISTRO EN CREDIT_PAYMENTS (CORREGIDO SEGÚN TU LOG)
+            # El log dice que la columna es 'amount_usd'
             cur.execute("""
                 INSERT INTO credit_payments (
-                    id, sale_id, customer_id, user_id, amount_paid_usd, 
-                    exchange_rate, payment_method, tenant_id, created_at
+                    id, 
+                    sale_id, 
+                    customer_id, 
+                    user_id, 
+                    amount_usd, 
+                    exchange_rate, 
+                    payment_method, 
+                    tenant_id, 
+                    created_at
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
-                str(uuid.uuid4()), sale['id'], data['customer_id'], 
-                current_user_id, amount_in_usd, exchange_rate, 
-                data['payment_currency'], tenant_id, datetime.now()
+                str(uuid.uuid4()), 
+                sale['id'], 
+                data['customer_id'], 
+                current_user_id, 
+                amount_in_usd,   # Esto entra en 'amount_usd'
+                exchange_rate, 
+                data['payment_currency'], 
+                tenant_id, 
+                datetime.now()
             ))
 
-            # 6. Actualizar la factura
-            # Si el saldo es casi cero (margen de 0.05), marcamos como Completado
+            # 6. Actualizar la venta
             nuevo_status = 'Completado' if new_balance < 0.05 else 'Crédito'
-            
             cur.execute("""
                 UPDATE sales 
                 SET balance_due_usd = %s, 
@@ -300,7 +309,7 @@ def pay_credit():
                 WHERE id = %s
             """, (new_balance, nuevo_status, datetime.now(), amount_in_usd, sale['id']))
 
-            # 7. Actualizar el saldo acumulado en la ficha del cliente
+            # 7. Actualizar el saldo global del cliente
             cur.execute("""
                 UPDATE customers 
                 SET balance_pendiente_usd = balance_pendiente_usd - %s 
@@ -308,18 +317,12 @@ def pay_credit():
             """, (amount_in_usd, data['customer_id'], tenant_id))
 
             cur.connection.commit()
-            
-            app_logger.info(f"Pago procesado: Venta {sale['id']} - Monto: ${amount_in_usd}")
-            return jsonify({
-                "msg": "Pago registrado con éxito", 
-                "nuevo_saldo": round(new_balance, 2),
-                "status": nuevo_status
-            }), 200
+            return jsonify({"msg": "Pago registrado con éxito", "nuevo_saldo": round(new_balance, 2)}), 200
 
     except Exception as e:
-        if cur: cur.connection.rollback()
-        app_logger.error(f"Error crítico en pay_credit: {str(e)}")
-        return jsonify({"msg": "Error interno al procesar el pago"}), 500
+        # Quitamos el rollback problemático si la conexión está cerrada
+        app_logger.error(f"Error en pay_credit: {e}")
+        return jsonify({"msg": "Error al procesar el pago. Verifique los campos de la tabla credit_payments."}), 500
 
 @sale_bp.route('/admin/security-code', methods=['GET'])
 @jwt_required()
