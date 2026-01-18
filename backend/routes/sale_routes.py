@@ -233,7 +233,7 @@ def pay_credit():
     data = request.get_json()
 
     # 1. Validar campos básicos
-    fields = ['customer_id', 'sale_id', 'payment_amount', 'payment_currency']
+    fields = ['sale_id', 'payment_amount', 'payment_currency'] # Quitamos customer_id de la validación obligatoria si lo sacaremos de la DB
     if error := validate_required_fields(data, fields):
         return jsonify({"msg": f"Faltan campos: {error}"}), 400
 
@@ -247,10 +247,11 @@ def pay_credit():
 
     cur = None
     try:
+        # Usamos commit=False para manejar la transacción manualmente
         with get_db_cursor(commit=False) as cur:
-            # 3. Obtener la venta
+            # 3. Obtener la venta (Traemos el customer_id real de la DB para evitar el error de UUID)
             cur.execute("""
-                SELECT id, balance_due_usd 
+                SELECT id, balance_due_usd, customer_id 
                 FROM sales 
                 WHERE id = %s AND tenant_id = %s::text FOR UPDATE
             """, (data['sale_id'], tenant_id))
@@ -259,11 +260,13 @@ def pay_credit():
             if not sale:
                 return jsonify({"msg": "La factura no existe"}), 404
             
-            # 4. Cálculos de montos (Ingeniería Informática)
+            # El ID real del cliente (UUID) lo tomamos de la venta, no del JSON recibido
+            real_customer_id = sale['customer_id']
+            
+            # 4. Cálculos de montos
             payment_amount = float(data['payment_amount'])
             exchange_rate = float(data.get('exchange_rate', 1))
             
-            # Calculamos ambos valores para llenar la tabla
             if data['payment_currency'] == 'USD':
                 amt_usd = round(payment_amount, 2)
                 amt_ves = round(payment_amount * exchange_rate, 2)
@@ -273,19 +276,19 @@ def pay_credit():
             
             new_balance = max(0.0, float(sale['balance_due_usd']) - amt_usd)
 
-            # 5. INSERT CORREGIDO (Mapeando cada columna de tu tabla)
+            # 5. INSERT BLINDADO (Usando real_customer_id)
             cur.execute("""
                 INSERT INTO credit_payments (
                     id, 
                     sale_id, 
                     customer_id, 
                     user_id, 
-                    amount_usd,        -- NOT NULL
-                    amount_ves,        -- NOT NULL
-                    amount_paid_usd,   -- Opcional pero bueno llenarlo
-                    amount_paid_ves,   -- Opcional pero bueno llenarlo
-                    exchange_rate,     -- NOT NULL
-                    payment_method,    -- NOT NULL
+                    amount_usd,
+                    amount_ves,
+                    amount_paid_usd,
+                    amount_paid_ves,
+                    exchange_rate,
+                    payment_method,
                     tenant_id, 
                     created_at,
                     payment_date
@@ -293,45 +296,54 @@ def pay_credit():
             """, (
                 str(uuid.uuid4()), 
                 sale['id'], 
-                data['customer_id'], 
+                real_customer_id,  # <--- CORREGIDO: UUID garantizado
                 current_user_id, 
-                amt_usd,          # amount_usd
-                amt_ves,          # amount_ves
-                amt_usd,          # amount_paid_usd
-                amt_ves,          # amount_paid_ves
+                amt_usd,
+                amt_ves,
+                amt_usd,
+                amt_ves,
                 exchange_rate, 
                 data['payment_currency'], 
                 tenant_id, 
                 datetime.now(),
-                datetime.now()    # payment_date
+                datetime.now()
             ))
 
-            # 6. Actualizar la venta (Sumamos al acumulado pagado)
+            # 6. Actualizar la venta
             nuevo_status = 'Completado' if new_balance < 0.05 else 'Abonado'
             cur.execute("""
                 UPDATE sales 
                 SET balance_due_usd = %s, 
                     status = %s, 
                     updated_at = %s,
-                    paid_amount_usd = paid_amount_usd + %s
+                    paid_amount_usd = COALESCE(paid_amount_usd, 0) + %s
                 WHERE id = %s
             """, (new_balance, nuevo_status, datetime.now(), amt_usd, sale['id']))
 
             # 7. Actualizar el saldo global del cliente
             cur.execute("""
                 UPDATE customers 
-                SET balance_pendiente_usd = balance_pendiente_usd - %s 
+                SET balance_pendiente_usd = COALESCE(balance_pendiente_usd, 0) - %s 
                 WHERE id = %s AND tenant_id = %s::text
-            """, (amt_usd, data['customer_id'], tenant_id))
+            """, (amt_usd, real_customer_id, tenant_id))
 
             cur.connection.commit()
-            return jsonify({"msg": "Pago registrado con éxito", "nuevo_saldo": round(new_balance, 2)}), 200
+            return jsonify({
+                "msg": "Pago registrado con éxito", 
+                "nuevo_saldo": round(new_balance, 2)
+            }), 200
 
     except Exception as e:
-        if cur: cur.connection.rollback()
-        print(f"DEBUG ERROR: {str(e)}") # Para que lo veas en consola
+        # Manejo de error robusto: Rollback solo si la conexión sigue viva
+        try:
+            if cur and cur.connection:
+                cur.connection.rollback()
+        except Exception:
+            pass 
+            
+        print(f"CRITICAL ERROR: {str(e)}")
         return jsonify({"msg": f"Error interno: {str(e)}"}), 500
-
+    
 @sale_bp.route('/admin/security-code', methods=['GET'])
 @jwt_required()
 def generate_daily_admin_code_endpoint():
