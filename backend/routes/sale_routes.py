@@ -232,20 +232,28 @@ def pay_credit():
     tenant_id = get_current_tenant()
     data = request.get_json()
 
-    # 1. Validar campos requeridos
-    fields = ['customer_id', 'sale_id', 'payment_amount', 'payment_currency', 'cancellation_code', 'admin_auth_code']
+    # 1. Validar campos básicos requeridos
+    # Quitamos 'admin_auth_code' de la validación inicial porque para el admin es opcional
+    fields = ['customer_id', 'sale_id', 'payment_amount', 'payment_currency']
     if error := validate_required_fields(data, fields):
         return jsonify({"msg": f"Faltan campos: {error}"}), 400
 
-    # 2. Verificar código de seguridad del Admin (Seguridad de ingeniería)
-    expected_code, _ = generate_daily_admin_code(tenant_id, SECRET_SEED)
-    if data.get('admin_auth_code') != expected_code:
-        return jsonify({"msg": "Código de autorización administrativo incorrecto"}), 403
+    # 2. Lógica de Seguridad Inteligente
+    es_admin = check_admin_permission(user_role)
+    
+    if not es_admin:
+        # Si no es admin, verificamos el código obligatorio
+        auth_code_recibido = data.get('admin_auth_code')
+        expected_code, _ = generate_daily_admin_code(tenant_id, SECRET_SEED)
+        
+        if not auth_code_recibido or auth_code_recibido != expected_code:
+            app_logger.warning(f"Intento de pago sin código válido por usuario: {current_user_id}")
+            return jsonify({"msg": "Código de autorización administrativo requerido para vendedores"}), 403
 
     cur = None
     try:
         with get_db_cursor(commit=False) as cur:
-            # 3. Obtener la venta y verificar el código de cancelación original
+            # 3. Obtener la venta y bloquear fila para evitar condiciones de carrera
             cur.execute("""
                 SELECT id, balance_due_usd, cancellation_code 
                 FROM sales 
@@ -254,22 +262,20 @@ def pay_credit():
             sale = cur.fetchone()
 
             if not sale:
-                raise Exception("La factura no existe")
+                return jsonify({"msg": "La factura no existe o no pertenece a su empresa"}), 404
             
-            # (Opcional) Validar que el código del cliente coincida si lo guardaste al vender
-            # if sale['cancellation_code'] and sale['cancellation_code'] != data['cancellation_code']:
-            #    raise Exception("Código de cliente inválido")
-
-            # 4. Calcular el monto en USD
+            # 4. Procesar montos (Conversión de moneda)
             payment_amount = float(data['payment_amount'])
             exchange_rate = float(data.get('exchange_rate', 1))
             
-            amount_in_usd = payment_amount if data['payment_currency'] == 'USD' else (payment_amount / exchange_rate)
+            # Convertir a USD para la base de datos si el pago es en Bs
+            amount_in_usd = (payment_amount if data['payment_currency'] == 'USD' 
+                            else round(payment_amount / exchange_rate, 2))
             
-            new_balance = max(0.0, float(sale['balance_due_usd']) - amount_in_usd)
+            current_balance = float(sale['balance_due_usd'])
+            new_balance = max(0.0, current_balance - amount_in_usd)
 
-            # 5. Registrar el movimiento en la tabla de pagos (credit_payments)
-            # Nota: Asegúrate de que esta tabla exista en tu DB
+            # 5. Registrar el movimiento en el historial de pagos
             cur.execute("""
                 INSERT INTO credit_payments (
                     id, sale_id, customer_id, user_id, amount_paid_usd, 
@@ -281,15 +287,20 @@ def pay_credit():
                 data['payment_currency'], tenant_id, datetime.now()
             ))
 
-            # 6. Actualizar la venta
-            status = 'Completado' if new_balance < 0.05 else 'Crédito'
+            # 6. Actualizar la factura
+            # Si el saldo es casi cero (margen de 0.05), marcamos como Completado
+            nuevo_status = 'Completado' if new_balance < 0.05 else 'Crédito'
+            
             cur.execute("""
                 UPDATE sales 
-                SET balance_due_usd = %s, status = %s, updated_at = %s 
+                SET balance_due_usd = %s, 
+                    status = %s, 
+                    updated_at = %s,
+                    paid_amount_usd = paid_amount_usd + %s
                 WHERE id = %s
-            """, (new_balance, status, datetime.now(), sale['id']))
+            """, (new_balance, nuevo_status, datetime.now(), amount_in_usd, sale['id']))
 
-            # 7. Actualizar el saldo global del cliente
+            # 7. Actualizar el saldo acumulado en la ficha del cliente
             cur.execute("""
                 UPDATE customers 
                 SET balance_pendiente_usd = balance_pendiente_usd - %s 
@@ -297,12 +308,18 @@ def pay_credit():
             """, (amount_in_usd, data['customer_id'], tenant_id))
 
             cur.connection.commit()
-            return jsonify({"msg": "Pago registrado con éxito", "nuevo_saldo": new_balance}), 200
+            
+            app_logger.info(f"Pago procesado: Venta {sale['id']} - Monto: ${amount_in_usd}")
+            return jsonify({
+                "msg": "Pago registrado con éxito", 
+                "nuevo_saldo": round(new_balance, 2),
+                "status": nuevo_status
+            }), 200
 
     except Exception as e:
         if cur: cur.connection.rollback()
-        app_logger.error(f"Error en pay_credit: {e}")
-        return jsonify({"msg": str(e)}), 500
+        app_logger.error(f"Error crítico en pay_credit: {str(e)}")
+        return jsonify({"msg": "Error interno al procesar el pago"}), 500
 
 @sale_bp.route('/admin/security-code', methods=['GET'])
 @jwt_required()
