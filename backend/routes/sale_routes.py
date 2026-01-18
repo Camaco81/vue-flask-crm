@@ -232,30 +232,25 @@ def pay_credit():
     tenant_id = get_current_tenant()
     data = request.get_json()
 
-    # 1. Validar campos básicos requeridos
-    # Quitamos 'admin_auth_code' de la validación inicial porque para el admin es opcional
+    # 1. Validar campos básicos
     fields = ['customer_id', 'sale_id', 'payment_amount', 'payment_currency']
     if error := validate_required_fields(data, fields):
         return jsonify({"msg": f"Faltan campos: {error}"}), 400
 
-    # 2. Lógica de Seguridad Inteligente
+    # 2. Seguridad: Bypass si eres Admin
     es_admin = check_admin_permission(user_role)
-    
     if not es_admin:
-        # Si no es admin, verificamos el código obligatorio
         auth_code_recibido = data.get('admin_auth_code')
         expected_code, _ = generate_daily_admin_code(tenant_id, SECRET_SEED)
-        
         if not auth_code_recibido or auth_code_recibido != expected_code:
-            app_logger.warning(f"Intento de pago sin código válido por usuario: {current_user_id}")
-            return jsonify({"msg": "Código de autorización administrativo requerido para vendedores"}), 403
+            return jsonify({"msg": "Código de autorización administrativo requerido"}), 403
 
     cur = None
     try:
         with get_db_cursor(commit=False) as cur:
             # 3. Obtener la venta
             cur.execute("""
-                SELECT id, balance_due_usd, cancellation_code 
+                SELECT id, balance_due_usd 
                 FROM sales 
                 WHERE id = %s AND tenant_id = %s::text FOR UPDATE
             """, (data['sale_id'], tenant_id))
@@ -264,42 +259,55 @@ def pay_credit():
             if not sale:
                 return jsonify({"msg": "La factura no existe"}), 404
             
-            # 4. Procesar montos
+            # 4. Cálculos de montos (Ingeniería Informática)
             payment_amount = float(data['payment_amount'])
             exchange_rate = float(data.get('exchange_rate', 1))
-            amount_in_usd = (payment_amount if data['payment_currency'] == 'USD' 
-                            else round(payment_amount / exchange_rate, 2))
             
-            new_balance = max(0.0, float(sale['balance_due_usd']) - amount_in_usd)
+            # Calculamos ambos valores para llenar la tabla
+            if data['payment_currency'] == 'USD':
+                amt_usd = round(payment_amount, 2)
+                amt_ves = round(payment_amount * exchange_rate, 2)
+            else:
+                amt_ves = round(payment_amount, 2)
+                amt_usd = round(payment_amount / exchange_rate, 2)
+            
+            new_balance = max(0.0, float(sale['balance_due_usd']) - amt_usd)
 
-            # 5. REGISTRO EN CREDIT_PAYMENTS (CORREGIDO SEGÚN TU LOG)
-            # El log dice que la columna es 'amount_usd'
+            # 5. INSERT CORREGIDO (Mapeando cada columna de tu tabla)
             cur.execute("""
                 INSERT INTO credit_payments (
                     id, 
                     sale_id, 
                     customer_id, 
                     user_id, 
-                    amount_usd, 
-                    exchange_rate, 
-                    payment_method, 
+                    amount_usd,        -- NOT NULL
+                    amount_ves,        -- NOT NULL
+                    amount_paid_usd,   -- Opcional pero bueno llenarlo
+                    amount_paid_ves,   -- Opcional pero bueno llenarlo
+                    exchange_rate,     -- NOT NULL
+                    payment_method,    -- NOT NULL
                     tenant_id, 
-                    created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    created_at,
+                    payment_date
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 str(uuid.uuid4()), 
                 sale['id'], 
                 data['customer_id'], 
                 current_user_id, 
-                amount_in_usd,   # Esto entra en 'amount_usd'
+                amt_usd,          # amount_usd
+                amt_ves,          # amount_ves
+                amt_usd,          # amount_paid_usd
+                amt_ves,          # amount_paid_ves
                 exchange_rate, 
                 data['payment_currency'], 
                 tenant_id, 
-                datetime.now()
+                datetime.now(),
+                datetime.now()    # payment_date
             ))
 
-            # 6. Actualizar la venta
-            nuevo_status = 'Completado' if new_balance < 0.05 else 'Crédito'
+            # 6. Actualizar la venta (Sumamos al acumulado pagado)
+            nuevo_status = 'Completado' if new_balance < 0.05 else 'Abonado'
             cur.execute("""
                 UPDATE sales 
                 SET balance_due_usd = %s, 
@@ -307,22 +315,22 @@ def pay_credit():
                     updated_at = %s,
                     paid_amount_usd = paid_amount_usd + %s
                 WHERE id = %s
-            """, (new_balance, nuevo_status, datetime.now(), amount_in_usd, sale['id']))
+            """, (new_balance, nuevo_status, datetime.now(), amt_usd, sale['id']))
 
             # 7. Actualizar el saldo global del cliente
             cur.execute("""
                 UPDATE customers 
                 SET balance_pendiente_usd = balance_pendiente_usd - %s 
                 WHERE id = %s AND tenant_id = %s::text
-            """, (amount_in_usd, data['customer_id'], tenant_id))
+            """, (amt_usd, data['customer_id'], tenant_id))
 
             cur.connection.commit()
             return jsonify({"msg": "Pago registrado con éxito", "nuevo_saldo": round(new_balance, 2)}), 200
 
     except Exception as e:
-        # Quitamos el rollback problemático si la conexión está cerrada
-        app_logger.error(f"Error en pay_credit: {e}")
-        return jsonify({"msg": "Error al procesar el pago. Verifique los campos de la tabla credit_payments."}), 500
+        if cur: cur.connection.rollback()
+        print(f"DEBUG ERROR: {str(e)}") # Para que lo veas en consola
+        return jsonify({"msg": f"Error interno: {str(e)}"}), 500
 
 @sale_bp.route('/admin/security-code', methods=['GET'])
 @jwt_required()
