@@ -391,7 +391,7 @@ export default {
       this.loading = true;
       this.error = null;
       try {
-        const response = await axios.get('/admin/users');
+        const response = await axios.get('api/admin/users');
         
         let userData;
         if (Array.isArray(response.data)) {

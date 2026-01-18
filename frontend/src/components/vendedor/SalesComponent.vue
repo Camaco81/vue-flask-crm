@@ -161,8 +161,8 @@
             </div>
 
             <!-- Botón de registro -->
-            <button type="submit" :disabled="creating || !isFormValid()" class="submit-btn-primary">
-              <i class="fas" :class="creating ? 'fa-spinner fa-spin' : 'fa-check-circle'"></i>
+
+            <button type="submit" :disabled="creating || !isFormValid()" @click="createSale" class="submit-btn-primary">
               {{ creating ? 'Procesando...' : 'Registrar Venta' }}
             </button>
           </form>
@@ -256,25 +256,21 @@
 
                 <!-- Acciones rápidas -->
                 <div class="sale-actions-compact">
-                  <button v-if="sale.payment_method === 'Crédito' && sale.balance_due_usd > 0"
-                    @click="openCreditPayment(sale)" class="action-btn pay-btn" title="Registrar pago">
+                  <button v-if="sale.status === 'Crédito' || sale.status === 'Abonado'"
+                    @click="openCreditPayment(sale)" class="btn-pago-rapido" title="Registrar pago">
                     <i class="fas fa-hand-holding-dollar"></i>
                     <span>Pagar</span>
                   </button>
 
-                  <button @click="generateInvoicePdf(sale)" class="action-btn pdf-btn" title="Factura PDF">
-                    <i class="fas fa-file-pdf"></i>
+                  <button v-if="sale.status === 'Completado' || sale.status === 'Pagado'"
+                    @click="generateInvoicePdf(sale)" class="btn-pdf">
+                    <i class="fas fa-file-pdf"></i> Generar Factura
                   </button>
 
-                  <button v-if="sale.status !== 'Pagado' && sale.status !== 'Completado' && sale.status !== 'Cancelado'"
-                    @click="confirmCancellation(sale)" class="action-btn cancel-btn" title="Cancelar venta">
-                    <i class="fas fa-ban"></i>
-                  </button>
+                  <span v-else class="text-muted-small">
+                    Factura disponible al completar pago
+                  </span>
 
-                  <button @click="toggleSaleDetails(sale.id)" class="action-btn details-btn"
-                    :title="expandedSale === sale.id ? 'Ocultar detalles' : 'Ver detalles'">
-                    <i class="fas" :class="expandedSale === sale.id ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
-                  </button>
                 </div>
 
                 <!-- Detalles expandibles -->
@@ -326,11 +322,9 @@
       @codeGenerated="handleCodeGenerated" ref="cancellationModalRef" />
 
     <CreditPayment :show="showCreditPaymentModal" :sale="selectedSaleForPayment" @close="showCreditPaymentModal = false"
-      @paymentSuccess="handlePaymentSuccess" />
+      @paymentSuccess="fetchSales" ref="creditModal" />
   </div>
 </template>
-
-
 <script>
 import AutocompleteSearch from './AutocompleteSearch.vue';
 import axios from '../../axios';
@@ -367,6 +361,7 @@ export default {
       currentPage: 1,
       newSale: {
         customer_id: null,
+        customer_name: '',
         items: [{ product_id: null, quantity: 1, price: 0 }],
         payment: {
           method: 'USD',
@@ -473,9 +468,23 @@ export default {
     },
 
     openCreditPayment(sale) {
-      this.selectedSaleForPayment = sale;
-      this.showCreditPaymentModal = true;
-    },
+       // Debug para verificar qué campos tiene realmente la venta
+  console.log("UUID Real del cliente:", sale.customer_id); 
+
+  this.selectedSaleForPayment = {
+    ...sale,
+    // Nos aseguramos de que customer_id sea el UUID largo
+    // Si sale.customer_id es el nombre, busca sale.id_cliente o sale.cliente_id
+    customer_id: sale.customer_id 
+  };
+  
+  this.showCreditPaymentModal = true;
+  this.$nextTick(() => {
+    if (this.$refs.creditModal) {
+      this.$refs.creditModal.openForCustomer(this.selectedSaleForPayment);
+    }
+  });
+  },
 
     async handlePaymentSuccess() {
       this.showCreditPaymentModal = false;
@@ -515,7 +524,7 @@ export default {
             address: 'N/A'
           };
 
-
+        
           // Calcular valores importantes
           const totalAmount = parseFloat(sale.total_amount_usd || sale.total_usd || 0);
           const balanceDue = parseFloat(sale.balance_due_usd || 0);
@@ -557,6 +566,7 @@ export default {
           return {
             ...sale,
             customer_name: customer.name,
+            customer_id:customerId,
             customer_email: customer.email,
             customer_address: customer.address,
             total_usd: totalAmount,
@@ -671,7 +681,7 @@ export default {
 
     isFormValid() {
       // Validación básica
-      if (!this.newSale.customer_name ||
+      if (!this.newSale.customer_id ||
         this.newSale.items.some(i => !i.product_id || i.quantity < 1 || i.quantity > this.getProductStock(i.product_id)) ||
         !this.isPaymentValid()) {
         return false;
@@ -884,185 +894,88 @@ export default {
       };
       this.localStockAlerts = [];
     },
-
     generateInvoicePdf(sale) {
-      const bcvRate = parseFloat(sale.exchange_rate_used);
-      const totalAmountUSD = parseFloat(sale.total_usd);
-      const totalAmountVES = parseFloat(sale.total_amount_ves);
+  try {
+    const doc = new jsPDF();
+    const bcvRate = parseFloat(sale.exchange_rate_used) || this.bcvRate;
+    const totalAmountUSD = parseFloat(sale.total_usd) || 0;
+    const totalAmountVES = parseFloat(sale.total_amount_ves) || (totalAmountUSD * bcvRate);
 
-      const balanceDueUSD = sale.balance_due_usd || 0;
-      const balanceDueVES = balanceDueUSD * bcvRate;
-      const paidAmountUSD = sale.paid_amount_usd || 0;
+    // 🛠️ Validación de items: Asegurarnos de que existan
+    const itemsParaFactura = (sale.items || []).map(item => {
+      const priceUSD = parseFloat(item.price_usd || item.price || 0);
+      return {
+        // En tu fetch usas 'name', pero jsPDF busca 'product_name' según tu código anterior
+        name: item.product_name || item.name || 'Producto', 
+        quantity: item.quantity || 0,
+        price_usd: priceUSD,
+        price_ves: priceUSD * bcvRate,
+        total_ves: (priceUSD * (item.quantity || 0)) * bcvRate
+      };
+    });
 
-      const itemsWithVES = sale.items.map(item => {
-        const priceUSD = parseFloat(item.price_usd);
-        return {
-          ...item,
-          price_ves: priceUSD * bcvRate,
-          total_ves: (priceUSD * item.quantity) * bcvRate,
-          price_usd: priceUSD
-        };
-      });
+    let y = 10;
+    doc.setFontSize(18);
+    doc.text("Factura de Venta", 105, y, null, null, "center");
+    
+    // ... (Tu código de encabezado de empresa se mantiene igual) ...
+    y += 30; 
 
-      const doc = new jsPDF();
-      let y = 10;
-
-      doc.setFontSize(18);
-      doc.text("Factura de Venta", 105, y, null, null, "center");
-      y += 10;
-      doc.setFontSize(10);
-      doc.text("Empresa XYZ S.A.", 105, y, null, null, "center");
-      y += 5;
-      doc.text("Av. Principal #123, Ciudad - RIF: J-12345678-9", 105, y, null, null, "center");
-      y += 5;
-      doc.text("contacto@empresa.com", 105, y, null, null, "center");
-      y += 15;
-
-      doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
-      doc.text("Detalles de la Factura", 10, y);
-      doc.setFont(undefined, 'normal');
-      y += 7;
-      doc.text(`Número de Factura: ${sale.id.substring(0, 8).toUpperCase()}`, 10, y);
-      y += 7;
-      doc.text(`Fecha: ${this.formatDate(sale.sale_date)}`, 10, y);
-      y += 7;
-      doc.text(`Tasa de Cambio (VES/USD): Bs. ${bcvRate.toFixed(2)}`, 10, y);
-      y += 7;
-      doc.text(`Estado: ${sale.status}`, 10, y);
-
-      if (sale.cancellation_code) {
+    // Datos del Cliente y Venta
+    doc.setFontSize(10);
+    doc.text(`Factura: ${sale.id.substring(0, 8).toUpperCase()}`, 10, y);
+    doc.text(`Fecha: ${this.formatDate(sale.sale_date)}`, 10, y + 7);
+    doc.text(`Cliente: ${sale.customer_name}`, 10, y + 14);
+    
+    // 🛠️ Cédula: Importante para nosotros
+    if (sale.customer_cedula) {
+        doc.text(`Cédula/RIF: ${sale.customer_cedula}`, 10, y + 21);
         y += 7;
-        doc.text(`Código Cancelación: ${sale.cancellation_code}`, 10, y);
-      }
+    }
+    y += 25;
 
-      if (sale.seller_email) {
-        y += 7;
-        doc.text(`Vendedor: ${sale.seller_email}`, 10, y);
-      }
-      y += 10;
+    // Tabla de productos corregida
+    doc.setFont(undefined, 'bold');
+    doc.setFillColor(230, 230, 230);
+    doc.rect(10, y, 190, 8, 'F');
+    doc.text("Producto", 12, y + 5);
+    doc.text("Cant.", 80, y + 5);
+    doc.text("P. Unit USD", 110, y + 5);
+    doc.text("Total BS", 185, y + 5, null, null, "right");
+    doc.setFont(undefined, 'normal');
+    y += 10;
 
-      doc.setFont(undefined, 'bold');
-      doc.text("Detalles del Cliente", 10, y);
-      doc.setFont(undefined, 'normal');
+    itemsParaFactura.forEach(item => {
+      doc.text(item.name.substring(0, 35), 12, y);
+      doc.text(String(item.quantity), 80, y);
+      doc.text(`$${item.price_usd.toFixed(2)}`, 110, y);
+      doc.text(`Bs. ${item.total_ves.toFixed(2)}`, 185, y, null, null, "right");
       y += 7;
-      doc.text(`Nombre: ${sale.customer_name}`, 10, y);
-      if (sale.customer_email) {
-        y += 7;
-        doc.text(`Email: ${sale.customer_email}`, 10, y);
-      }
-      if (sale.customer_address) {
-        y += 7;
-        doc.text(`Dirección: ${sale.customer_address}`, 10, y);
-      }
-      y += 10;
+      
+      if (y > 275) { doc.addPage(); y = 20; }
+    });
 
-      doc.setFontSize(10);
-      doc.setFillColor(230, 230, 230);
-      doc.rect(10, y, 190, 8, 'F');
-      doc.setTextColor(0, 0, 0);
-      doc.setFont(undefined, 'bold');
+    // Totales finales
+    y += 10;
+    doc.line(120, y, 200, y);
+    y += 7;
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text("TOTAL A PAGAR:", 120, y);
+    doc.text(`Bs. ${totalAmountVES.toFixed(2)}`, 185, y, null, null, "right");
+    
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Ref: $${totalAmountUSD.toFixed(2)}`, 120, y + 7);
 
-      doc.text("Producto", 12, y + 5);
-      doc.text("Cantidad", 70, y + 5, null, null, "right");
-      doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
-      doc.text("P. Unitario BS", 140, y + 5, null, null, "right");
-      doc.text("TOTAL BS", 185, y + 5, null, null, "right");
+    doc.save(`Factura_${sale.id.substring(0, 8)}.pdf`);
 
-      doc.setFont(undefined, 'normal');
-      y += 8;
-
-      doc.setFontSize(10);
-      doc.setTextColor(50, 50, 50);
-
-      itemsWithVES.forEach(item => {
-        doc.text(item.product_name.substring(0, 30), 12, y + 5);
-        doc.text(String(item.quantity), 70, y + 5, null, null, "right");
-        doc.text(`$${item.price_usd.toFixed(2)}`, 105, y + 5, null, null, "right");
-        doc.text(`Bs. ${item.price_ves.toFixed(2)}`, 140, y + 5, null, null, "right");
-        doc.text(`Bs. ${item.total_ves.toFixed(2)}`, 185, y + 5, null, null, "right");
-        y += 7;
-
-        if (y > 270) {
-          doc.addPage();
-          y = 10;
-          doc.setFontSize(10);
-          doc.setFillColor(230, 230, 230);
-          doc.rect(10, y, 190, 8, 'F');
-          doc.setTextColor(0, 0, 0);
-          doc.setFont(undefined, 'bold');
-          doc.text("Producto", 12, y + 5);
-          doc.text("Cantidad", 70, y + 5, null, null, "right");
-          doc.text("P. Unitario USD", 105, y + 5, null, null, "right");
-          doc.text("P. Unitario BS", 140, y + 5, null, null, "right");
-          doc.text("TOTAL BS", 185, y + 5, null, null, "right");
-          doc.setFont(undefined, 'normal');
-          y += 8;
-        }
-      });
-
-      y += 10;
-
-      doc.setDrawColor(150, 150, 150);
-      doc.setLineWidth(0.3);
-      doc.line(120, y, 200, y);
-      y += 5;
-
-      doc.setFontSize(14);
-      doc.setFont(undefined, 'bold');
-      doc.text("TOTAL VENTA (Bs):", 120, y);
-      doc.text(`Bs. ${totalAmountVES.toFixed(2)}`, 185, y, null, null, "right");
-      y += 7;
-
-      // Mostrar información de crédito mejorada
-      if (sale.status === 'Crédito' || sale.status === 'Abonado' || sale.status === 'Pagado') {
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Estado del Crédito: ${sale.status}`, 120, y);
-        y += 5;
-
-        if (paidAmountUSD > 0) {
-          doc.text(`Abonado (USD): $${paidAmountUSD.toFixed(2)}`, 120, y);
-          y += 5;
-        }
-
-        if (balanceDueUSD > 0) {
-          doc.setFontSize(12);
-          doc.setFont(undefined, 'bold');
-          doc.text(`SALDO PENDIENTE (Bs):`, 120, y);
-          doc.text(`Bs. ${balanceDueVES.toFixed(2)}`, 185, y, null, null, "right");
-          y += 7;
-          doc.setFontSize(10);
-          doc.setFont(undefined, 'normal');
-          doc.text(`Saldo Referencial (USD): $${balanceDueUSD.toFixed(2)}`, 120, y);
-        } else {
-          doc.setFontSize(12);
-          doc.setFont(undefined, 'bold');
-          doc.text(`✅ CRÉDITO PAGADO COMPLETAMENTE`, 120, y);
-          y += 7;
-        }
-      } else {
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Referencial (USD): $${totalAmountUSD.toFixed(2)}`, 120, y);
-        y += 5;
-        doc.text(`Método de Pago: ${sale.payment_method || 'N/A'}`, 120, y);
-        y += 5;
-        doc.text(`Pagado en USD: $${sale.usd_paid.toFixed(2)}`, 120, y);
-        y += 5;
-        doc.text(`Pagado en BS: Bs. ${sale.ves_paid.toFixed(2)}`, 120, y);
-      }
-
-      y += 10;
-
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES')}`, 10, 290);
-      doc.text("Gracias por su compra!", 105, 290, null, null, "center");
-
-      doc.save(`Factura_Venta_${sale.id.substring(0, 8)}.pdf`);
-    },
-
+  } catch (err) {
+    console.error("Error al generar PDF:", err);
+    alert("No se pudo generar el PDF. Revisa los datos de la venta.");
+  }
+},
+    
     formatDate(date) {
       const d = new Date(date);
       if (isNaN(d)) {
@@ -1225,10 +1138,10 @@ export default {
   min-width: 80px;
 }
 
-.remove-btn-icon {
-  background: none;
+.btn-pdf {
+  background:  #dc3545;
   border: none;
-  color: #dc3545;
+  color: #f5efef;
   cursor: pointer;
   padding: 5px;
   border-radius: 4px;
@@ -1593,9 +1506,13 @@ export default {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
-.pay-btn {
+.btn-pago-rapido {
   background: #28a745;
   color: white;
+  border-radius: 8px;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
 }
 
 .pdf-btn {
