@@ -232,24 +232,34 @@ def pay_credit():
     tenant_id = get_current_tenant()
     data = request.get_json()
 
-    # 1. Validar campos básicos
-    fields = ['sale_id', 'payment_amount', 'payment_currency'] # Quitamos customer_id de la validación obligatoria si lo sacaremos de la DB
+    # 1. Validar campos básicos requeridos en el JSON
+    fields = ['sale_id', 'payment_amount', 'payment_currency']
     if error := validate_required_fields(data, fields):
         return jsonify({"msg": f"Faltan campos: {error}"}), 400
 
-    # 2. Seguridad: Bypass si eres Admin
+    # 2. SEGURIDAD: Lógica de Autorización
     es_admin = check_admin_permission(user_role)
+    
     if not es_admin:
-        auth_code_recibido = data.get('admin_auth_code')
+        # SI NO ES ADMIN, ES VENDEDOR -> REQUERIR CÓDIGO
+        auth_code_recibido = str(data.get('admin_auth_code', '')).strip()
         expected_code, _ = generate_daily_admin_code(tenant_id, SECRET_SEED)
-        if not auth_code_recibido or auth_code_recibido != expected_code:
-            return jsonify({"msg": "Código de autorización administrativo requerido"}), 403
+        
+        # Debug para el programador
+        print(f"DEBUG SEGURIDAD: Vendedor {current_user_id} envió [{auth_code_recibido}] - Esperado [{expected_code}]")
+        
+        if not auth_code_recibido or auth_code_recibido != str(expected_code):
+            return jsonify({"msg": "Código de autorización administrativo incorrecto o faltante"}), 403
+    else:
+        # SI ES ADMIN, SOLO LOGUEAMOS EL BYPASS
+        app_logger.info(f"ADMIN BYPASS: Usuario {current_user_id} autorizó pago de crédito directamente.")
 
     cur = None
     try:
-        # Usamos commit=False para manejar la transacción manualmente
+        # Usamos commit=False para manejar la transacción manualmente y asegurar atomicidad
         with get_db_cursor(commit=False) as cur:
-            # 3. Obtener la venta (Traemos el customer_id real de la DB para evitar el error de UUID)
+            
+            # 3. Obtener la venta y bloquear fila (FOR UPDATE) para evitar condiciones de carrera
             cur.execute("""
                 SELECT id, balance_due_usd, customer_id 
                 FROM sales 
@@ -258,12 +268,12 @@ def pay_credit():
             sale = cur.fetchone()
 
             if not sale:
-                return jsonify({"msg": "La factura no existe"}), 404
+                return jsonify({"msg": "La factura no existe o no pertenece a su comercio"}), 404
             
-            # El ID real del cliente (UUID) lo tomamos de la venta, no del JSON recibido
+            # Recuperamos el UUID real del cliente directamente de la factura
             real_customer_id = sale['customer_id']
             
-            # 4. Cálculos de montos
+            # 4. Cálculos de montos y conversión de moneda
             payment_amount = float(data['payment_amount'])
             exchange_rate = float(data.get('exchange_rate', 1))
             
@@ -274,29 +284,23 @@ def pay_credit():
                 amt_ves = round(payment_amount, 2)
                 amt_usd = round(payment_amount / exchange_rate, 2)
             
-            new_balance = max(0.0, float(sale['balance_due_usd']) - amt_usd)
+            # Calcular nuevo saldo (no puede ser menor a 0)
+            current_balance = float(sale['balance_due_usd'])
+            new_balance = max(0.0, current_balance - amt_usd)
 
-            # 5. INSERT BLINDADO (Usando real_customer_id)
+            # 5. Registrar el pago en la tabla credit_payments
+            payment_uuid = str(uuid.uuid4())
             cur.execute("""
                 INSERT INTO credit_payments (
-                    id, 
-                    sale_id, 
-                    customer_id, 
-                    user_id, 
-                    amount_usd,
-                    amount_ves,
-                    amount_paid_usd,
-                    amount_paid_ves,
-                    exchange_rate,
-                    payment_method,
-                    tenant_id, 
-                    created_at,
-                    payment_date
+                    id, sale_id, customer_id, user_id, 
+                    amount_usd, amount_ves, amount_paid_usd, amount_paid_ves,
+                    exchange_rate, payment_method, tenant_id, 
+                    created_at, payment_date
                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
-                str(uuid.uuid4()), 
+                payment_uuid, 
                 sale['id'], 
-                real_customer_id,  # <--- CORREGIDO: UUID garantizado
+                real_customer_id, 
                 current_user_id, 
                 amt_usd,
                 amt_ves,
@@ -309,8 +313,10 @@ def pay_credit():
                 datetime.now()
             ))
 
-            # 6. Actualizar la venta
-            nuevo_status = 'Completado' if new_balance < 0.05 else 'Abonado'
+            # 6. Actualizar el estado de la venta
+            # Si el saldo es casi cero (tolerancia 0.05), marcar como Pagado
+            nuevo_status = 'Pagado' if new_balance < 0.05 else 'Abonado'
+            
             cur.execute("""
                 UPDATE sales 
                 SET balance_due_usd = %s, 
@@ -320,29 +326,27 @@ def pay_credit():
                 WHERE id = %s
             """, (new_balance, nuevo_status, datetime.now(), amt_usd, sale['id']))
 
-            # 7. Actualizar el saldo global del cliente
+            # 7. Actualizar el saldo pendiente en la ficha del cliente
             cur.execute("""
                 UPDATE customers 
                 SET balance_pendiente_usd = COALESCE(balance_pendiente_usd, 0) - %s 
                 WHERE id = %s AND tenant_id = %s::text
             """, (amt_usd, real_customer_id, tenant_id))
 
+            # Si todo salió bien, guardamos cambios
             cur.connection.commit()
+            
             return jsonify({
                 "msg": "Pago registrado con éxito", 
-                "nuevo_saldo": round(new_balance, 2)
+                "nuevo_saldo": round(new_balance, 2),
+                "status": nuevo_status
             }), 200
 
     except Exception as e:
-        # Manejo de error robusto: Rollback solo si la conexión sigue viva
-        try:
-            if cur and cur.connection:
-                cur.connection.rollback()
-        except Exception:
-            pass 
-            
-        print(f"CRITICAL ERROR: {str(e)}")
-        return jsonify({"msg": f"Error interno: {str(e)}"}), 500
+        if cur and cur.connection:
+            cur.connection.rollback()
+        print(f"CRITICAL ERROR IN PAY_CREDIT: {str(e)}")
+        return jsonify({"msg": f"Error interno en el servidor: {str(e)}"}), 500
     
 @sale_bp.route('/admin/security-code', methods=['GET'])
 @jwt_required()
