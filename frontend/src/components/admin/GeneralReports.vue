@@ -1,8 +1,8 @@
 <template>
   <div class="admin-general-reports">
     <div class="reports-header">
-      <button @click="goBack" class="back-btn">
-        <i class="fas fa-arrow-left"></i> Volver
+       <button class="back-btn" @click="$router.push('/dashboard')" title="Volver al Dashboard">
+        <i class="fas fa-arrow-left">⬅️</i>
       </button>
       <div class="header-content">
         <h1><i class="fas fa-chart-line"></i> Reportes Generales de Ventas</h1>

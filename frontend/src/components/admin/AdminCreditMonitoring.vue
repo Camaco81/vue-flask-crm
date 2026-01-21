@@ -2,8 +2,8 @@
   <div class="credit-monitoring-container">
     <!-- Header -->
     <div class="header-controls">
-      <button @click="goBack" class="back-btn" title="Regresar">
-        <i class="fas fa-arrow-left"></i>
+          <button class="back-btn" @click="$router.push('/dashboard')" title="Volver al Dashboard">
+        <i class="fas fa-arrow-left">⬅️</i>
       </button>
       <div class="header-text">
         <h1 class="page-title">
@@ -320,6 +320,57 @@ export default {
 </script>
 <style scoped>
 /* Estilos mantenidos y optimizados */
+.back-btn {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+.back-btn {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  color: #495057;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+.refresh-btn{
+  margin-top: 5px;
+  padding: 5px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: #023d7c;
+  color: white;
+}
+.refresh-btn:hover{
+  background: #007bff;
+  transform: translateX(-3px);
+}
+.back-btn:hover {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+  transform: translateX(-3px);
+}
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateX(-3px);
+}
 .credit-monitoring-container { padding: 30px; background: #f0f2f5; min-height: 100vh; }
 .header-controls { display: flex; align-items: center; gap: 20px; margin-bottom: 25px; }
 .page-title { margin: 0; font-size: 1.8rem; color: #0f172a; display: flex; align-items: center; gap: 12px; }

@@ -248,33 +248,53 @@ export default {
       this.pendingPaymentSale = sale;
       this.showConfirmation = true;
     },
-
     async confirmPayment() {
-      this.paymentProcessing = true;
-      const sale = this.pendingPaymentSale;
+  this.paymentProcessing = true;
+  const sale = this.pendingPaymentSale;
+  
+  // 1. Extraer y limpiar el código
+  const codigoParaEnviar = String(this.admin_auth_code[sale.id] || '').trim();
+  const montoPagado = parseFloat(this.paymentAmounts[sale.id]);
 
-      try {
-        const payload = {
-          customer_id: this.selectedCustomer.id,
-          sale_id: sale.id,
-          payment_amount: parseFloat(this.paymentAmounts[sale.id]),
-          payment_currency: this.paymentCurrencies[sale.id],
-          exchange_rate: parseFloat(this.exchangeRates[sale.id]),
-          cancellation_code: this.cancellationCodes[sale.id],
-          admin_auth_code: this.userRole === 'admin' ? 'ADMIN_BYPASS' : this.admin_auth_code[sale.id]
-        };
+  console.log("DEBUG PAGO:", {
+    rol: this.userRole,
+    codigo: codigoParaEnviar,
+    monto: montoPagado
+  });
 
-        await apiClient.post('/api/sales/pay-credit', payload);
+  try {
+    const payload = {
+      customer_id: this.selectedCustomer.id,
+      sale_id: sale.id,
+      payment_amount: montoPagado,
+      payment_currency: this.paymentCurrencies[sale.id],
+      exchange_rate: parseFloat(this.exchangeRates[sale.id]),
+      cancellation_code: this.cancellationCodes[sale.id],
+      admin_auth_code: this.userRole === 'admin' ? 'ADMIN_BYPASS' : codigoParaEnviar
+    };
 
-        this.$emit('payment-success');
-        this.closeModal();
-      } catch (e) {
-        alert(e.response?.data?.msg || "Error al procesar el pago");
-      } finally {
-        this.paymentProcessing = false;
-        this.showConfirmation = false;
-      }
-    },
+    console.log("Payload final a enviar:", payload);
+    
+    // 2. Ejecutar la petición al servidor
+    const response = await apiClient.post('/api/sales/pay-credit', payload);
+
+    // 3. EL CAMBIO CLAVE: Enviar los datos del éxito al componente padre
+    // Pasamos el ID de la venta y el monto para que el padre actualice la tabla
+    this.$emit('payment-success', {
+      sale_id: sale.id,
+      payment_amount: montoPagado,
+      nuevo_saldo: response.data.nuevo_saldo // Opcional: usar el saldo exacto que devuelve el server
+    });
+
+    this.closeModal();
+  } catch (e) {
+    console.error("Error en pago:", e);
+    alert(e.response?.data?.msg || "Error al procesar el pago");
+  } finally {
+    this.paymentProcessing = false;
+    this.showConfirmation = false;
+  }
+},
 
     handleCurrencyChange(sale) {
       const debtUSD = parseFloat(sale.balance_due_usd);

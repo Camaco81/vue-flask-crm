@@ -320,9 +320,10 @@
     <!-- Modales -->
     <CodeGeneratorModal :show="showCancellationModal" @close="showCancellationModal = false"
       @codeGenerated="handleCodeGenerated" ref="cancellationModalRef" />
-
-    <CreditPayment :show="showCreditPaymentModal" :sale="selectedSaleForPayment" @close="showCreditPaymentModal = false"
-      @paymentSuccess="fetchSales" ref="creditModal" />
+    <CreditPayment 
+  ref="creditModal" 
+  @payment-success="handlePaymentSuccess" 
+/>
   </div>
 </template>
 <script>
@@ -486,12 +487,46 @@ export default {
   });
   },
 
-    async handlePaymentSuccess() {
-      this.showCreditPaymentModal = false;
-      this.selectedSaleForPayment = null;
-      // Forzar recarga de datos
-      await this.fetchData();
-    },
+   async handlePaymentSuccess(paymentData) {
+  console.log("⬇️ Pago exitoso recibido:", paymentData);
+  
+  this.showCreditPaymentModal = false;
+
+  // 1. Buscamos el índice de la venta en nuestro array local
+  const saleIndex = this.sales.findIndex(s => s.id === this.selectedSaleForPayment.id);
+  
+  if (saleIndex !== -1) {
+    // 2. Creamos una copia profunda para que Vue detecte el cambio de referencia
+    const updatedSale = { ...this.sales[saleIndex] };
+    
+    // 3. Obtenemos el monto del pago (asegúrate de que el nombre coincida con tu backend)
+    const amountPaid = parseFloat(paymentData.payment_amount || paymentData.amount || 0);
+    
+    // 4. Actualizamos los cálculos numéricos localmente
+    updatedSale.paid_amount_usd = parseFloat(updatedSale.paid_amount_usd || 0) + amountPaid;
+    updatedSale.balance_due_usd = Math.max(0, parseFloat(updatedSale.balance_due_usd) - amountPaid);
+
+    // 5. IMPORTANTE: Actualizar el STATUS visual
+    // Usamos la misma lógica que tienes en tu fetchData
+    if (updatedSale.balance_due_usd <= 0.05) {
+      updatedSale.status = 'Pagado';
+    } else {
+      updatedSale.status = 'Abonado';
+    }
+
+    // 6. Reemplazo reactivo (Vue 3 detecta esto perfectamente)
+    this.sales[saleIndex] = updatedSale;
+    
+    console.log("✅ Venta actualizada en memoria. Nuevo status:", updatedSale.status);
+    
+    // 7. Opcional: Refrescar la data de fondo para asegurar sincronía total
+    // pero la interfaz ya se habrá actualizado para el usuario
+    this.fetchData(); 
+  } else {
+    // Si por alguna razón no la encontramos, forzamos refresh total
+    await this.fetchData();
+  }
+},
 
     async fetchBcvRate() {
       try {
