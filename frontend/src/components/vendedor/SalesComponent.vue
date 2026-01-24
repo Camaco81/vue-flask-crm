@@ -929,88 +929,126 @@ export default {
       };
       this.localStockAlerts = [];
     },
-    generateInvoicePdf(sale) {
+generateInvoicePdf(sale) {
   try {
+  
     const doc = new jsPDF();
-    const bcvRate = parseFloat(sale.exchange_rate_used) || this.bcvRate;
-    const totalAmountUSD = parseFloat(sale.total_usd) || 0;
-    const totalAmountVES = parseFloat(sale.total_amount_ves) || (totalAmountUSD * bcvRate);
-
-    // 🛠️ Validación de items: Asegurarnos de que existan
-    const itemsParaFactura = (sale.items || []).map(item => {
-      const priceUSD = parseFloat(item.price_usd || item.price || 0);
+    
+    // 1. NORMALIZACIÓN DE DATOS (Basado exactamente en tu fetchData)
+    const bcvRate = parseFloat(sale.exchange_rate_used || this.bcvRate || 1);
+    const totalUSD = parseFloat(sale.total_usd || 0); 
+    const totalVES = parseFloat(sale.total_amount_ves || (totalUSD * bcvRate));
+    
+    const rawItems = sale.items || [];
+    const itemsParaFactura = rawItems.map(item => {
+      // CORRECCIÓN CLAVE: Usamos 'price_usd' que es como lo guardas en fetchData
+      const pUnit = parseFloat(item.price_usd || item.price || 0);
+      const cantidad = parseInt(item.qty || item.quantity || 0);
+      
       return {
-        // En tu fetch usas 'name', pero jsPDF busca 'product_name' según tu código anterior
-        name: item.product_name || item.name || 'Producto', 
-        quantity: item.quantity || 0,
-        price_usd: priceUSD,
-        price_ves: priceUSD * bcvRate,
-        total_ves: (priceUSD * (item.quantity || 0)) * bcvRate
+        name: item.name || item.product_name || 'Producto',
+        qty: cantidad,
+        price: pUnit,
+        totalItemVES: (pUnit * cantidad) * bcvRate
       };
     });
 
-    let y = 10;
-    doc.setFontSize(18);
-    doc.text("Factura de Venta", 105, y, null, null, "center");
+    // --- 2. ENCABEZADO PROFESIONAL ---
+    doc.setFillColor(30, 41, 59); 
+    doc.rect(0, 0, 210, 40, 'F');
     
-    // ... (Tu código de encabezado de empresa se mantiene igual) ...
-    y += 30; 
-
-    // Datos del Cliente y Venta
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.text("FACTURA DE VENTA", 15, 25);
+    
     doc.setFontSize(10);
-    doc.text(`Factura: ${sale.id.substring(0, 8).toUpperCase()}`, 10, y);
-    doc.text(`Fecha: ${this.formatDate(sale.sale_date)}`, 10, y + 7);
-    doc.text(`Cliente: ${sale.customer_name}`, 10, y + 14);
+    doc.setFont("helvetica", "normal");
+    const facturaId = sale.id ? String(sale.id).substring(0, 8).toUpperCase() : 'N/A';
+    doc.text(`N° CONTROL: ${facturaId}`, 195, 25, { align: 'right' });
+
+    // --- 3. DATOS ESENCIALES (Cliente, Cédula y Vendedor) ---
+    let y = 55;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("INFORMACIÓN FISCAL", 15, y);
+    doc.line(15, y + 2, 195, y + 2);
     
-    // 🛠️ Cédula: Importante para nosotros
-    if (sale.customer_cedula) {
-        doc.text(`Cédula/RIF: ${sale.customer_cedula}`, 10, y + 21);
-        y += 7;
-    }
-    y += 25;
+    y += 12;
+    doc.setFont("helvetica", "normal");
+    doc.text(`Cliente: ${sale.customer_name || 'Consumidor Final'}`, 15, y);
+    
+    // Fecha formateada
+    const fechaStr = sale.sale_date ? this.formatDate(sale.sale_date) : new Date().toLocaleString();
+    doc.text(`Fecha: ${fechaStr}`, 195, y, { align: 'right' });
+    
+    y += 8;
+    // Cédula (campo que definimos en la base de datos)
+    const cedula = sale.customer_cedula || sale.cedula || 'N/A';
+    doc.text(`Cédula/RIF: ${cedula}`, 15, y);
+    
+    // RECUPERAMOS AL VENDEDOR (Importante)
+    const vendedor = sale.seller_name || 'Sistema';
+    doc.text(`Vendedor: ${vendedor}`, 195, y, { align: 'right' });
 
-    // Tabla de productos corregida
-    doc.setFont(undefined, 'bold');
-    doc.setFillColor(230, 230, 230);
-    doc.rect(10, y, 190, 8, 'F');
-    doc.text("Producto", 12, y + 5);
-    doc.text("Cant.", 80, y + 5);
-    doc.text("P. Unit USD", 110, y + 5);
-    doc.text("Total BS", 185, y + 5, null, null, "right");
-    doc.setFont(undefined, 'normal');
-    y += 10;
+    // --- 4. TABLA DE PRODUCTOS (Corregida) ---
+    y += 15;
+    doc.setFillColor(241, 245, 249);
+    doc.rect(15, y, 180, 10, 'F');
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("Descripción", 18, y + 7);
+    doc.text("Cant.", 100, y + 7, { align: 'center' });
+    doc.text("P. Unit ($)", 135, y + 7, { align: 'center' });
+    doc.text("Total (Bs.)", 192, y + 7, { align: 'right' });
+    
+    y += 18;
+    doc.setFont("helvetica", "normal");
 
-    itemsParaFactura.forEach(item => {
-      doc.text(item.name.substring(0, 35), 12, y);
-      doc.text(String(item.quantity), 80, y);
-      doc.text(`$${item.price_usd.toFixed(2)}`, 110, y);
-      doc.text(`Bs. ${item.total_ves.toFixed(2)}`, 185, y, null, null, "right");
-      y += 7;
+    itemsParaFactura.forEach((item) => {
+      if(item.qty > 0 || item.price > 0) {
+        const itemName = item.name.length > 45 ? item.name.substring(0, 42) + "..." : item.name;
+        doc.text(itemName, 18, y);
+        doc.text(String(item.qty), 100, y, { align: 'center' });
+        
+        // Ahora sí se mostrará el precio porque usamos la variable 'price' mapeada arriba
+        doc.text(`$${item.price.toFixed(2)}`, 135, y, { align: 'center' });
+        doc.text(`${item.totalItemVES.toLocaleString('es-VE', {minimumFractionDigits: 2})}`, 192, y, { align: 'right' });
+        y += 9;
+      }
       
-      if (y > 275) { doc.addPage(); y = 20; }
+      if (y > 270) { doc.addPage(); y = 30; }
     });
 
-    // Totales finales
+    // --- 5. TOTALES (Sin superposición) ---
     y += 10;
-    doc.line(120, y, 200, y);
-    y += 7;
-    doc.setFontSize(12);
-    doc.setFont(undefined, 'bold');
-    doc.text("TOTAL A PAGAR:", 120, y);
-    doc.text(`Bs. ${totalAmountVES.toFixed(2)}`, 185, y, null, null, "right");
+    doc.setDrawColor(200, 200, 200);
+    doc.line(120, y, 195, y);
     
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'normal');
-    doc.text(`Ref: $${totalAmountUSD.toFixed(2)}`, 120, y + 7);
+    y += 12;
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.text("TOTAL A PAGAR:", 120, y);
+    
+    doc.setTextColor(30, 41, 59);
+    // El monto se alinea a la derecha, el título a la izquierda. Nunca se chocarán.
+    doc.text(`Bs. ${totalVES.toLocaleString('es-VE', {minimumFractionDigits: 2})}`, 195, y, { align: 'right' });
+    
+    y += 8;
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Ref: $${totalUSD.toFixed(2)} USD`, 195, y, { align: 'right' });
+    doc.text(`Tasa BCV: ${bcvRate.toFixed(2)} Bs/$`, 195, y + 5, { align: 'right' });
 
-    doc.save(`Factura_${sale.id.substring(0, 8)}.pdf`);
+    doc.save(`Factura_${facturaId}.pdf`);
 
   } catch (err) {
-    console.error("Error al generar PDF:", err);
-    alert("No se pudo generar el PDF. Revisa los datos de la venta.");
+    console.error("Error crítico PDF:", err);
+    alert("Error al imprimir: " + err.message);
   }
 },
-    
     formatDate(date) {
       const d = new Date(date);
       if (isNaN(d)) {
