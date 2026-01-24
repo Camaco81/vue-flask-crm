@@ -498,11 +498,11 @@ export default {
   try {
     if (this.modalMode === 'create') {
       // Enviar todo el objeto incluyendo nombre y cedula
-      await axios.post('/admin/users', this.currentUser);
+      await axios.post('api/admin/users', this.currentUser);
       alert('Empleado creado con éxito');
     } else {
       // Para editar, enviamos los campos actualizables
-      await axios.put(`/admin/users/${this.currentUser.id}`, {
+      await axios.put(`api/admin/users/${this.currentUser.id}`, {
         nombre: this.currentUser.nombre,
         cedula: this.currentUser.cedula,
         role_id: this.currentUser.role_id
