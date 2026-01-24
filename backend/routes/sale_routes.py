@@ -145,11 +145,28 @@ def sales_collection():
     elif request.method == "GET":
         try:
             with get_db_cursor() as cur:
+                # 🛠️ MEJORA: Traemos TODO lo necesario para la factura de una vez
                 query = """
-                    SELECT s.id::text, c.name as customer_name, s.sale_date::text, s.status, 
-                           s.total_amount_usd, s.balance_due_usd, s.tipo_pago,
-                           u.nombre as seller_name,
-                           json_agg(json_build_object('name', p.name, 'qty', si.quantity)) as items
+                    SELECT 
+                        s.id::text, 
+                        s.sale_date::text, 
+                        s.status, 
+                        s.total_amount_usd, 
+                        s.total_amount_ves,
+                        s.exchange_rate_used,
+                        s.balance_due_usd, 
+                        s.tipo_pago,
+                        c.name as customer_name,
+                        c.cedula as customer_cedula, -- Agregamos la cédula
+                        u.nombre as seller_name,
+                        -- Generamos un JSON con los detalles exactos de cada producto
+                        json_agg(
+                            json_build_object(
+                                'name', p.name, 
+                                'qty', si.quantity,
+                                'price_usd', si.price -- Traemos el precio histórico de la venta
+                            )
+                        ) as items
                     FROM sales s
                     JOIN customers c ON s.customer_id = c.id
                     JOIN users u ON s.user_id = u.id
@@ -158,15 +175,26 @@ def sales_collection():
                     WHERE s.tenant_id = %s::text
                 """
                 params = [tenant_id]
+                
                 if not check_admin_permission(user_role):
                     query += " AND s.user_id = %s"
                     params.append(current_user_id)
                 
-                query += " GROUP BY s.id, c.name, u.nombre ORDER BY s.sale_date DESC"
+                # Agrupamos por los campos de las tablas principales para que json_agg funcione
+                query += """ 
+                    GROUP BY 
+                        s.id, c.name, c.cedula, u.nombre 
+                    ORDER BY s.sale_date DESC
+                """
+                
                 cur.execute(query, params)
-                return jsonify([dict(r) for r in cur.fetchall()]), 200
+                results = cur.fetchall()
+                
+                # Convertimos a lista de diccionarios para enviar al Frontend
+                return jsonify([dict(r) for r in results]), 200
+                
         except Exception as e:
-            app_logger.error(f"Error al listar ventas: {e}")
+            app_logger.error(f"Error al listar ventas detalladas: {e}")
             return jsonify({"msg": "Error al listar ventas"}), 500
 
 @sale_bp.route('/credits/pending', methods=['GET'])
