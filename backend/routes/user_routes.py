@@ -128,10 +128,46 @@ def admin_create_user():
             return jsonify({"msg": "Email o cédula ya registrados."}), 409
         return jsonify({"msg": "Error al crear"}), 500
 
+# =========================================================
+# EDITAR EMPLEADO (NUEVA RUTA)
+# =========================================================
+@admin_bp.route('/users/<uuid:user_id>', methods=['PUT']) 
+@jwt_required()
+def admin_update_user(user_id):
+    current_user_id, user_role_id, *_ = get_user_and_role()
+    tenant_id = get_current_tenant()
+    
+    if not check_admin_permission(user_role_id):
+        return jsonify({"msg": "Acceso denegado"}), 403
+
+    data = request.get_json()
+    nombre = data.get('nombre')
+    cedula = data.get('cedula')
+    role_id = data.get('role_id')
+
+    try:
+        with get_db_cursor(commit=True) as cur:
+            cur.execute(
+                """
+                UPDATE users 
+                SET nombre = %s, cedula = %s, role_id = %s
+                WHERE id = %s AND tenant_id = %s
+                RETURNING id
+                """,
+                (nombre, cedula, int(role_id), str(user_id), tenant_id)
+            )
+            if cur.fetchone():
+                return jsonify({"msg": "Empleado actualizado correctamente"}), 200
+            return jsonify({"msg": "Usuario no encontrado"}), 404
+    except Exception as e:
+        return jsonify({"msg": f"Error al actualizar: {str(e)}"}), 500
+
+# =========================================================
+# ELIMINAR EMPLEADO (VERIFICA LA RUTA)
+# =========================================================
 @admin_bp.route('/users/<uuid:user_id>', methods=['DELETE']) 
 @jwt_required()
 def admin_delete_user(user_id):
-    # AJUSTE: Corrección final para mantener consistencia
     current_user_id, user_role_id, *_ = get_user_and_role()
     tenant_id = get_current_tenant()
 
