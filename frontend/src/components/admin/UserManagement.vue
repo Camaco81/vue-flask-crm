@@ -491,23 +491,25 @@ export default {
       }
     },
     
-    async saveUser() {
+// DENTRO DE METHODS EN TU COMPONENTE VUE:
+
+async saveUser() {
   if (this.isSaving) return;
   this.isSaving = true;
   
   try {
     if (this.modalMode === 'create') {
-      // Enviar todo el objeto incluyendo nombre y cedula
+      // URL corregida para creación
       await axios.post('api/admin/users', this.currentUser);
       alert('Empleado creado con éxito');
     } else {
-      // Para editar, enviamos los campos actualizables
+      // URL corregida para edición: api/admin/users/{uuid}
       await axios.put(`api/admin/users/${this.currentUser.id}`, {
         nombre: this.currentUser.nombre,
         cedula: this.currentUser.cedula,
         role_id: this.currentUser.role_id
       });
-      alert('Empleado actualizado');
+      alert('Empleado actualizado correctamente');
     }
     this.fetchUsers();
     this.closeModal();
@@ -518,22 +520,23 @@ export default {
     this.isSaving = false;
   }
 },
+
+async deleteUser() {
+  if (!this.userToDelete) return;
+  
+  try {
+    // CORRECCIÓN DE RUTA: Debe ser igual a las otras rutas del admin_bp
+    await axios.delete(`api/admin/users/${this.userToDelete.id}`);
     
-    async deleteUser() {
-      try {
-        await axios.delete(`/admin/users/${this.userToDelete.id}`);
-        
-        // CORRECCIÓN: Se usa alert nativo
-        alert('Éxito: Usuario eliminado correctamente.');
-        
-        this.fetchUsers();
-        this.showDeleteDialog = false;
-      } catch (err) {
-        const errorMsg = err.response?.data?.msg || 'Error al eliminar el usuario.';
-        alert(`Error: ${errorMsg}`);
-        console.error('Error al eliminar:', err);
-      }
-    },
+    alert('Usuario eliminado correctamente.');
+    this.fetchUsers();
+    this.showDeleteDialog = false;
+  } catch (err) {
+    const errorMsg = err.response?.data?.msg || 'Error al eliminar el usuario.';
+    alert(`Error: ${errorMsg}`);
+    console.error('Error al eliminar:', err);
+  }
+},
     
    openModal(mode, user = null) {
   this.modalMode = mode;
